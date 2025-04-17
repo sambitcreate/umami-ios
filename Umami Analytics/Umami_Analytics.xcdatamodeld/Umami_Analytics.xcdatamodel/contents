@@ -3,7 +3,30 @@
     <entity name="Item" representedClassName="Item" syncable="YES" codeGenerationType="class">
         <attribute name="timestamp" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
     </entity>
+    <entity name="UmamiServer" representedClassName="UmamiServer" syncable="YES" codeGenerationType="class">
+        <attribute name="name" optional="YES" attributeType="String"/>
+        <attribute name="url" attributeType="String"/>
+        <relationship name="websites" optional="YES" toMany="YES" deletionRule="Cascade" destinationEntity="UmamiWebsite" inverseName="server" inverseEntity="UmamiWebsite"/>
+    </entity>
+    <entity name="UmamiWebsite" representedClassName="UmamiWebsite" syncable="YES" codeGenerationType="class">
+        <attribute name="domain" optional="YES" attributeType="String"/>
+        <attribute name="id" attributeType="String"/>
+        <attribute name="lastUpdated" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="name" attributeType="String"/>
+        <relationship name="server" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="UmamiServer" inverseName="websites" inverseEntity="UmamiServer"/>
+        <relationship name="stats" optional="YES" toMany="YES" deletionRule="Cascade" destinationEntity="UmamiWebsiteStats" inverseName="website" inverseEntity="UmamiWebsiteStats"/>
+    </entity>
+    <entity name="UmamiWebsiteStats" representedClassName="UmamiWebsiteStats" syncable="YES" codeGenerationType="class">
+        <attribute name="date" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="pageviews" attributeType="Integer 64" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="period" optional="YES" attributeType="String"/>
+        <attribute name="visitors" attributeType="Integer 64" defaultValueString="0" usesScalarValueType="YES"/>
+        <relationship name="website" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="UmamiWebsite" inverseName="stats" inverseEntity="UmamiWebsite"/>
+    </entity>
     <elements>
         <element name="Item" positionX="-63" positionY="-18" width="128" height="44"/>
+        <element name="UmamiServer" positionX="-63" positionY="0" width="128" height="74"/>
+        <element name="UmamiWebsite" positionX="-54" positionY="9" width="128" height="104"/>
+        <element name="UmamiWebsiteStats" positionX="-36" positionY="27" width="128" height="89"/>
     </elements>
 </model>
