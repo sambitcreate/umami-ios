@@ -1,0 +1,563 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXContainerItemProxy section */
+		DD92BEBA2DB14A7C0035F826 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = DD92BE9F2DB14A7B0035F826 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = DD92BEA62DB14A7B0035F826;
+			remoteInfo = "Umami Analytics";
+		};
+		DD92BEC42DB14A7C0035F826 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = DD92BE9F2DB14A7B0035F826 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = DD92BEA62DB14A7B0035F826;
+			remoteInfo = "Umami Analytics";
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		DD92BEA72DB14A7B0035F826 /* Umami Analytics.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Umami Analytics.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		DD92BEB92DB14A7C0035F826 /* Umami AnalyticsTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Umami AnalyticsTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		DD92BEC32DB14A7C0035F826 /* Umami AnalyticsUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Umami AnalyticsUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		DD92BEA92DB14A7B0035F826 /* Umami Analytics */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "Umami Analytics";
+			sourceTree = "<group>";
+		};
+		DD92BEBC2DB14A7C0035F826 /* Umami AnalyticsTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "Umami AnalyticsTests";
+			sourceTree = "<group>";
+		};
+		DD92BEC62DB14A7C0035F826 /* Umami AnalyticsUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "Umami AnalyticsUITests";
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		DD92BEA42DB14A7B0035F826 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		DD92BEB62DB14A7C0035F826 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		DD92BEC02DB14A7C0035F826 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		DD92BE9E2DB14A7B0035F826 = {
+			isa = PBXGroup;
+			children = (
+				DD92BEA92DB14A7B0035F826 /* Umami Analytics */,
+				DD92BEBC2DB14A7C0035F826 /* Umami AnalyticsTests */,
+				DD92BEC62DB14A7C0035F826 /* Umami AnalyticsUITests */,
+				DD92BEA82DB14A7B0035F826 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		DD92BEA82DB14A7B0035F826 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				DD92BEA72DB14A7B0035F826 /* Umami Analytics.app */,
+				DD92BEB92DB14A7C0035F826 /* Umami AnalyticsTests.xctest */,
+				DD92BEC32DB14A7C0035F826 /* Umami AnalyticsUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		DD92BEA62DB14A7B0035F826 /* Umami Analytics */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = DD92BECD2DB14A7C0035F826 /* Build configuration list for PBXNativeTarget "Umami Analytics" */;
+			buildPhases = (
+				DD92BEA32DB14A7B0035F826 /* Sources */,
+				DD92BEA42DB14A7B0035F826 /* Frameworks */,
+				DD92BEA52DB14A7B0035F826 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				DD92BEA92DB14A7B0035F826 /* Umami Analytics */,
+			);
+			name = "Umami Analytics";
+			packageProductDependencies = (
+			);
+			productName = "Umami Analytics";
+			productReference = DD92BEA72DB14A7B0035F826 /* Umami Analytics.app */;
+			productType = "com.apple.product-type.application";
+		};
+		DD92BEB82DB14A7C0035F826 /* Umami AnalyticsTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = DD92BED02DB14A7C0035F826 /* Build configuration list for PBXNativeTarget "Umami AnalyticsTests" */;
+			buildPhases = (
+				DD92BEB52DB14A7C0035F826 /* Sources */,
+				DD92BEB62DB14A7C0035F826 /* Frameworks */,
+				DD92BEB72DB14A7C0035F826 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				DD92BEBB2DB14A7C0035F826 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				DD92BEBC2DB14A7C0035F826 /* Umami AnalyticsTests */,
+			);
+			name = "Umami AnalyticsTests";
+			packageProductDependencies = (
+			);
+			productName = "Umami AnalyticsTests";
+			productReference = DD92BEB92DB14A7C0035F826 /* Umami AnalyticsTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		DD92BEC22DB14A7C0035F826 /* Umami AnalyticsUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = DD92BED32DB14A7C0035F826 /* Build configuration list for PBXNativeTarget "Umami AnalyticsUITests" */;
+			buildPhases = (
+				DD92BEBF2DB14A7C0035F826 /* Sources */,
+				DD92BEC02DB14A7C0035F826 /* Frameworks */,
+				DD92BEC12DB14A7C0035F826 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				DD92BEC52DB14A7C0035F826 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				DD92BEC62DB14A7C0035F826 /* Umami AnalyticsUITests */,
+			);
+			name = "Umami AnalyticsUITests";
+			packageProductDependencies = (
+			);
+			productName = "Umami AnalyticsUITests";
+			productReference = DD92BEC32DB14A7C0035F826 /* Umami AnalyticsUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		DD92BE9F2DB14A7B0035F826 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1630;
+				LastUpgradeCheck = 1630;
+				TargetAttributes = {
+					DD92BEA62DB14A7B0035F826 = {
+						CreatedOnToolsVersion = 16.3;
+					};
+					DD92BEB82DB14A7C0035F826 = {
+						CreatedOnToolsVersion = 16.3;
+						TestTargetID = DD92BEA62DB14A7B0035F826;
+					};
+					DD92BEC22DB14A7C0035F826 = {
+						CreatedOnToolsVersion = 16.3;
+						TestTargetID = DD92BEA62DB14A7B0035F826;
+					};
+				};
+			};
+			buildConfigurationList = DD92BEA22DB14A7B0035F826 /* Build configuration list for PBXProject "Umami Analytics" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = DD92BE9E2DB14A7B0035F826;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = DD92BEA82DB14A7B0035F826 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				DD92BEA62DB14A7B0035F826 /* Umami Analytics */,
+				DD92BEB82DB14A7C0035F826 /* Umami AnalyticsTests */,
+				DD92BEC22DB14A7C0035F826 /* Umami AnalyticsUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		DD92BEA52DB14A7B0035F826 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		DD92BEB72DB14A7C0035F826 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		DD92BEC12DB14A7C0035F826 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		DD92BEA32DB14A7B0035F826 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		DD92BEB52DB14A7C0035F826 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		DD92BEBF2DB14A7C0035F826 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		DD92BEBB2DB14A7C0035F826 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = DD92BEA62DB14A7B0035F826 /* Umami Analytics */;
+			targetProxy = DD92BEBA2DB14A7C0035F826 /* PBXContainerItemProxy */;
+		};
+		DD92BEC52DB14A7C0035F826 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = DD92BEA62DB14A7B0035F826 /* Umami Analytics */;
+			targetProxy = DD92BEC42DB14A7C0035F826 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		DD92BECB2DB14A7C0035F826 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = 5WP229CBB8;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.4;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		DD92BECC2DB14A7C0035F826 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = 5WP229CBB8;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.4;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		DD92BECE2DB14A7C0035F826 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 5WP229CBB8;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "sbtbiswas.Umami-Analytics";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		DD92BECF2DB14A7C0035F826 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 5WP229CBB8;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "sbtbiswas.Umami-Analytics";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		DD92BED12DB14A7C0035F826 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 5WP229CBB8;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.4;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "sbtbiswas.Umami-AnalyticsTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Umami Analytics.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Umami Analytics";
+			};
+			name = Debug;
+		};
+		DD92BED22DB14A7C0035F826 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 5WP229CBB8;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.4;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "sbtbiswas.Umami-AnalyticsTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Umami Analytics.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Umami Analytics";
+			};
+			name = Release;
+		};
+		DD92BED42DB14A7C0035F826 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 5WP229CBB8;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "sbtbiswas.Umami-AnalyticsUITests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = "Umami Analytics";
+			};
+			name = Debug;
+		};
+		DD92BED52DB14A7C0035F826 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 5WP229CBB8;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "sbtbiswas.Umami-AnalyticsUITests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = "Umami Analytics";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		DD92BEA22DB14A7B0035F826 /* Build configuration list for PBXProject "Umami Analytics" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				DD92BECB2DB14A7C0035F826 /* Debug */,
+				DD92BECC2DB14A7C0035F826 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		DD92BECD2DB14A7C0035F826 /* Build configuration list for PBXNativeTarget "Umami Analytics" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				DD92BECE2DB14A7C0035F826 /* Debug */,
+				DD92BECF2DB14A7C0035F826 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		DD92BED02DB14A7C0035F826 /* Build configuration list for PBXNativeTarget "Umami AnalyticsTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				DD92BED12DB14A7C0035F826 /* Debug */,
+				DD92BED22DB14A7C0035F826 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		DD92BED32DB14A7C0035F826 /* Build configuration list for PBXNativeTarget "Umami AnalyticsUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				DD92BED42DB14A7C0035F826 /* Debug */,
+				DD92BED52DB14A7C0035F826 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = DD92BE9F2DB14A7B0035F826 /* Project object */;
+}
