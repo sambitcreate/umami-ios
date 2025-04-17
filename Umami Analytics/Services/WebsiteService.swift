@@ -8,6 +8,7 @@
 import Foundation
 import Combine
 import CoreData
+import SwiftUI
 
 class WebsiteService {
     static let shared = WebsiteService()
@@ -18,6 +19,13 @@ class WebsiteService {
     // MARK: - Website List
 
     func fetchWebsites() -> AnyPublisher<[WebsiteModel], Error> {
+        // If in debug mode, return mock data
+        if DebugManager.shared.isDebugMode {
+            return Just(DebugManager.shared.getMockWebsites())
+                .setFailureType(to: Error.self)
+                .eraseToAnyPublisher()
+        }
+
         guard let apiClient = AuthManager.shared.apiClient else {
             return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
         }
@@ -46,6 +54,24 @@ class WebsiteService {
     // MARK: - Website Stats
 
     func fetchWebsiteStats(id: String, period: StatsPeriod = .day) -> AnyPublisher<WebsiteStatsResponse, Error> {
+        // If in debug mode, return mock data
+        if DebugManager.shared.isDebugMode {
+            let mockStats = DebugManager.shared.getMockStats()
+            let now = Date()
+            let startDate = createDateRange(for: period).startAt
+
+            let response = WebsiteStatsResponse(
+                websiteId: id,
+                startDate: ISO8601DateFormatter().string(from: Date(timeIntervalSince1970: Double(startDate) / 1000)),
+                endDate: ISO8601DateFormatter().string(from: now),
+                stats: mockStats
+            )
+
+            return Just(response)
+                .setFailureType(to: Error.self)
+                .eraseToAnyPublisher()
+        }
+
         guard let apiClient = AuthManager.shared.apiClient else {
             return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
         }
@@ -62,6 +88,24 @@ class WebsiteService {
     // MARK: - Website Metrics
 
     func fetchWebsiteMetrics(id: String, period: StatsPeriod = .day) -> AnyPublisher<WebsiteMetricsResponse, Error> {
+        // If in debug mode, return mock data
+        if DebugManager.shared.isDebugMode {
+            let mockMetrics = DebugManager.shared.getMockMetrics()
+            let now = Date()
+            let startDate = createDateRange(for: period).startAt
+
+            let response = WebsiteMetricsResponse(
+                websiteId: id,
+                startDate: ISO8601DateFormatter().string(from: Date(timeIntervalSince1970: Double(startDate) / 1000)),
+                endDate: ISO8601DateFormatter().string(from: now),
+                metrics: mockMetrics
+            )
+
+            return Just(response)
+                .setFailureType(to: Error.self)
+                .eraseToAnyPublisher()
+        }
+
         guard let apiClient = AuthManager.shared.apiClient else {
             return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
         }
@@ -112,6 +156,13 @@ class WebsiteService {
     }
 
     private func fetchRealtimeData(for websiteId: String) -> AnyPublisher<RealtimeData, Error> {
+        // If in debug mode, return mock data
+        if DebugManager.shared.isDebugMode {
+            return Just(DebugManager.shared.getMockRealtimeData())
+                .setFailureType(to: Error.self)
+                .eraseToAnyPublisher()
+        }
+
         guard let apiClient = AuthManager.shared.apiClient else {
             return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
         }

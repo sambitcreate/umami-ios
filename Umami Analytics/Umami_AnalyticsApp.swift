@@ -31,6 +31,7 @@ struct Umami_AnalyticsApp: App {
 
 class AppState: ObservableObject {
     @Published var isAuthenticated: Bool = false
+    @Published var isDebugMode: Bool = false
     private var cancellables = Set<AnyCancellable>()
 
     init() {
@@ -42,9 +43,33 @@ class AppState: ObservableObject {
             }
             .store(in: &cancellables)
 
+        // Observe debug mode changes
+        DebugManager.shared.$isDebugMode
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] isDebugMode in
+                self?.isDebugMode = isDebugMode
+                // If debug mode is enabled, set authenticated to true
+                if isDebugMode {
+                    self?.isAuthenticated = true
+                }
+            }
+            .store(in: &cancellables)
+
         // Verify token if we think we're authenticated
         if AuthManager.shared.isAuthenticated {
             AuthManager.shared.verifyAuthentication { _ in }
+        }
+    }
+
+    func enableDebugMode() {
+        DebugManager.shared.enableDebugMode()
+    }
+
+    func disableDebugMode() {
+        DebugManager.shared.disableDebugMode()
+        // If we're not actually authenticated, reset the state
+        if !AuthManager.shared.isAuthenticated {
+            isAuthenticated = false
         }
     }
 }
