@@ -10,24 +10,24 @@ import Combine
 
 class DebugManager {
     static let shared = DebugManager()
-    
+
     @Published var isDebugMode = false
-    
+
     // This will be reset when the app is closed
     private init() {}
-    
+
     // MARK: - Debug Mode
-    
+
     func enableDebugMode() {
         isDebugMode = true
     }
-    
+
     func disableDebugMode() {
         isDebugMode = false
     }
-    
+
     // MARK: - Mock Data
-    
+
     func getMockWebsites() -> [WebsiteModel] {
         return [
             WebsiteModel(
@@ -59,7 +59,7 @@ class DebugManager {
             )
         ]
     }
-    
+
     func getMockStats() -> WebsiteStatsModel {
         return WebsiteStatsModel(
             pageviews: Int.random(in: 5000...15000),
@@ -68,30 +68,30 @@ class DebugManager {
             totalTime: Int.random(in: 50000...150000)
         )
     }
-    
+
     func getMockMetrics() -> WebsiteMetrics {
         // Generate dates for the last 7 days
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: Date())
-        
+
         var pageviews: [PageviewMetric] = []
         var sessions: [SessionMetric] = []
-        
+
         for i in 0..<7 {
             let date = calendar.date(byAdding: .day, value: -i, to: today)!
             let dateString = ISO8601DateFormatter().string(from: date)
-            
+
             pageviews.append(PageviewMetric(
                 date: dateString,
                 value: Int.random(in: 500...2000)
             ))
-            
+
             sessions.append(SessionMetric(
                 date: dateString,
                 value: Int.random(in: 200...1000)
             ))
         }
-        
+
         return WebsiteMetrics(
             pageviews: pageviews,
             sessions: sessions,
@@ -142,22 +142,47 @@ class DebugManager {
             ]
         )
     }
-    
+
     func getMockRealtimeData() -> RealtimeData {
+        let currentTime = Int64(Date().timeIntervalSince1970)
+        let pageviews = [
+            RealtimePageview(url: "/", title: "Home", timestamp: currentTime - 60),
+            RealtimePageview(url: "/blog", title: "Blog", timestamp: currentTime - 120),
+            RealtimePageview(url: "/products", title: "Products", timestamp: currentTime - 180)
+        ]
+
+        let events = [
+            RealtimeEvent(name: "Click", timestamp: currentTime - 90, data: ["button": "signup"]),
+            RealtimeEvent(name: "Download", timestamp: currentTime - 150, data: ["file": "brochure.pdf"])
+        ]
+
+        let countries = ["US": 3, "GB": 2, "CA": 1]
+        let urls = ["/": 3, "/blog": 2, "/products": 1]
+        let referrers = ["google.com": 2, "facebook.com": 1, "(direct)": 3]
+
+        let series = RealtimeSeries(
+            views: [2, 3, 5, 4, 6, 3, 2, 1, 3, 4],
+            visitors: [1, 2, 3, 2, 4, 2, 1, 1, 2, 3]
+        )
+
+        let totals = RealtimeTotals(
+            views: 33,
+            visitors: Int.random(in: 5...20),
+            events: 2,
+            countries: 3
+        )
+
         return RealtimeData(
             websiteId: "mock-website-1",
-            timestamp: Int64(Date().timeIntervalSince1970),
-            pageviews: [
-                RealtimePageview(url: "/", title: "Home", timestamp: Int64(Date().timeIntervalSince1970 - 60)),
-                RealtimePageview(url: "/blog", title: "Blog", timestamp: Int64(Date().timeIntervalSince1970 - 120)),
-                RealtimePageview(url: "/products", title: "Products", timestamp: Int64(Date().timeIntervalSince1970 - 180))
-            ],
-            sessions: Int.random(in: 5...20),
-            events: [
-                RealtimeEvent(name: "Click", timestamp: Int64(Date().timeIntervalSince1970 - 90), data: ["button": "signup"]),
-                RealtimeEvent(name: "Download", timestamp: Int64(Date().timeIntervalSince1970 - 150), data: ["file": "brochure.pdf"])
-            ],
-            countries: ["US": 3, "GB": 2, "CA": 1]
+            timestamp: currentTime,
+            pageviews: pageviews,
+            sessions: totals.visitors,
+            events: events,
+            countries: countries,
+            urls: urls,
+            referrers: referrers,
+            series: series,
+            totals: totals
         )
     }
 }

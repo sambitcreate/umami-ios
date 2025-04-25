@@ -145,13 +145,125 @@ struct WebsiteMetricsResponse: Codable {
 
 // MARK: - Real-time Data Models
 
-struct RealtimeData: Codable {
-    let websiteId: String
+// Base protocol for different realtime data formats
+protocol RealtimeDataProtocol {
+    var timestamp: Int64 { get }
+    var sessions: Int { get }
+    var countries: [String: Int] { get }
+    var urls: [String: Int]? { get }
+    var referrers: [String: Int]? { get }
+    var events: [RealtimeEvent] { get }
+    var series: RealtimeSeries? { get }
+    var totals: RealtimeTotals? { get }
+
+    // Computed property to get the website ID if available
+    var websiteId: String? { get }
+
+    // Computed properties to get pageviews in a consistent format
+    var pageviews: [RealtimePageview] { get }
+}
+
+// Original RealtimeData model for v1 API
+struct RealtimeData: Codable, RealtimeDataProtocol {
+    let websiteId: String?
     let timestamp: Int64
-    let pageviews: [RealtimePageview]
+    var pageviews: [RealtimePageview]
     let sessions: Int
-    let events: [RealtimeEvent]
+    var events: [RealtimeEvent]
     let countries: [String: Int]
+    let urls: [String: Int]?
+    let referrers: [String: Int]?
+    let series: RealtimeSeries?
+    let totals: RealtimeTotals?
+
+    // Default initializer
+    init(websiteId: String?, timestamp: Int64, pageviews: [RealtimePageview], sessions: Int, events: [RealtimeEvent], countries: [String: Int], urls: [String: Int]? = nil, referrers: [String: Int]? = nil, series: RealtimeSeries? = nil, totals: RealtimeTotals? = nil) {
+        self.websiteId = websiteId
+        self.timestamp = timestamp
+        self.pageviews = pageviews
+        self.sessions = sessions
+        self.events = events
+        self.countries = countries
+        self.urls = urls
+        self.referrers = referrers
+        self.series = series
+        self.totals = totals
+    }
+
+    // Custom decoder to handle different API formats
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+
+        // Try to decode websiteId, but make it optional
+        websiteId = try container.decodeIfPresent(String.self, forKey: .websiteId)
+
+        // Decode timestamp
+        timestamp = try container.decode(Int64.self, forKey: .timestamp)
+
+        // Try to decode sessions, default to totals.visitors if not present
+        if container.contains(.sessions) {
+            sessions = try container.decode(Int.self, forKey: .sessions)
+        } else if let totals = try container.decodeIfPresent(RealtimeTotals.self, forKey: .totals) {
+            sessions = totals.visitors
+        } else {
+            sessions = 0
+        }
+
+        // Try to decode countries
+        if container.contains(.countries) {
+            countries = try container.decode([String: Int].self, forKey: .countries)
+        } else {
+            countries = [:]
+        }
+
+        // Try to decode urls
+        urls = try container.decodeIfPresent([String: Int].self, forKey: .urls)
+
+        // Try to decode referrers
+        referrers = try container.decodeIfPresent([String: Int].self, forKey: .referrers)
+
+        // Try to decode series
+        series = try container.decodeIfPresent(RealtimeSeries.self, forKey: .series)
+
+        // Try to decode totals
+        totals = try container.decodeIfPresent(RealtimeTotals.self, forKey: .totals)
+
+        // Try to decode pageviews or convert from urls
+        if container.contains(.pageviews) {
+            pageviews = try container.decode([RealtimePageview].self, forKey: .pageviews)
+        } else {
+            // Convert urls to pageviews if available
+            pageviews = []
+            if let urlData = urls {
+                for (url, _) in urlData {
+                    pageviews.append(RealtimePageview(url: url, title: nil, timestamp: timestamp))
+                }
+            }
+        }
+
+        // Try to decode events
+        if container.contains(.events) {
+            events = try container.decode([RealtimeEvent].self, forKey: .events)
+        } else {
+            events = []
+        }
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case websiteId, timestamp, pageviews, sessions, events, countries, urls, referrers, series, totals
+    }
+}
+
+struct RealtimeSeries: Codable {
+    let views: [Int]
+    let visitors: [Int]
+}
+
+struct RealtimeTotals: Codable {
+    let views: Int
+    let visitors: Int
+    let events: Int
+    let countries: Int
 }
 
 struct RealtimePageview: Codable, Identifiable {
