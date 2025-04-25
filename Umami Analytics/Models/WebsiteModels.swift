@@ -50,6 +50,47 @@ struct WebsiteMetrics: Codable {
     let devices: [DeviceMetric]
     let referrers: [ReferrerMetric]
     let pages: [PageMetric]
+
+    // Custom initializer for creating mock data
+    init(pageviews: [PageviewMetric],
+         sessions: [SessionMetric],
+         events: [EventMetric],
+         countries: [CountryMetric],
+         browsers: [BrowserMetric],
+         os: [OSMetric],
+         devices: [DeviceMetric],
+         referrers: [ReferrerMetric],
+         pages: [PageMetric]) {
+        self.pageviews = pageviews
+        self.sessions = sessions
+        self.events = events
+        self.countries = countries
+        self.browsers = browsers
+        self.os = os
+        self.devices = devices
+        self.referrers = referrers
+        self.pages = pages
+    }
+
+    // Custom decoder to handle different API formats
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+
+        // Decode all fields with fallbacks to empty arrays if not present
+        pageviews = try container.decodeIfPresent([PageviewMetric].self, forKey: .pageviews) ?? []
+        sessions = try container.decodeIfPresent([SessionMetric].self, forKey: .sessions) ?? []
+        events = try container.decodeIfPresent([EventMetric].self, forKey: .events) ?? []
+        countries = try container.decodeIfPresent([CountryMetric].self, forKey: .countries) ?? []
+        browsers = try container.decodeIfPresent([BrowserMetric].self, forKey: .browsers) ?? []
+        os = try container.decodeIfPresent([OSMetric].self, forKey: .os) ?? []
+        devices = try container.decodeIfPresent([DeviceMetric].self, forKey: .devices) ?? []
+        referrers = try container.decodeIfPresent([ReferrerMetric].self, forKey: .referrers) ?? []
+        pages = try container.decodeIfPresent([PageMetric].self, forKey: .pages) ?? []
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case pageviews, sessions, events, countries, browsers, os, devices, referrers, pages
+    }
 }
 
 // MARK: - Metric Models
@@ -130,17 +171,71 @@ struct WebsiteListResponse: Codable {
 }
 
 struct WebsiteStatsResponse: Codable {
-    let websiteId: String
+    let websiteId: String?
     let startDate: String
     let endDate: String
     let stats: WebsiteStatsModel
+
+    // Custom initializer for creating mock data
+    init(websiteId: String, startDate: String, endDate: String, stats: WebsiteStatsModel) {
+        self.websiteId = websiteId
+        self.startDate = startDate
+        self.endDate = endDate
+        self.stats = stats
+    }
+
+    // Custom decoder to handle different API formats
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+
+        // Try to decode websiteId, but make it optional
+        websiteId = try container.decodeIfPresent(String.self, forKey: .websiteId)
+
+        // Decode dates
+        startDate = try container.decode(String.self, forKey: .startDate)
+        endDate = try container.decode(String.self, forKey: .endDate)
+
+        // Decode stats
+        stats = try container.decode(WebsiteStatsModel.self, forKey: .stats)
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case websiteId, startDate, endDate, stats
+    }
 }
 
 struct WebsiteMetricsResponse: Codable {
-    let websiteId: String
+    let websiteId: String?
     let startDate: String
     let endDate: String
     let metrics: WebsiteMetrics
+
+    // Custom initializer for creating mock data
+    init(websiteId: String, startDate: String, endDate: String, metrics: WebsiteMetrics) {
+        self.websiteId = websiteId
+        self.startDate = startDate
+        self.endDate = endDate
+        self.metrics = metrics
+    }
+
+    // Custom decoder to handle different API formats
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+
+        // Try to decode websiteId, but make it optional
+        websiteId = try container.decodeIfPresent(String.self, forKey: .websiteId)
+
+        // Decode dates
+        startDate = try container.decode(String.self, forKey: .startDate)
+        endDate = try container.decode(String.self, forKey: .endDate)
+
+        // Decode metrics
+        metrics = try container.decode(WebsiteMetrics.self, forKey: .metrics)
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case websiteId, startDate, endDate, metrics
+    }
 }
 
 // MARK: - Real-time Data Models

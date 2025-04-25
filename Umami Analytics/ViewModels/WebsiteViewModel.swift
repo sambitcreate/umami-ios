@@ -166,7 +166,16 @@ class WebsiteViewModel: ObservableObject {
 
                     if case .failure(let error) = completion {
                         if let apiError = error as? APIError {
-                            self?.errorMessage = apiError.message
+                            // Special handling for API version compatibility issues
+                            if case .endpointNotFound = apiError {
+                                self?.errorMessage = "API compatibility issue: The app may need to be updated to work with your Umami server version."
+                                print("⚠️ API compatibility issue detected: \(apiError.message)")
+                            } else if case .apiVersionMismatch = apiError {
+                                self?.errorMessage = apiError.message
+                                print("⚠️ API version mismatch detected")
+                            } else {
+                                self?.errorMessage = apiError.message
+                            }
                         } else {
                             self?.errorMessage = error.localizedDescription
                         }
@@ -185,6 +194,8 @@ class WebsiteViewModel: ObservableObject {
                 },
                 receiveValue: { [weak self] response in
                     self?.websiteStats = response.stats
+                    // Clear any previous error messages on success
+                    self?.errorMessage = nil
                 }
             )
             .store(in: &cancellables)
@@ -197,9 +208,23 @@ class WebsiteViewModel: ObservableObject {
                 receiveCompletion: { [weak self] completion in
                     if case .failure(let error) = completion {
                         if let apiError = error as? APIError {
-                            self?.errorMessage = apiError.message
+                            // Special handling for API version compatibility issues
+                            if case .endpointNotFound = apiError {
+                                // We already show an error for stats, so just log this one
+                                print("⚠️ API compatibility issue detected for metrics: \(apiError.message)")
+                            } else if case .apiVersionMismatch = apiError {
+                                print("⚠️ API version mismatch detected for metrics")
+                            } else {
+                                // Only show error message if it's not already showing from stats
+                                if self?.errorMessage == nil {
+                                    self?.errorMessage = apiError.message
+                                }
+                            }
                         } else {
-                            self?.errorMessage = error.localizedDescription
+                            // Only show error message if it's not already showing from stats
+                            if self?.errorMessage == nil {
+                                self?.errorMessage = error.localizedDescription
+                            }
                         }
                     }
                 },

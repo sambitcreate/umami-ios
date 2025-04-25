@@ -92,7 +92,8 @@ class DebugManager {
             ))
         }
 
-        return WebsiteMetrics(
+        // Create a mock WebsiteMetrics using a custom initializer for debug purposes
+        let mockMetrics = WebsiteMetrics(
             pageviews: pageviews,
             sessions: sessions,
             events: [
@@ -141,6 +142,8 @@ class DebugManager {
                 PageMetric(url: "/contact", title: "Contact", value: Int.random(in: 200...700))
             ]
         )
+
+        return mockMetrics
     }
 
     func getMockRealtimeData() -> RealtimeData {

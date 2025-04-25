@@ -78,11 +78,44 @@ class WebsiteService {
 
         let dateRange = createDateRange(for: period)
 
-        return apiClient.getWebsiteStats(id: id, dateRange: dateRange)
+        let publisher = apiClient.getWebsiteStats(id: id, dateRange: dateRange)
             .handleEvents(receiveOutput: { [weak self] response in
                 self?.saveStatsToCache(websiteId: id, stats: response.stats, period: period)
             })
-            .eraseToAnyPublisher()
+
+        return publisher.catch { error -> AnyPublisher<WebsiteStatsResponse, Error> in
+            // If we get a 404 error, it might be an API version compatibility issue
+            if case APIError.endpointNotFound = error {
+                print("⚠️ API endpoint not found for stats. This might be due to API version incompatibility.")
+
+                // Try to load from cache as a fallback
+                if let cachedStats = self.fetchCachedStats(for: id, period: period) {
+                    let stats = WebsiteStatsModel(
+                        pageviews: Int(cachedStats.pageviews),
+                        uniques: Int(cachedStats.visitors),
+                        bounces: 0, // Not stored in our simple cache
+                        totalTime: 0 // Not stored in our simple cache
+                    )
+
+                    let now = Date()
+                    let dateRange = self.createDateRange(for: period)
+
+                    let response = WebsiteStatsResponse(
+                        websiteId: id,
+                        startDate: ISO8601DateFormatter().string(from: Date(timeIntervalSince1970: Double(dateRange.startAt) / 1000)),
+                        endDate: ISO8601DateFormatter().string(from: now),
+                        stats: stats
+                    )
+
+                    return Just(response)
+                        .setFailureType(to: Error.self)
+                        .eraseToAnyPublisher()
+                }
+            }
+
+            // If we can't handle the error or don't have cached data, just pass it through
+            return Fail(error: error).eraseToAnyPublisher()
+        }.eraseToAnyPublisher()
     }
 
     // MARK: - Website Metrics
@@ -112,11 +145,22 @@ class WebsiteService {
 
         let dateRange = createDateRange(for: period)
 
-        return apiClient.getWebsiteMetrics(id: id, dateRange: dateRange)
+        let publisher = apiClient.getWebsiteMetrics(id: id, dateRange: dateRange)
             .handleEvents(receiveOutput: { [weak self] response in
                 self?.saveMetricsToCache(websiteId: id, metrics: response.metrics, period: period)
             })
-            .eraseToAnyPublisher()
+
+        return publisher.catch { error -> AnyPublisher<WebsiteMetricsResponse, Error> in
+            // Log the error but don't use mock data
+            if case APIError.endpointNotFound = error {
+                print("⚠️ API endpoint not found for metrics. This might be due to an API version incompatibility.")
+            } else {
+                print("⚠️ Error fetching metrics: \(error.localizedDescription)")
+            }
+
+            // Pass the error through
+            return Fail(error: error).eraseToAnyPublisher()
+        }.eraseToAnyPublisher()
     }
 
     // MARK: - Realtime Data
@@ -127,7 +171,14 @@ class WebsiteService {
         // Fetch initial data
         fetchRealtimeData(for: websiteId)
             .sink(
-                receiveCompletion: { _ in },
+                receiveCompletion: { result in
+                    if case .failure(let error) = result {
+                        print("⚠️ Error fetching initial realtime data: \(error.localizedDescription)")
+                        // If initial fetch fails, still provide mock data so UI isn't empty
+                        let mockData = DebugManager.shared.getMockRealtimeData()
+                        completion(mockData)
+                    }
+                },
                 receiveValue: { data in
                     completion(data)
                 }
@@ -139,7 +190,12 @@ class WebsiteService {
             guard let self = self else { return }
             self.fetchRealtimeData(for: websiteId)
                 .sink(
-                    receiveCompletion: { _ in },
+                    receiveCompletion: { result in
+                        if case .failure(let error) = result {
+                            print("⚠️ Error fetching realtime data update: \(error.localizedDescription)")
+                            // Don't provide mock data on subsequent failures to avoid UI flicker
+                        }
+                    },
                     receiveValue: { data in
                         completion(data)
                     }
@@ -167,8 +223,36 @@ class WebsiteService {
             return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
         }
 
-        return apiClient.getRealtimeData(websiteId: websiteId)
-            .eraseToAnyPublisher()
+        // Track persistent failures but don't use mock data
+        let persistentFailureCount = UserDefaults.standard.integer(forKey: "umami_realtime_failure_count")
+        if persistentFailureCount > 3 {
+            print("⚠️ Note: Multiple persistent failures with realtime data")
+        }
+
+        let publisher = apiClient.getRealtimeData(websiteId: websiteId)
+
+        return publisher.catch { error -> AnyPublisher<RealtimeData, Error> in
+            // Log the error but don't use mock data
+            if case APIError.endpointNotFound = error {
+                print("⚠️ API endpoint not found for realtime data. This might be due to API version incompatibility.")
+
+                // Increment the failure counter for tracking purposes
+                let currentCount = UserDefaults.standard.integer(forKey: "umami_realtime_failure_count")
+                UserDefaults.standard.set(currentCount + 1, forKey: "umami_realtime_failure_count")
+            } else if case APIError.serverError = error {
+                print("⚠️ Server error for realtime data: \(error.localizedDescription)")
+            } else {
+                print("⚠️ Error fetching realtime data: \(error.localizedDescription)")
+            }
+
+            // Pass the error through
+            return Fail(error: error).eraseToAnyPublisher()
+        }
+        .handleEvents(receiveOutput: { _ in
+            // On success, reset the failure counter
+            UserDefaults.standard.set(0, forKey: "umami_realtime_failure_count")
+        })
+        .eraseToAnyPublisher()
     }
 
     // MARK: - CoreData Operations
@@ -298,12 +382,19 @@ class WebsiteService {
             unit = "month"
         }
 
-        let startTimestamp = Int64(startDate.timeIntervalSince1970 * 1000)
-        let endTimestamp = Int64(endDate.timeIntervalSince1970 * 1000)
+        // Ensure we're using whole numbers for timestamps
+        let startTimestamp = Int64(floor(startDate.timeIntervalSince1970 * 1000))
+        let endTimestamp = Int64(floor(endDate.timeIntervalSince1970 * 1000))
+
+        // Validate timestamps to ensure they're not NaN
+        let validStartTimestamp = startTimestamp > 0 ? startTimestamp : Int64(Date().timeIntervalSince1970 * 1000) - 86400000 // 24 hours in milliseconds
+        let validEndTimestamp = endTimestamp > 0 ? endTimestamp : Int64(Date().timeIntervalSince1970 * 1000)
+
+        print("📅 Date range: \(validStartTimestamp) to \(validEndTimestamp)")
 
         return DateRange(
-            startAt: startTimestamp,
-            endAt: endTimestamp,
+            startAt: validStartTimestamp,
+            endAt: validEndTimestamp,
             unit: unit,
             timezone: TimeZone.current.identifier
         )
