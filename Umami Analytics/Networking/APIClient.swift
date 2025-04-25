@@ -177,6 +177,46 @@ class APIClient {
             .eraseToAnyPublisher()
     }
 
+    // Helper method to extract website ID from URL path
+    private func extractWebsiteId(from path: String) -> String? {
+        // Common path formats:
+        // /api/websites/{id}/realtime
+        // /api/website/{id}/realtime
+        // /api/realtime/{id}
+        // /api/v1/websites/{id}/realtime
+        // /api/v1/website/{id}/realtime
+
+        let pathComponents = path.split(separator: "/")
+
+        // For /api/realtime/{id} format
+        if pathComponents.count >= 3 && pathComponents[1] == "api" && pathComponents[2] == "realtime" {
+            if pathComponents.count >= 4 {
+                return String(pathComponents[3])
+            }
+        }
+
+        // For other formats like /api/websites/{id}/realtime or /api/website/{id}/realtime
+        if pathComponents.count >= 4 && pathComponents[1] == "api" {
+            if pathComponents[2] == "websites" || pathComponents[2] == "website" {
+                if pathComponents.count >= 5 {
+                    return String(pathComponents[3])
+                }
+            }
+
+            // For /api/v1/websites/{id}/realtime or /api/v1/website/{id}/realtime
+            if pathComponents[2] == "v1" && pathComponents.count >= 5 {
+                if pathComponents[3] == "websites" || pathComponents[3] == "website" {
+                    if pathComponents.count >= 6 {
+                        return String(pathComponents[4])
+                    }
+                }
+            }
+        }
+
+        print("⚠️ Could not extract website ID from path: \(path)")
+        return nil
+    }
+
     // Special decoder for RealtimeData to handle different API formats
     private func decodeRealtimeData(data: Data, request: URLRequest) -> AnyPublisher<RealtimeData, Error> {
         // First try standard decoding
@@ -865,6 +905,12 @@ class APIClient {
         let v1Request = self.createRequest(path: v1Path, method: "GET")
 
         return self.performRequest(request: v1Request)
+            .handleEvents(receiveOutput: { _ in
+                // Store the successful format for future use
+                print("✅ Found working endpoint: singular_realtime")
+                UserDefaults.standard.set("singular_realtime", forKey: "umami_realtime_format")
+                UserDefaults.standard.set(0, forKey: "umami_realtime_failure_count")
+            })
             .catch { _ -> AnyPublisher<RealtimeData, Error> in
                 // 2. Try alternative format: /api/realtime/{id}
                 let altPath = "/api/realtime/\(websiteId)"
@@ -872,6 +918,12 @@ class APIClient {
                 let altRequest = self.createRequest(path: altPath, method: "GET")
 
                 return self.performRequest(request: altRequest)
+                    .handleEvents(receiveOutput: { _ in
+                        // Store the successful format for future use
+                        print("✅ Found working endpoint: alt_realtime")
+                        UserDefaults.standard.set("alt_realtime", forKey: "umami_realtime_format")
+                        UserDefaults.standard.set(0, forKey: "umami_realtime_failure_count")
+                    })
                     .catch { _ -> AnyPublisher<RealtimeData, Error> in
                         // 3. Try another common format: /api/v1/websites/{id}/realtime
                         let v1ApiPath = "/api/v1/websites/\(websiteId)/realtime"
@@ -879,6 +931,12 @@ class APIClient {
                         let v1ApiRequest = self.createRequest(path: v1ApiPath, method: "GET")
 
                         return self.performRequest(request: v1ApiRequest)
+                            .handleEvents(receiveOutput: { _ in
+                                // Store the successful format for future use
+                                print("✅ Found working endpoint: v1_plural_realtime")
+                                UserDefaults.standard.set("v1_plural_realtime", forKey: "umami_realtime_format")
+                                UserDefaults.standard.set(0, forKey: "umami_realtime_failure_count")
+                            })
                             .catch { _ -> AnyPublisher<RealtimeData, Error> in
                                 // 4. Try one more format: /api/v1/website/{id}/realtime
                                 let v1ApiSingularPath = "/api/v1/website/\(websiteId)/realtime"
@@ -886,6 +944,12 @@ class APIClient {
                                 let v1ApiSingularRequest = self.createRequest(path: v1ApiSingularPath, method: "GET")
 
                                 return self.performRequest(request: v1ApiSingularRequest)
+                                    .handleEvents(receiveOutput: { _ in
+                                        // Store the successful format for future use
+                                        print("✅ Found working endpoint: v1_singular_realtime")
+                                        UserDefaults.standard.set("v1_singular_realtime", forKey: "umami_realtime_format")
+                                        UserDefaults.standard.set(0, forKey: "umami_realtime_failure_count")
+                                    })
                                     .catch { error -> AnyPublisher<RealtimeData, Error> in
                                         // If all else fails, pass the error through
                                         print("⚠️ All realtime endpoints failed: \(error.localizedDescription)")
@@ -920,14 +984,32 @@ class APIClient {
         // Choose the appropriate endpoint format based on what we know
         let path: String
 
-        if realtimeFormat == "alt_realtime" {
-            path = "/api/realtime/\(websiteId)"
-            print("📊 Using alternative realtime endpoint: \(path)")
-        } else if realtimeFormat == "singular_realtime" || apiVersion == .v1 {
+        if let format = realtimeFormat {
+            // Use the stored format that we know works
+            switch format {
+            case "alt_realtime":
+                path = "/api/realtime/\(websiteId)"
+                print("📊 Using cached alternative realtime endpoint: \(path)")
+            case "singular_realtime":
+                path = "/api/website/\(websiteId)/realtime"
+                print("📊 Using cached singular realtime endpoint: \(path)")
+            case "v1_plural_realtime":
+                path = "/api/v1/websites/\(websiteId)/realtime"
+                print("📊 Using cached v1 plural realtime endpoint: \(path)")
+            case "v1_singular_realtime":
+                path = "/api/v1/website/\(websiteId)/realtime"
+                print("📊 Using cached v1 singular realtime endpoint: \(path)")
+            default:
+                // Default to the standard v2 format
+                path = "/api/websites/\(websiteId)/realtime"
+                print("📊 Using standard realtime endpoint: \(path)")
+            }
+        } else if apiVersion == .v1 {
+            // If we know it's v1 API but don't have a specific format yet
             path = "/api/website/\(websiteId)/realtime"
-            print("📊 Using singular realtime endpoint: \(path)")
+            print("📊 Using v1 singular realtime endpoint based on API version: \(path)")
         } else {
-            // Default to the standard v2 format
+            // Default to the standard v2 format if we don't know yet
             path = "/api/websites/\(websiteId)/realtime"
             print("📊 Using standard realtime endpoint: \(path)")
         }
@@ -936,9 +1018,11 @@ class APIClient {
 
         return performRequest(request: request)
             .catch { error -> AnyPublisher<RealtimeData, Error> in
-                // If we get a 404 error, try alternative endpoints
+                // If we get a 404 error or server error, try alternative endpoints
                 if case APIError.endpointNotFound = error {
                     print("⚠️ Primary realtime endpoint failed (404), trying alternatives")
+                    // Clear the stored format since it's not working
+                    UserDefaults.standard.removeObject(forKey: "umami_realtime_format")
                     return self.tryAlternativeRealtimeEndpoints(websiteId: websiteId)
                 } else if case APIError.serverError = error {
                     print("⚠️ Primary realtime endpoint failed (server error), trying alternatives")
@@ -951,13 +1035,24 @@ class APIClient {
                 // On success, reset the failure counter
                 UserDefaults.standard.set(0, forKey: "umami_realtime_failure_count")
 
-                // Store the successful format for future use
-                if path.contains("/api/websites/") {
-                    UserDefaults.standard.set("standard", forKey: "umami_realtime_format")
-                } else if path.contains("/api/website/") {
-                    UserDefaults.standard.set("singular_realtime", forKey: "umami_realtime_format")
-                } else if path.contains("/api/realtime/") {
-                    UserDefaults.standard.set("alt_realtime", forKey: "umami_realtime_format")
+                // If we don't have a stored format yet, store this successful one
+                if realtimeFormat == nil {
+                    if path.contains("/api/websites/") {
+                        UserDefaults.standard.set("standard", forKey: "umami_realtime_format")
+                        print("✅ Caching successful endpoint format: standard")
+                    } else if path.contains("/api/website/") {
+                        UserDefaults.standard.set("singular_realtime", forKey: "umami_realtime_format")
+                        print("✅ Caching successful endpoint format: singular_realtime")
+                    } else if path.contains("/api/realtime/") {
+                        UserDefaults.standard.set("alt_realtime", forKey: "umami_realtime_format")
+                        print("✅ Caching successful endpoint format: alt_realtime")
+                    } else if path.contains("/api/v1/websites/") {
+                        UserDefaults.standard.set("v1_plural_realtime", forKey: "umami_realtime_format")
+                        print("✅ Caching successful endpoint format: v1_plural_realtime")
+                    } else if path.contains("/api/v1/website/") {
+                        UserDefaults.standard.set("v1_singular_realtime", forKey: "umami_realtime_format")
+                        print("✅ Caching successful endpoint format: v1_singular_realtime")
+                    }
                 }
             })
             .eraseToAnyPublisher()
