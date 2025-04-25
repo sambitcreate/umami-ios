@@ -475,16 +475,7 @@ class APIClient {
         return nil
     }
 
-    private func extractWebsiteId(from path: String) -> String? {
-        // Extract website ID from paths like "/api/websites/{id}/stats"
-        let components = path.split(separator: "/")
-        for (index, component) in components.enumerated() {
-            if component == "websites" || component == "website", index + 1 < components.count {
-                return String(components[index + 1])
-            }
-        }
-        return nil
-    }
+    // This method has been replaced by the more comprehensive version above
 
     // MARK: - Authentication
 
