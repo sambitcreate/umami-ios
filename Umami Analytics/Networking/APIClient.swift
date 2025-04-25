@@ -624,12 +624,62 @@ class APIClient {
 
         print("📊 Metrics request with dates: start=\(startAtStr), end=\(endAtStr), unit=\(dateRange.unit)")
 
-        var components = URLComponents(string: "/api/websites/\(id)/metrics")
-        components?.queryItems = [
-            URLQueryItem(name: "startAt", value: startAtStr),
-            URLQueryItem(name: "endAt", value: endAtStr),
-            URLQueryItem(name: "unit", value: dateRange.unit)
-        ]
+        // Check if we've already determined the metrics endpoint format
+        let metricsFormat = UserDefaults.standard.string(forKey: "umami_metrics_format")
+
+        // Choose the appropriate endpoint format based on what we know
+        let basePath: String
+
+        if let format = metricsFormat {
+            // Use the stored format that we know works
+            switch format {
+            case "singular_metrics":
+                basePath = "/api/website/\(id)/metrics"
+                print("📊 Using cached singular metrics endpoint: \(basePath)")
+            case "alt_metrics":
+                basePath = "/api/metrics/\(id)"
+                print("📊 Using cached alternative metrics endpoint: \(basePath)")
+            case "v1_plural_metrics":
+                basePath = "/api/v1/websites/\(id)/metrics"
+                print("📊 Using cached v1 plural metrics endpoint: \(basePath)")
+            case "v1_singular_metrics":
+                basePath = "/api/v1/website/\(id)/metrics"
+                print("📊 Using cached v1 singular metrics endpoint: \(basePath)")
+            case "snake_case_params":
+                basePath = "/api/websites/\(id)/metrics"
+                print("📊 Using cached metrics endpoint with snake_case params: \(basePath)")
+            default:
+                // Default to the standard v2 format
+                basePath = "/api/websites/\(id)/metrics"
+                print("📊 Using standard metrics endpoint: \(basePath)")
+            }
+        } else if apiVersion == .v1 {
+            // If we know it's v1 API but don't have a specific format yet
+            basePath = "/api/website/\(id)/metrics"
+            print("📊 Using v1 singular metrics endpoint based on API version: \(basePath)")
+        } else {
+            // Default to the standard v2 format if we don't know yet
+            basePath = "/api/websites/\(id)/metrics"
+            print("📊 Using standard metrics endpoint: \(basePath)")
+        }
+
+        // Create URL components with the appropriate query parameters
+        var components = URLComponents(string: basePath)
+
+        // Use snake_case parameter names if that's the format we're using
+        if metricsFormat == "snake_case_params" {
+            components?.queryItems = [
+                URLQueryItem(name: "start_at", value: startAtStr),
+                URLQueryItem(name: "end_at", value: endAtStr),
+                URLQueryItem(name: "unit", value: dateRange.unit)
+            ]
+        } else {
+            components?.queryItems = [
+                URLQueryItem(name: "startAt", value: startAtStr),
+                URLQueryItem(name: "endAt", value: endAtStr),
+                URLQueryItem(name: "unit", value: dateRange.unit)
+            ]
+        }
 
         if let timezone = dateRange.timezone {
             components?.queryItems?.append(URLQueryItem(name: "timezone", value: timezone))
@@ -646,6 +696,8 @@ class APIClient {
                 // If we get a 404 error or other server error, try alternative endpoints
                 if case APIError.endpointNotFound = error {
                     print("⚠️ Primary metrics endpoint failed (404), trying alternatives")
+                    // Clear the stored format since it's not working
+                    UserDefaults.standard.removeObject(forKey: "umami_metrics_format")
                     return self.tryAlternativeMetricsEndpoints(id: id, dateRange: dateRange, startAtStr: startAtStr, endAtStr: endAtStr)
                 } else if case APIError.serverError = error {
                     print("⚠️ Primary metrics endpoint failed (server error), trying alternatives")
@@ -669,6 +721,31 @@ class APIClient {
             .handleEvents(receiveOutput: { _ in
                 // On success, reset the failure counter
                 UserDefaults.standard.set(0, forKey: "umami_metrics_failure_count")
+
+                // If we don't have a stored format yet, store this successful one
+                if metricsFormat == nil {
+                    if path.contains("/api/websites/") {
+                        if path.contains("start_at") {
+                            UserDefaults.standard.set("snake_case_params", forKey: "umami_metrics_format")
+                            print("✅ Caching successful endpoint format: snake_case_params")
+                        } else {
+                            UserDefaults.standard.set("standard", forKey: "umami_metrics_format")
+                            print("✅ Caching successful endpoint format: standard")
+                        }
+                    } else if path.contains("/api/website/") {
+                        UserDefaults.standard.set("singular_metrics", forKey: "umami_metrics_format")
+                        print("✅ Caching successful endpoint format: singular_metrics")
+                    } else if path.contains("/api/metrics/") {
+                        UserDefaults.standard.set("alt_metrics", forKey: "umami_metrics_format")
+                        print("✅ Caching successful endpoint format: alt_metrics")
+                    } else if path.contains("/api/v1/websites/") {
+                        UserDefaults.standard.set("v1_plural_metrics", forKey: "umami_metrics_format")
+                        print("✅ Caching successful endpoint format: v1_plural_metrics")
+                    } else if path.contains("/api/v1/website/") {
+                        UserDefaults.standard.set("v1_singular_metrics", forKey: "umami_metrics_format")
+                        print("✅ Caching successful endpoint format: v1_singular_metrics")
+                    }
+                }
             })
             .eraseToAnyPublisher()
     }
@@ -821,13 +898,19 @@ class APIClient {
         let v1Request = self.createRequest(path: v1FullPath, method: "GET")
 
         return self.performRequest(request: v1Request)
+            .handleEvents(receiveOutput: { _ in
+                // Store the successful format for future use
+                print("✅ Found working endpoint: singular_metrics")
+                UserDefaults.standard.set("singular_metrics", forKey: "umami_metrics_format")
+                UserDefaults.standard.set(0, forKey: "umami_metrics_failure_count")
+            })
             .catch { _ -> AnyPublisher<WebsiteMetricsResponse, Error> in
-                // 2. Try alternative format with different parameter names
-                let altPath = "/api/websites/\(id)/metrics"
+                // 2. Try alternative format: /api/metrics/{id}
+                let altPath = "/api/metrics/\(id)"
                 var altComponents = URLComponents(string: altPath)
                 altComponents?.queryItems = [
-                    URLQueryItem(name: "start_at", value: startAtStr),
-                    URLQueryItem(name: "end_at", value: endAtStr),
+                    URLQueryItem(name: "startAt", value: startAtStr),
+                    URLQueryItem(name: "endAt", value: endAtStr),
                     URLQueryItem(name: "unit", value: dateRange.unit)
                 ]
 
@@ -839,42 +922,114 @@ class APIClient {
                     return Fail(error: APIError.invalidURL).eraseToAnyPublisher()
                 }
 
-                print("🔄 Trying alternative metrics endpoint with snake_case params: \(altFullPath)")
+                print("🔄 Trying alternative metrics endpoint: \(altFullPath)")
                 let altRequest = self.createRequest(path: altFullPath, method: "GET")
 
                 return self.performRequest(request: altRequest)
+                    .handleEvents(receiveOutput: { _ in
+                        // Store the successful format for future use
+                        print("✅ Found working endpoint: alt_metrics")
+                        UserDefaults.standard.set("alt_metrics", forKey: "umami_metrics_format")
+                        UserDefaults.standard.set(0, forKey: "umami_metrics_failure_count")
+                    })
                     .catch { _ -> AnyPublisher<WebsiteMetricsResponse, Error> in
-                        // 3. Try another common format: /api/v1/websites/{id}/metrics
-                        let v1ApiPath = "/api/v1/websites/\(id)/metrics"
-                        var v1ApiComponents = URLComponents(string: v1ApiPath)
-                        v1ApiComponents?.queryItems = [
-                            URLQueryItem(name: "startAt", value: startAtStr),
-                            URLQueryItem(name: "endAt", value: endAtStr),
+                        // 3. Try standard format with snake_case parameter names
+                        let snakeCasePath = "/api/websites/\(id)/metrics"
+                        var snakeCaseComponents = URLComponents(string: snakeCasePath)
+                        snakeCaseComponents?.queryItems = [
+                            URLQueryItem(name: "start_at", value: startAtStr),
+                            URLQueryItem(name: "end_at", value: endAtStr),
                             URLQueryItem(name: "unit", value: dateRange.unit)
                         ]
 
                         if let timezone = dateRange.timezone {
-                            v1ApiComponents?.queryItems?.append(URLQueryItem(name: "timezone", value: timezone))
+                            snakeCaseComponents?.queryItems?.append(URLQueryItem(name: "timezone", value: timezone))
                         }
 
-                        guard let v1ApiFullPath = v1ApiComponents?.string else {
+                        guard let snakeCaseFullPath = snakeCaseComponents?.string else {
                             return Fail(error: APIError.invalidURL).eraseToAnyPublisher()
                         }
 
-                        print("🔄 Trying v1 API metrics endpoint: \(v1ApiFullPath)")
-                        let v1ApiRequest = self.createRequest(path: v1ApiFullPath, method: "GET")
+                        print("🔄 Trying metrics endpoint with snake_case params: \(snakeCaseFullPath)")
+                        let snakeCaseRequest = self.createRequest(path: snakeCaseFullPath, method: "GET")
 
-                        return self.performRequest(request: v1ApiRequest)
-                            .catch { error -> AnyPublisher<WebsiteMetricsResponse, Error> in
-                                // If all else fails, pass the error through
-                                print("⚠️ All metrics endpoints failed: \(error.localizedDescription)")
+                        return self.performRequest(request: snakeCaseRequest)
+                            .handleEvents(receiveOutput: { _ in
+                                // Store the successful format for future use
+                                print("✅ Found working endpoint: snake_case_params")
+                                UserDefaults.standard.set("snake_case_params", forKey: "umami_metrics_format")
+                                UserDefaults.standard.set(0, forKey: "umami_metrics_failure_count")
+                            })
+                            .catch { _ -> AnyPublisher<WebsiteMetricsResponse, Error> in
+                                // 4. Try v1 plural format: /api/v1/websites/{id}/metrics
+                                let v1ApiPath = "/api/v1/websites/\(id)/metrics"
+                                var v1ApiComponents = URLComponents(string: v1ApiPath)
+                                v1ApiComponents?.queryItems = [
+                                    URLQueryItem(name: "startAt", value: startAtStr),
+                                    URLQueryItem(name: "endAt", value: endAtStr),
+                                    URLQueryItem(name: "unit", value: dateRange.unit)
+                                ]
 
-                                // Increment the failure counter for tracking purposes
-                                let currentCount = UserDefaults.standard.integer(forKey: "umami_metrics_failure_count")
-                                UserDefaults.standard.set(currentCount + 1, forKey: "umami_metrics_failure_count")
+                                if let timezone = dateRange.timezone {
+                                    v1ApiComponents?.queryItems?.append(URLQueryItem(name: "timezone", value: timezone))
+                                }
 
-                                // Return the error
-                                return Fail(error: APIError.endpointNotFound("All metrics endpoints failed"))
+                                guard let v1ApiFullPath = v1ApiComponents?.string else {
+                                    return Fail(error: APIError.invalidURL).eraseToAnyPublisher()
+                                }
+
+                                print("🔄 Trying v1 API plural metrics endpoint: \(v1ApiFullPath)")
+                                let v1ApiRequest = self.createRequest(path: v1ApiFullPath, method: "GET")
+
+                                return self.performRequest(request: v1ApiRequest)
+                                    .handleEvents(receiveOutput: { _ in
+                                        // Store the successful format for future use
+                                        print("✅ Found working endpoint: v1_plural_metrics")
+                                        UserDefaults.standard.set("v1_plural_metrics", forKey: "umami_metrics_format")
+                                        UserDefaults.standard.set(0, forKey: "umami_metrics_failure_count")
+                                    })
+                                    .catch { _ -> AnyPublisher<WebsiteMetricsResponse, Error> in
+                                        // 5. Try v1 singular format: /api/v1/website/{id}/metrics
+                                        let v1ApiSingularPath = "/api/v1/website/\(id)/metrics"
+                                        var v1ApiSingularComponents = URLComponents(string: v1ApiSingularPath)
+                                        v1ApiSingularComponents?.queryItems = [
+                                            URLQueryItem(name: "startAt", value: startAtStr),
+                                            URLQueryItem(name: "endAt", value: endAtStr),
+                                            URLQueryItem(name: "unit", value: dateRange.unit)
+                                        ]
+
+                                        if let timezone = dateRange.timezone {
+                                            v1ApiSingularComponents?.queryItems?.append(URLQueryItem(name: "timezone", value: timezone))
+                                        }
+
+                                        guard let v1ApiSingularFullPath = v1ApiSingularComponents?.string else {
+                                            return Fail(error: APIError.invalidURL).eraseToAnyPublisher()
+                                        }
+
+                                        print("🔄 Trying v1 API singular metrics endpoint: \(v1ApiSingularFullPath)")
+                                        let v1ApiSingularRequest = self.createRequest(path: v1ApiSingularFullPath, method: "GET")
+
+                                        return self.performRequest(request: v1ApiSingularRequest)
+                                            .handleEvents(receiveOutput: { _ in
+                                                // Store the successful format for future use
+                                                print("✅ Found working endpoint: v1_singular_metrics")
+                                                UserDefaults.standard.set("v1_singular_metrics", forKey: "umami_metrics_format")
+                                                UserDefaults.standard.set(0, forKey: "umami_metrics_failure_count")
+                                            })
+                                            .catch { error -> AnyPublisher<WebsiteMetricsResponse, Error> in
+                                                // If all else fails, pass the error through
+                                                print("⚠️ All metrics endpoints failed: \(error.localizedDescription)")
+
+                                                // Increment the failure counter for tracking purposes
+                                                let currentCount = UserDefaults.standard.integer(forKey: "umami_metrics_failure_count")
+                                                UserDefaults.standard.set(currentCount + 1, forKey: "umami_metrics_failure_count")
+
+                                                // Return the error
+                                                return Fail(error: APIError.endpointNotFound("All metrics endpoints failed"))
+                                                    .eraseToAnyPublisher()
+                                            }
+                                            .eraseToAnyPublisher()
+                                    }
                                     .eraseToAnyPublisher()
                             }
                             .eraseToAnyPublisher()
