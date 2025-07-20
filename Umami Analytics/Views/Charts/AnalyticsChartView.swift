@@ -80,47 +80,39 @@ struct AnalyticsChartView: View {
     private var chartView: some View {
         Chart {
             ForEach(pageviews) { item in
-                LineMark(
-                    x: .value("Date", formatChartDate(item.date)),
-                    y: .value("Pageviews", item.value)
-                )
-                .foregroundStyle(.blue)
-                .interpolationMethod(.catmullRom)
-
-                AreaMark(
-                    x: .value("Date", formatChartDate(item.date)),
-                    y: .value("Pageviews", item.value)
-                )
-                .foregroundStyle(
-                    .linearGradient(
-                        colors: [.blue.opacity(0.3), .blue.opacity(0.01)],
-                        startPoint: .top,
-                        endPoint: .bottom
+                if let date = parseDate(item.date) {
+                    LineMark(
+                        x: .value("Date", date),
+                        y: .value("Pageviews", item.value)
                     )
-                )
-                .interpolationMethod(.catmullRom)
+                    .foregroundStyle(.blue)
+                    .interpolationMethod(.linear)
+
+                    AreaMark(
+                        x: .value("Date", date),
+                        y: .value("Pageviews", item.value)
+                    )
+                    .foregroundStyle(
+                        .linearGradient(
+                            colors: [.blue.opacity(0.3), .blue.opacity(0.01)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .interpolationMethod(.linear)
+                }
             }
 
             ForEach(visitors) { item in
-                LineMark(
-                    x: .value("Date", formatChartDate(item.date)),
-                    y: .value("Visitors", item.value)
-                )
-                .foregroundStyle(.green)
-                .interpolationMethod(.catmullRom)
-
-                AreaMark(
-                    x: .value("Date", formatChartDate(item.date)),
-                    y: .value("Visitors", item.value)
-                )
-                .foregroundStyle(
-                    .linearGradient(
-                        colors: [.green.opacity(0.3), .green.opacity(0.01)],
-                        startPoint: .top,
-                        endPoint: .bottom
+                if let date = parseDate(item.date) {
+                    LineMark(
+                        x: .value("Date", date),
+                        y: .value("Visitors", item.value)
                     )
-                )
-                .interpolationMethod(.catmullRom)
+                    .foregroundStyle(.green)
+                    .interpolationMethod(.linear)
+                    .lineStyle(StrokeStyle(lineWidth: 2, dash: [5, 5]))
+                }
             }
         }
         .chartXAxis {
@@ -164,32 +156,69 @@ struct AnalyticsChartView: View {
         .frame(height: 200)
     }
 
+    private func parseDate(_ dateString: String) -> Date? {
+        let dateFormatter = DateFormatter()
+        
+        // Try different timestamp formats that Umami might use
+        let formats = [
+            "yyyy-MM-dd'T'HH:mm:ss.SSSZ",
+            "yyyy-MM-dd'T'HH:mm:ssZ",
+            "yyyy-MM-dd'T'HH:mm:ss",
+            "yyyy-MM-dd HH:mm:ss",
+            "yyyy-MM-dd"
+        ]
+        
+        for format in formats {
+            dateFormatter.dateFormat = format
+            if let date = dateFormatter.date(from: dateString) {
+                return date
+            }
+        }
+        
+        // If it's a Unix timestamp (number as string)
+        if let timestamp = Double(dateString) {
+            return Date(timeIntervalSince1970: timestamp / 1000) // Convert from milliseconds
+        }
+        
+        return nil
+    }
+    
     private func formatChartDate(_ dateString: String) -> String {
-        // This is a simplified version - in a real app, you'd parse the date properly
-        // and format it according to the period (hour, day, month, etc.)
-        let components = dateString.split(separator: "T").first ?? ""
-        return String(components)
+        guard let date = parseDate(dateString) else {
+            return dateString
+        }
+        
+        let dateFormatter = DateFormatter()
+        switch period {
+        case .day:
+            dateFormatter.dateFormat = "HH:mm"
+        case .week:
+            dateFormatter.dateFormat = "MMM d"
+        case .month:
+            dateFormatter.dateFormat = "MMM d"
+        case .year:
+            dateFormatter.dateFormat = "MMM yyyy"
+        }
+        
+        return dateFormatter.string(from: date)
     }
 
     private func formatDate(_ dateString: String) -> String {
-        // This is a simplified version - in a real app, you'd parse the date properly
-        // and format it according to the period
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSZ"
-
-        if let date = dateFormatter.date(from: dateString) {
-            switch period {
-            case .day:
-                dateFormatter.dateFormat = "h:mm a"
-            case .week, .month:
-                dateFormatter.dateFormat = "MMM d"
-            case .year:
-                dateFormatter.dateFormat = "MMM yyyy"
-            }
-            return dateFormatter.string(from: date)
+        guard let date = parseDate(dateString) else {
+            return dateString
         }
-
-        return dateString
+        
+        let dateFormatter = DateFormatter()
+        switch period {
+        case .day:
+            dateFormatter.dateFormat = "h:mm a"
+        case .week, .month:
+            dateFormatter.dateFormat = "MMM d"
+        case .year:
+            dateFormatter.dateFormat = "MMM yyyy"
+        }
+        
+        return dateFormatter.string(from: date)
     }
 }
 

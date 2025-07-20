@@ -123,11 +123,13 @@ struct DashboardView: View {
                                 .padding(.horizontal)
 
                             ForEach(viewModel.websites.prefix(3)) { website in
-                                NavigationLink(destination: WebsiteDetailView(viewModel: viewModel)) {
+                                NavigationLink(destination: {
+                                    // Create a new view model instance with the selected website
+                                    let detailViewModel = WebsiteViewModel()
+                                    detailViewModel.selectWebsite(website)
+                                    return WebsiteDetailView(viewModel: detailViewModel)
+                                }()) {
                                     DashboardWebsiteRow(website: website)
-                                        .onTapGesture {
-                                            viewModel.selectWebsite(website)
-                                        }
                                 }
                             }
 
@@ -249,11 +251,13 @@ struct WebsitesView: View {
                 if viewModel.hasWebsites {
                     List {
                         ForEach(viewModel.websites) { website in
-                            NavigationLink(destination: WebsiteDetailView(viewModel: viewModel)) {
+                            NavigationLink(destination: {
+                                // Create a new view model instance with the selected website
+                                let detailViewModel = WebsiteViewModel()
+                                detailViewModel.selectWebsite(website)
+                                return WebsiteDetailView(viewModel: detailViewModel)
+                            }()) {
                                 WebsiteRowView(website: website)
-                            }
-                            .onTapGesture {
-                                viewModel.selectWebsite(website)
                             }
                         }
                     }

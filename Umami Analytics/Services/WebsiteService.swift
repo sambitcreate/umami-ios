@@ -22,10 +22,7 @@ class WebsiteService {
             return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
         }
 
-        return apiClient.getWebsites()
-            .map { response in
-                return response.data
-            }
+        return apiClient.getAllWebsites()
             .handleEvents(receiveOutput: { [weak self] websites in
                 self?.saveWebsitesToCoreData(websites)
             })

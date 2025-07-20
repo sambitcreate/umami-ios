@@ -151,9 +151,61 @@ class APIClient {
 
     // MARK: - Websites
 
-    func getWebsites() -> AnyPublisher<WebsiteListResponse, Error> {
-        let request = createRequest(path: "/api/websites", method: "GET")
+    func getWebsites(page: Int = 1, pageSize: Int = 10) -> AnyPublisher<WebsiteListResponse, Error> {
+        var components = URLComponents(string: "/api/me/websites")
+        components?.queryItems = [
+            URLQueryItem(name: "page", value: "\(page)"),
+            URLQueryItem(name: "pageSize", value: "\(pageSize)")
+        ]
+        
+        let path = components?.url?.absoluteString ?? "/api/me/websites"
+        let request = createRequest(path: path, method: "GET")
         return performRequest(request: request)
+    }
+    
+    func getAllWebsites() -> AnyPublisher<[WebsiteModel], Error> {
+        // Start with first page to get total count
+        return getWebsites(page: 1, pageSize: 50) // Use larger page size to minimize requests
+            .flatMap { firstPageResponse -> AnyPublisher<[WebsiteModel], Error> in
+                let totalCount = firstPageResponse.count
+                let firstPageData = firstPageResponse.data
+                
+                // If all websites fit in first page, return them
+                if firstPageData.count >= totalCount {
+                    return Just(firstPageData)
+                        .setFailureType(to: Error.self)
+                        .eraseToAnyPublisher()
+                }
+                
+                // Calculate how many more pages we need
+                let pageSize = 50
+                let totalPages = (totalCount + pageSize - 1) / pageSize // Ceiling division
+                
+                // Create publishers for remaining pages
+                let remainingPagePublishers = (2...totalPages).map { page in
+                    self.getWebsites(page: page, pageSize: pageSize)
+                        .map { $0.data }
+                }
+                
+                // Combine all pages
+                if remainingPagePublishers.isEmpty {
+                    return Just(firstPageData)
+                        .setFailureType(to: Error.self)
+                        .eraseToAnyPublisher()
+                } else {
+                    return Publishers.MergeMany(remainingPagePublishers)
+                        .collect()
+                        .map { additionalPages in
+                            var allWebsites = firstPageData
+                            for pageData in additionalPages {
+                                allWebsites.append(contentsOf: pageData)
+                            }
+                            return allWebsites
+                        }
+                        .eraseToAnyPublisher()
+                }
+            }
+            .eraseToAnyPublisher()
     }
 
     func getWebsite(id: String) -> AnyPublisher<WebsiteModel, Error> {

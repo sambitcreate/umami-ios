@@ -108,10 +108,6 @@ struct WebsiteDetailView: View {
     private var websiteHeader: some View {
         VStack(alignment: .leading, spacing: 8) {
             if let website = viewModel.selectedWebsite {
-                Text(website.name)
-                    .font(.title)
-                    .fontWeight(.bold)
-
                 Text(website.domain)
                     .font(.subheadline)
                     .foregroundColor(.secondary)
