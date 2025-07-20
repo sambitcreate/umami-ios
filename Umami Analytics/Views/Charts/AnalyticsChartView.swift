@@ -8,20 +8,54 @@
 import SwiftUI
 import Charts
 
+enum ChartType: String, CaseIterable {
+    case pageviews = "Pageviews"
+    case visitors = "Visitors"
+}
+
 struct AnalyticsChartView: View {
     var pageviews: [PageviewMetric]
     var visitors: [SessionMetric]
     var period: StatsPeriod
 
-    @State private var selectedDataPoint: (date: String, pageviews: Int, visitors: Int)?
+    @State private var selectedChartType: ChartType = .pageviews
+    @State private var selectedDataPoint: (date: String, value: Int)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text(period.displayName)
                 .font(.headline)
                 .foregroundColor(.primary)
+            
+            // Chart type selector tabs
+            HStack(spacing: 4) {
+                ForEach(ChartType.allCases, id: \.self) { chartType in
+                    Button(action: {
+                        selectedChartType = chartType
+                        updateSelectedDataPoint()
+                    }) {
+                        Text(chartType.rawValue)
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                            .foregroundColor(selectedChartType == chartType ? .white : .secondary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .background(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(selectedChartType == chartType ? Color.blue : Color.clear)
+                            )
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                }
+            }
+            .padding(.horizontal, 4)
+            .padding(.vertical, 4)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(Color(UIColor.secondarySystemBackground))
+            )
 
-            if pageviews.isEmpty || visitors.isEmpty {
+            if (selectedChartType == .pageviews && pageviews.isEmpty) || (selectedChartType == .visitors && visitors.isEmpty) {
                 ChartPlaceholderView()
             } else {
                 chartView
@@ -40,23 +74,13 @@ struct AnalyticsChartView: View {
                         Spacer()
 
                         VStack(alignment: .trailing) {
-                            Text("Pageviews")
+                            Text(selectedChartType.rawValue)
                                 .font(.caption)
                                 .foregroundColor(.secondary)
-                            Text("\(dataPoint.pageviews)")
+                            Text("\(dataPoint.value)")
                                 .font(.subheadline)
                                 .fontWeight(.medium)
-                                .foregroundColor(.blue)
-                        }
-
-                        VStack(alignment: .trailing) {
-                            Text("Visitors")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            Text("\(dataPoint.visitors)")
-                                .font(.subheadline)
-                                .fontWeight(.medium)
-                                .foregroundColor(.orange)
+                                .foregroundColor(selectedChartType == .pageviews ? .blue : .orange)
                         }
                     }
                     .padding(.horizontal, 8)
@@ -71,47 +95,45 @@ struct AnalyticsChartView: View {
         .cornerRadius(12)
         .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
         .onAppear {
-            if let lastPageview = pageviews.last, let lastVisitor = visitors.last {
-                selectedDataPoint = (lastPageview.date, lastPageview.value, lastVisitor.value)
-            }
+            updateSelectedDataPoint()
         }
     }
 
     private var chartView: some View {
         Chart {
-            ForEach(pageviews) { item in
-                if let date = parseDate(item.date) {
-                    LineMark(
-                        x: .value("Date", date),
-                        y: .value("Pageviews", item.value)
-                    )
-                    .foregroundStyle(.blue)
-                    .interpolationMethod(.linear)
-
-                    AreaMark(
-                        x: .value("Date", date),
-                        y: .value("Pageviews", item.value)
-                    )
-                    .foregroundStyle(
-                        .linearGradient(
-                            colors: [.blue.opacity(0.3), .blue.opacity(0.01)],
-                            startPoint: .top,
-                            endPoint: .bottom
+            if selectedChartType == .pageviews {
+                ForEach(pageviews) { item in
+                    if let date = parseDate(item.date) {
+                        BarMark(
+                            x: .value("Date", date),
+                            y: .value("Pageviews", item.value)
                         )
-                    )
-                    .interpolationMethod(.linear)
+                        .foregroundStyle(
+                            .linearGradient(
+                                colors: [.blue, .blue.opacity(0.7)],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                        .cornerRadius(4)
+                    }
                 }
-            }
-
-            ForEach(visitors) { item in
-                if let date = parseDate(item.date) {
-                    LineMark(
-                        x: .value("Date", date),
-                        y: .value("Visitors", item.value)
-                    )
-                    .foregroundStyle(.orange)
-                    .interpolationMethod(.linear)
-                    .lineStyle(StrokeStyle(lineWidth: 2, dash: [5, 5]))
+            } else {
+                ForEach(visitors) { item in
+                    if let date = parseDate(item.date) {
+                        BarMark(
+                            x: .value("Date", date),
+                            y: .value("Visitors", item.value)
+                        )
+                        .foregroundStyle(
+                            .linearGradient(
+                                colors: [.orange, .orange.opacity(0.7)],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                        .cornerRadius(4)
+                    }
                 }
             }
         }
@@ -141,13 +163,16 @@ struct AnalyticsChartView: View {
 
                                 guard let date = proxy.value(atX: xPosition, as: String.self) else { return }
 
-                                if let pageviewIndex = pageviews.firstIndex(where: { formatChartDate($0.date) == date }),
-                                   let visitorIndex = visitors.firstIndex(where: { formatChartDate($0.date) == date }) {
-
-                                    let pageview = pageviews[pageviewIndex]
-                                    let visitor = visitors[visitorIndex]
-
-                                    selectedDataPoint = (pageview.date, pageview.value, visitor.value)
+                                if selectedChartType == .pageviews {
+                                    if let pageviewIndex = pageviews.firstIndex(where: { formatChartDate($0.date) == date }) {
+                                        let pageview = pageviews[pageviewIndex]
+                                        selectedDataPoint = (pageview.date, pageview.value)
+                                    }
+                                } else {
+                                    if let visitorIndex = visitors.firstIndex(where: { formatChartDate($0.date) == date }) {
+                                        let visitor = visitors[visitorIndex]
+                                        selectedDataPoint = (visitor.date, visitor.value)
+                                    }
                                 }
                             }
                     )
@@ -156,6 +181,18 @@ struct AnalyticsChartView: View {
         .frame(height: 200)
     }
 
+    private func updateSelectedDataPoint() {
+        if selectedChartType == .pageviews {
+            if let lastPageview = pageviews.last {
+                selectedDataPoint = (lastPageview.date, lastPageview.value)
+            }
+        } else {
+            if let lastVisitor = visitors.last {
+                selectedDataPoint = (lastVisitor.date, lastVisitor.value)
+            }
+        }
+    }
+    
     private func parseDate(_ dateString: String) -> Date? {
         let dateFormatter = DateFormatter()
         
