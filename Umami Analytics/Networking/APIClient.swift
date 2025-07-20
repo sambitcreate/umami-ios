@@ -45,7 +45,15 @@ class APIClient {
     // MARK: - Helper Methods
 
     private func createRequest(path: String, method: String, body: Encodable? = nil) -> URLRequest {
-        let apiURL = baseURL.appendingPathComponent(path)
+        // Handle URLs with query parameters correctly
+        let apiURL: URL
+        if path.contains("?") {
+            // Path contains query parameters, construct URL directly
+            apiURL = URL(string: path, relativeTo: baseURL) ?? baseURL.appendingPathComponent(path)
+        } else {
+            // Path is just a path component, use appendingPathComponent
+            apiURL = baseURL.appendingPathComponent(path)
+        }
 
         var request = URLRequest(url: apiURL)
         request.httpMethod = method
@@ -67,10 +75,22 @@ class APIClient {
     }
 
     private func performRequest<T: Decodable>(request: URLRequest) -> AnyPublisher<T, Error> {
+        // Debug: Print request details
+        print("🌐 API Request: \(request.httpMethod ?? "GET") \(request.url?.absoluteString ?? "unknown")")
+        if let headers = request.allHTTPHeaderFields {
+            print("🔑 Headers: \(headers)")
+        }
+        
         return URLSession.shared.dataTaskPublisher(for: request)
             .tryMap { data, response in
                 guard let httpResponse = response as? HTTPURLResponse else {
                     throw APIError.unknown
+                }
+                
+                // Debug: Print response details
+                print("📡 Response Status: \(httpResponse.statusCode) for \(request.url?.absoluteString ?? "unknown")")
+                if let responseString = String(data: data, encoding: .utf8) {
+                    print("📄 Response Body: \(responseString)")
                 }
 
                 if httpResponse.statusCode == 401 {
@@ -207,8 +227,8 @@ class APIClient {
         return performRequest(request: request)
     }
 
-    func getRealtimeData(websiteId: String) -> AnyPublisher<RealtimeData, Error> {
-        let request = createRequest(path: "/api/websites/\(websiteId)/realtime", method: "GET")
+    func getActiveUsers(websiteId: String) -> AnyPublisher<ActiveUsersResponse, Error> {
+        let request = createRequest(path: "/api/websites/\(websiteId)/active", method: "GET")
         return performRequest(request: request)
     }
 }

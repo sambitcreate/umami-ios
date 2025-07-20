@@ -24,7 +24,7 @@ class WebsiteViewModel: ObservableObject {
     @Published var websiteMetrics: WebsiteMetricsResponse?
     @Published var pageviewsData: PageviewsResponse?
     @Published var activeUsers: ActiveUsersResponse?
-    @Published var realtimeData: RealtimeData?
+    @Published var activeUsersCount: Int = 0
 
     // Computed properties for UI
     var hasWebsites: Bool {
@@ -242,9 +242,9 @@ class WebsiteViewModel: ObservableObject {
     // MARK: - Realtime Updates
 
     private func startRealtimeUpdates(websiteId: String) {
-        WebsiteService.shared.startRealtimeUpdates(for: websiteId) { [weak self] data in
+        WebsiteService.shared.startRealtimeUpdates(for: websiteId) { [weak self] count in
             DispatchQueue.main.async {
-                self?.realtimeData = data
+                self?.activeUsersCount = count
             }
         }
     }

@@ -101,11 +101,11 @@ class WebsiteService {
 
     // MARK: - Realtime Data
 
-    func startRealtimeUpdates(for websiteId: String, interval: TimeInterval = 5.0, completion: @escaping (RealtimeData) -> Void) {
+    func startRealtimeUpdates(for websiteId: String, interval: TimeInterval = 5.0, completion: @escaping (Int) -> Void) {
         stopRealtimeUpdates(for: websiteId)
 
         // Fetch initial data
-        fetchRealtimeData(for: websiteId)
+        fetchActiveUsers(for: websiteId)
             .sink(
                 receiveCompletion: { _ in },
                 receiveValue: { data in
@@ -117,7 +117,7 @@ class WebsiteService {
         // Set up timer for periodic updates
         let timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
             guard let self = self else { return }
-            self.fetchRealtimeData(for: websiteId)
+            self.fetchActiveUsers(for: websiteId)
                 .sink(
                     receiveCompletion: { _ in },
                     receiveValue: { data in
@@ -135,12 +135,13 @@ class WebsiteService {
         realtimeTimers.removeValue(forKey: websiteId)
     }
 
-    private func fetchRealtimeData(for websiteId: String) -> AnyPublisher<RealtimeData, Error> {
+    private func fetchActiveUsers(for websiteId: String) -> AnyPublisher<Int, Error> {
         guard let apiClient = AuthManager.shared.apiClient else {
             return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
         }
 
-        return apiClient.getRealtimeData(websiteId: websiteId)
+        return apiClient.getActiveUsers(websiteId: websiteId)
+            .map { response in response.visitors }
             .eraseToAnyPublisher()
     }
 

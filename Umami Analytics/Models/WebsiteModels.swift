@@ -178,7 +178,7 @@ struct TimeSeriesData: Codable, Identifiable {
 
 // Active users endpoint response
 struct ActiveUsersResponse: Codable {
-    let x: Int  // Number of active users
+    let visitors: Int  // Number of active users
 }
 
 // MARK: - Real-time Data Models

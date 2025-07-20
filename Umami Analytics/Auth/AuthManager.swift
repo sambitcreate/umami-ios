@@ -73,7 +73,25 @@ class AuthManager {
                         self.isAuthenticated = true
                         self.serverURL = finalURL
 
-                        completion(.success(response.user))
+                        // Verify the token works by calling verify endpoint
+                        client.verifyToken()
+                            .sink(
+                                receiveCompletion: { verifyResult in
+                                    switch verifyResult {
+                                    case .failure(let error):
+                                        print("⚠️ Token verification failed: \(error)")
+                                        // Still complete successfully since login worked
+                                        completion(.success(response.user))
+                                    case .finished:
+                                        print("✅ Token verification successful")
+                                        completion(.success(response.user))
+                                    }
+                                },
+                                receiveValue: { verifiedUser in
+                                    print("✅ Token verified for user: \(verifiedUser.username)")
+                                }
+                            )
+                            .store(in: &self.cancellables)
                     }
                 )
                 .store(in: &cancellables)

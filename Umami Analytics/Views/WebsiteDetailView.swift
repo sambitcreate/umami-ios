@@ -68,9 +68,9 @@ struct WebsiteDetailView: View {
                 }
                 */
 
-                // Realtime visitors
-                if let realtimeData = viewModel.realtimeData {
-                    realtimeSection(realtimeData)
+                // Active visitors
+                if viewModel.activeUsersCount > 0 {
+                    activeUsersSection(viewModel.activeUsersCount)
                 }
 
                 Spacer(minLength: 40)
@@ -335,15 +335,15 @@ struct WebsiteDetailView: View {
         }
     }
 
-    private func realtimeSection(_ realtimeData: RealtimeData) -> some View {
+    private func activeUsersSection(_ activeCount: Int) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("Realtime")
+                Text("Active Visitors")
                     .font(.headline)
 
                 Spacer()
 
-                Text("\(realtimeData.sessions) active visitors")
+                Text("\(activeCount) online now")
                     .font(.subheadline)
                     .foregroundColor(.green)
                     .padding(.horizontal, 10)
@@ -352,46 +352,11 @@ struct WebsiteDetailView: View {
                     .cornerRadius(20)
             }
             .padding(.horizontal)
-
-            if !realtimeData.pageviews.isEmpty {
-                VStack(spacing: 0) {
-                    ForEach(realtimeData.pageviews.prefix(3)) { pageview in
-                        HStack {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(pageview.title ?? "Unknown Page")
-                                    .font(.subheadline)
-                                    .lineLimit(1)
-
-                                Text(pageview.url)
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                                    .lineLimit(1)
-                            }
-
-                            Spacer()
-
-                            Text(formatTimestamp(pageview.timestamp))
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                        .padding()
-                        .background(Color(UIColor.systemBackground))
-
-                        if pageview.id != realtimeData.pageviews.prefix(3).last?.id {
-                            Divider()
-                        }
-                    }
-                }
-                .background(Color(UIColor.secondarySystemBackground))
-                .cornerRadius(10)
+            
+            Text("Real-time visitor count")
+                .font(.caption)
+                .foregroundColor(.secondary)
                 .padding(.horizontal)
-            } else {
-                Text("No active pageviews")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                    .padding()
-                    .frame(maxWidth: .infinity, alignment: .center)
-            }
         }
     }
 
