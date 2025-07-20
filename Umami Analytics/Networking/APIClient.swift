@@ -160,12 +160,12 @@ class APIClient {
         return performRequest(request: request)
     }
 
-    func getWebsiteMetrics(id: String, dateRange: DateRange) -> AnyPublisher<WebsiteMetricsResponse, Error> {
+    func getWebsiteMetrics(id: String, dateRange: DateRange, type: String = "url") -> AnyPublisher<WebsiteMetricsResponse, Error> {
         var components = URLComponents(string: "/api/websites/\(id)/metrics")
         components?.queryItems = [
             URLQueryItem(name: "startAt", value: "\(dateRange.startAt)"),
             URLQueryItem(name: "endAt", value: "\(dateRange.endAt)"),
-            URLQueryItem(name: "unit", value: dateRange.unit)
+            URLQueryItem(name: "type", value: type)
         ]
 
         if let timezone = dateRange.timezone {
@@ -180,7 +180,7 @@ class APIClient {
         return performRequest(request: request)
     }
 
-    func getWebsitePageviews(id: String, dateRange: DateRange) -> AnyPublisher<[PageviewMetric], Error> {
+    func getWebsitePageviews(id: String, dateRange: DateRange) -> AnyPublisher<PageviewsResponse, Error> {
         var components = URLComponents(string: "/api/websites/\(id)/pageviews")
         components?.queryItems = [
             URLQueryItem(name: "startAt", value: "\(dateRange.startAt)"),
@@ -200,7 +200,12 @@ class APIClient {
         return performRequest(request: request)
     }
 
-    // MARK: - Realtime
+    // MARK: - Active Users & Realtime
+
+    func getWebsiteActive(id: String) -> AnyPublisher<ActiveUsersResponse, Error> {
+        let request = createRequest(path: "/api/websites/\(id)/active", method: "GET")
+        return performRequest(request: request)
+    }
 
     func getRealtimeData(websiteId: String) -> AnyPublisher<RealtimeData, Error> {
         let request = createRequest(path: "/api/websites/\(websiteId)/realtime", method: "GET")

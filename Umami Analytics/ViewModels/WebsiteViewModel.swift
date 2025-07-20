@@ -20,8 +20,10 @@ class WebsiteViewModel: ObservableObject {
 
     // Selected website properties
     @Published var selectedWebsite: WebsiteModel?
-    @Published var websiteStats: WebsiteStatsModel?
-    @Published var websiteMetrics: WebsiteMetrics?
+    @Published var websiteStats: WebsiteStatsResponse?
+    @Published var websiteMetrics: WebsiteMetricsResponse?
+    @Published var pageviewsData: PageviewsResponse?
+    @Published var activeUsers: ActiveUsersResponse?
     @Published var realtimeData: RealtimeData?
 
     // Computed properties for UI
@@ -31,12 +33,12 @@ class WebsiteViewModel: ObservableObject {
 
     var formattedPageviews: String {
         guard let stats = websiteStats else { return "--" }
-        return formatNumber(stats.pageviews)
+        return formatNumber(stats.pageviews.value)
     }
 
     var formattedVisitors: String {
         guard let stats = websiteStats else { return "--" }
-        return formatNumber(stats.uniques)
+        return formatNumber(stats.visitors.value)
     }
 
     var formattedBounceRate: String {
@@ -141,6 +143,8 @@ class WebsiteViewModel: ObservableObject {
     func loadWebsiteData(website: WebsiteModel) {
         loadWebsiteStats(websiteId: website.id)
         loadWebsiteMetrics(websiteId: website.id)
+        loadPageviewsData(websiteId: website.id)
+        loadActiveUsers(websiteId: website.id)
         startRealtimeUpdates(websiteId: website.id)
     }
 
@@ -150,6 +154,8 @@ class WebsiteViewModel: ObservableObject {
         if let website = selectedWebsite {
             loadWebsiteStats(websiteId: website.id)
             loadWebsiteMetrics(websiteId: website.id)
+            loadPageviewsData(websiteId: website.id)
+            loadActiveUsers(websiteId: website.id)
         }
     }
 
@@ -170,28 +176,17 @@ class WebsiteViewModel: ObservableObject {
                         } else {
                             self?.errorMessage = error.localizedDescription
                         }
-
-                        // Try to load from cache
-                        if let cachedStats = WebsiteService.shared.fetchCachedStats(for: websiteId, period: self?.selectedPeriod ?? .day) {
-                            let stats = WebsiteStatsModel(
-                                pageviews: Int(cachedStats.pageviews),
-                                uniques: Int(cachedStats.visitors),
-                                bounces: 0, // Not stored in our simple cache
-                                totalTime: 0 // Not stored in our simple cache
-                            )
-                            self?.websiteStats = stats
-                        }
                     }
                 },
                 receiveValue: { [weak self] response in
-                    self?.websiteStats = response.stats
+                    self?.websiteStats = response
                 }
             )
             .store(in: &cancellables)
     }
 
     private func loadWebsiteMetrics(websiteId: String) {
-        WebsiteService.shared.fetchWebsiteMetrics(id: websiteId, period: selectedPeriod)
+        WebsiteService.shared.fetchWebsiteMetrics(id: websiteId, period: selectedPeriod, type: "url")
             .receive(on: DispatchQueue.main)
             .sink(
                 receiveCompletion: { [weak self] completion in
@@ -204,7 +199,41 @@ class WebsiteViewModel: ObservableObject {
                     }
                 },
                 receiveValue: { [weak self] response in
-                    self?.websiteMetrics = response.metrics
+                    self?.websiteMetrics = response
+                }
+            )
+            .store(in: &cancellables)
+    }
+
+    private func loadPageviewsData(websiteId: String) {
+        WebsiteService.shared.fetchWebsitePageviews(id: websiteId, period: selectedPeriod)
+            .receive(on: DispatchQueue.main)
+            .sink(
+                receiveCompletion: { [weak self] completion in
+                    _ = self // Suppress unused variable warning
+                    if case .failure(let error) = completion {
+                        print("Failed to load pageviews: \(error.localizedDescription)")
+                    }
+                },
+                receiveValue: { [weak self] response in
+                    self?.pageviewsData = response
+                }
+            )
+            .store(in: &cancellables)
+    }
+
+    private func loadActiveUsers(websiteId: String) {
+        WebsiteService.shared.fetchActiveUsers(id: websiteId)
+            .receive(on: DispatchQueue.main)
+            .sink(
+                receiveCompletion: { [weak self] completion in
+                    _ = self // Suppress unused variable warning
+                    if case .failure(let error) = completion {
+                        print("Failed to load active users: \(error.localizedDescription)")
+                    }
+                },
+                receiveValue: { [weak self] response in
+                    self?.activeUsers = response
                 }
             )
             .store(in: &cancellables)

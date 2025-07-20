@@ -24,10 +24,10 @@ struct WebsiteDetailView: View {
                 statsCards
 
                 // Chart
-                if let metrics = viewModel.websiteMetrics {
+                if let pageviewsData = viewModel.pageviewsData {
                     AnalyticsChartView(
-                        pageviews: metrics.pageviews,
-                        visitors: metrics.sessions,
+                        pageviews: pageviewsData.pageviews.map { PageviewMetric(date: $0.x, value: $0.y) },
+                        visitors: pageviewsData.sessions.map { SessionMetric(date: $0.x, value: $0.y) },
                         period: viewModel.selectedPeriod
                     )
                     .padding(.horizontal)
@@ -41,28 +41,32 @@ struct WebsiteDetailView: View {
                 }
 
                 // Top pages
-                if let metrics = viewModel.websiteMetrics, !metrics.pages.isEmpty {
-                    topPagesSection(metrics.pages)
+                if let metrics = viewModel.websiteMetrics, !metrics.isEmpty {
+                    topPagesSection(metrics.map { PageMetric(url: $0.x, title: nil, value: $0.y) })
                 }
 
+                // Note: The following sections would need separate API calls for each metric type
+                // For now, commenting out until proper metric fetching is implemented
+                
+                /*
                 // Top referrers
-                if let metrics = viewModel.websiteMetrics, !metrics.referrers.isEmpty {
-                    topReferrersSection(metrics.referrers)
+                if let referrers = viewModel.websiteReferrers, !referrers.isEmpty {
+                    topReferrersSection(referrers.map { ReferrerMetric(referrer: $0.x, value: $0.y) })
                 }
 
                 // Browsers and devices
-                if let metrics = viewModel.websiteMetrics,
-                   !metrics.browsers.isEmpty || !metrics.devices.isEmpty {
+                if let browsers = viewModel.websiteBrowsers, let devices = viewModel.websiteDevices, (!browsers.isEmpty || !devices.isEmpty) {
                     browsersAndDevicesSection(
-                        browsers: metrics.browsers,
-                        devices: metrics.devices
+                        browsers: browsers.map { BrowserMetric(name: $0.x, value: $0.y) },
+                        devices: devices.map { DeviceMetric(name: $0.x, value: $0.y) }
                     )
                 }
 
                 // Countries
-                if let metrics = viewModel.websiteMetrics, !metrics.countries.isEmpty {
-                    countriesSection(metrics.countries)
+                if let countries = viewModel.websiteCountries, !countries.isEmpty {
+                    countriesSection(countries.map { CountryMetric(code: $0.x, name: $0.x, value: $0.y) })
                 }
+                */
 
                 // Realtime visitors
                 if let realtimeData = viewModel.realtimeData {
@@ -129,7 +133,7 @@ struct WebsiteDetailView: View {
                 Text("This Year").tag(StatsPeriod.year)
             }
             .pickerStyle(SegmentedPickerStyle())
-            .onChange(of: viewModel.selectedPeriod) { newValue in
+            .onChange(of: viewModel.selectedPeriod) { _, newValue in
                 viewModel.changePeriod(newValue)
             }
         }

@@ -237,5 +237,4 @@ struct ChartPlaceholderView: View {
 
     return AnalyticsChartView(pageviews: pageviews, visitors: visitors, period: .week)
         .padding()
-        .previewLayout(.sizeThatFits)
 }

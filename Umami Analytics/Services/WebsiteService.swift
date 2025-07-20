@@ -54,24 +54,48 @@ class WebsiteService {
 
         return apiClient.getWebsiteStats(id: id, dateRange: dateRange)
             .handleEvents(receiveOutput: { [weak self] response in
-                self?.saveStatsToCache(websiteId: id, stats: response.stats, period: period)
+                self?.saveStatsToCache(websiteId: id, stats: response, period: period)
             })
             .eraseToAnyPublisher()
     }
 
     // MARK: - Website Metrics
 
-    func fetchWebsiteMetrics(id: String, period: StatsPeriod = .day) -> AnyPublisher<WebsiteMetricsResponse, Error> {
+    func fetchWebsiteMetrics(id: String, period: StatsPeriod = .day, type: String = "url") -> AnyPublisher<WebsiteMetricsResponse, Error> {
         guard let apiClient = AuthManager.shared.apiClient else {
             return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
         }
 
         let dateRange = createDateRange(for: period)
 
-        return apiClient.getWebsiteMetrics(id: id, dateRange: dateRange)
+        return apiClient.getWebsiteMetrics(id: id, dateRange: dateRange, type: type)
             .handleEvents(receiveOutput: { [weak self] response in
-                self?.saveMetricsToCache(websiteId: id, metrics: response.metrics, period: period)
+                self?.saveMetricsToCache(websiteId: id, metrics: response, period: period)
             })
+            .eraseToAnyPublisher()
+    }
+
+    // MARK: - Website Pageviews
+
+    func fetchWebsitePageviews(id: String, period: StatsPeriod = .day) -> AnyPublisher<PageviewsResponse, Error> {
+        guard let apiClient = AuthManager.shared.apiClient else {
+            return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
+        }
+
+        let dateRange = createDateRange(for: period)
+
+        return apiClient.getWebsitePageviews(id: id, dateRange: dateRange)
+            .eraseToAnyPublisher()
+    }
+
+    // MARK: - Active Users
+
+    func fetchActiveUsers(id: String) -> AnyPublisher<ActiveUsersResponse, Error> {
+        guard let apiClient = AuthManager.shared.apiClient else {
+            return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
+        }
+
+        return apiClient.getWebsiteActive(id: id)
             .eraseToAnyPublisher()
     }
 
@@ -175,7 +199,7 @@ class WebsiteService {
         }
     }
 
-    private func saveStatsToCache(websiteId: String, stats: WebsiteStatsModel, period: StatsPeriod) {
+    private func saveStatsToCache(websiteId: String, stats: WebsiteStatsResponse, period: StatsPeriod) {
         let context = PersistenceController.shared.container.viewContext
 
         context.perform {
@@ -195,15 +219,15 @@ class WebsiteService {
 
                     if let existingStats = existingStats.first {
                         // Update existing stats
-                        existingStats.pageviews = Int64(stats.pageviews)
-                        existingStats.visitors = Int64(stats.uniques)
+                        existingStats.pageviews = Int64(stats.pageviews.value)
+                        existingStats.visitors = Int64(stats.visitors.value)
                         existingStats.date = Date()
                     } else {
                         // Create new stats
                         let newStats = UmamiWebsiteStats(context: context)
                         newStats.website = website
-                        newStats.pageviews = Int64(stats.pageviews)
-                        newStats.visitors = Int64(stats.uniques)
+                        newStats.pageviews = Int64(stats.pageviews.value)
+                        newStats.visitors = Int64(stats.visitors.value)
                         newStats.date = Date()
                         newStats.period = period.rawValue
                     }
@@ -216,7 +240,7 @@ class WebsiteService {
         }
     }
 
-    private func saveMetricsToCache(websiteId: String, metrics: WebsiteMetrics, period: StatsPeriod) {
+    private func saveMetricsToCache(websiteId: String, metrics: WebsiteMetricsResponse, period: StatsPeriod) {
         // For simplicity, we're not implementing full metrics caching in this example
         // In a real app, you would create additional CoreData entities for each metric type
         print("Metrics received for website \(websiteId) for period \(period.rawValue)")

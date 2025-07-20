@@ -100,10 +100,10 @@ struct DashboardView: View {
                         .padding(.horizontal)
 
                         // Chart
-                        if let metrics = viewModel.websiteMetrics {
+                        if let pageviewsData = viewModel.pageviewsData {
                             AnalyticsChartView(
-                                pageviews: metrics.pageviews,
-                                visitors: metrics.sessions,
+                                pageviews: pageviewsData.pageviews.map { PageviewMetric(date: $0.x, value: $0.y) },
+                                visitors: pageviewsData.sessions.map { SessionMetric(date: $0.x, value: $0.y) },
                                 period: viewModel.selectedPeriod
                             )
                             .padding(.horizontal)

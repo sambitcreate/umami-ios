@@ -23,21 +23,28 @@ struct WebsiteModel: Codable, Identifiable {
     }
 }
 
+// Updated to match latest Umami API response structure
 struct WebsiteStatsModel: Codable {
-    let pageviews: Int
-    let uniques: Int
-    let bounces: Int
-    let totalTime: Int
+    let pageviews: StatValue
+    let visitors: StatValue
+    let visits: StatValue
+    let bounces: StatValue
+    let totaltime: StatValue
 
     var bounceRate: Double {
-        guard uniques > 0 else { return 0 }
-        return Double(bounces) / Double(uniques)
+        guard visits.value > 0 else { return 0 }
+        return Double(bounces.value) / Double(visits.value)
     }
 
     var avgDuration: Double {
-        guard pageviews > 0 else { return 0 }
-        return Double(totalTime) / Double(pageviews)
+        guard pageviews.value > 0 else { return 0 }
+        return Double(totaltime.value) / Double(pageviews.value)
     }
+}
+
+struct StatValue: Codable {
+    let value: Int
+    let prev: Int
 }
 
 struct WebsiteMetrics: Codable {
@@ -129,18 +136,49 @@ struct WebsiteListResponse: Codable {
     let count: Int
 }
 
+// Updated to match latest Umami API - stats endpoint returns stats directly
 struct WebsiteStatsResponse: Codable {
-    let websiteId: String
-    let startDate: String
-    let endDate: String
-    let stats: WebsiteStatsModel
+    let pageviews: StatValue
+    let visitors: StatValue
+    let visits: StatValue
+    let bounces: StatValue
+    let totaltime: StatValue
+
+    var bounceRate: Double {
+        guard visits.value > 0 else { return 0 }
+        return Double(bounces.value) / Double(visits.value)
+    }
+
+    var avgDuration: Double {
+        guard pageviews.value > 0 else { return 0 }
+        return Double(totaltime.value) / Double(pageviews.value)
+    }
 }
 
-struct WebsiteMetricsResponse: Codable {
-    let websiteId: String
-    let startDate: String
-    let endDate: String
-    let metrics: WebsiteMetrics
+// Updated to match latest Umami API - metrics endpoint returns array directly
+typealias WebsiteMetricsResponse = [MetricItem]
+
+struct MetricItem: Codable, Identifiable {
+    var id: String { x }
+    let x: String  // The metric value (URL, browser, etc.)
+    let y: Int     // The count
+}
+
+// Updated to match latest Umami API - pageviews endpoint response structure
+struct PageviewsResponse: Codable {
+    let pageviews: [TimeSeriesData]
+    let sessions: [TimeSeriesData]
+}
+
+struct TimeSeriesData: Codable, Identifiable {
+    var id: String { x }
+    let x: String  // Timestamp
+    let y: Int     // Count
+}
+
+// Active users endpoint response
+struct ActiveUsersResponse: Codable {
+    let x: Int  // Number of active users
 }
 
 // MARK: - Real-time Data Models
