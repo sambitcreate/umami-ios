@@ -25,9 +25,8 @@ class AuthManager {
     @Published var isLoading = false
 
     private init() {
-        // Load saved server URL first, then token and user
+        // Load saved server URL first (this also loads and sets auth token)
         loadServerURL()
-        loadAuthToken()
         loadUser()
     }
 
@@ -132,16 +131,31 @@ class AuthManager {
             return
         }
 
+        print("🔍 Verifying authentication token...")
         apiClient.verifyToken()
             .receive(on: DispatchQueue.main)
             .sink(
                 receiveCompletion: { [weak self] result in
                     if case .failure(let error) = result {
-                        self?.isAuthenticated = false
+                        print("❌ Token verification failed: \(error)")
+                        
+                        // Only log out for authentication errors, not network errors
+                        if let apiError = error as? APIError {
+                            switch apiError {
+                            case .unauthorized:
+                                print("🚪 Authentication error - logging out user")
+                                self?.isAuthenticated = false
+                            default:
+                                print("⚠️ Network/other error - keeping user logged in")
+                            }
+                        } else {
+                            print("⚠️ Unknown error - keeping user logged in")
+                        }
                         completion(.failure(error))
                     }
                 },
                 receiveValue: { [weak self] user in
+                    print("✅ Token verification successful for user: \(user.username)")
                     self?.currentUser = user
                     self?.saveUser(user)
                     completion(.success(user))
@@ -197,14 +211,18 @@ class AuthManager {
 
     private func loadServerURL() {
         if let url = UserDefaults.standard.string(forKey: serverURLKey) {
+            print("📱 Restoring server URL: \(url)")
             serverURL = url
             do {
                 apiClient = try APIClient(serverURL: url)
+                print("✅ API client created successfully")
                 // After creating the API client, load and set the auth token
                 loadAndSetAuthToken()
             } catch {
-                print("Error creating API client: \(error)")
+                print("❌ Error creating API client: \(error)")
             }
+        } else {
+            print("📱 No saved server URL found")
         }
     }
     
@@ -221,6 +239,10 @@ class AuthManager {
         if status == errSecSuccess, let data = item as? Data, let token = String(data: data, encoding: .utf8) {
             apiClient?.setAuthToken(token)
             isAuthenticated = true
+            print("Auth token restored successfully")
+        } else {
+            isAuthenticated = false
+            print("No auth token found or failed to load")
         }
     }
 

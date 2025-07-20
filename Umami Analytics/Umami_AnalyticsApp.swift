@@ -34,17 +34,12 @@ class AppState: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
 
     init() {
-        // Check if user is already authenticated
+        // Subscribe to AuthManager's authentication state
         AuthManager.shared.$isAuthenticated
             .receive(on: DispatchQueue.main)
             .sink { [weak self] isAuthenticated in
                 self?.isAuthenticated = isAuthenticated
             }
             .store(in: &cancellables)
-
-        // Verify token if we think we're authenticated
-        if AuthManager.shared.isAuthenticated {
-            AuthManager.shared.verifyAuthentication { _ in }
-        }
     }
 }

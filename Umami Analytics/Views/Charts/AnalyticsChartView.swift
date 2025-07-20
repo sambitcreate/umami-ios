@@ -56,7 +56,7 @@ struct AnalyticsChartView: View {
                             Text("\(dataPoint.visitors)")
                                 .font(.subheadline)
                                 .fontWeight(.medium)
-                                .foregroundColor(.green)
+                                .foregroundColor(.orange)
                         }
                     }
                     .padding(.horizontal, 8)
@@ -109,7 +109,7 @@ struct AnalyticsChartView: View {
                         x: .value("Date", date),
                         y: .value("Visitors", item.value)
                     )
-                    .foregroundStyle(.green)
+                    .foregroundStyle(.orange)
                     .interpolationMethod(.linear)
                     .lineStyle(StrokeStyle(lineWidth: 2, dash: [5, 5]))
                 }
