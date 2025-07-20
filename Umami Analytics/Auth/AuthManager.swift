@@ -25,7 +25,7 @@ class AuthManager {
     @Published var isLoading = false
 
     private init() {
-        // Load saved server URL and token
+        // Load saved server URL first, then token and user
         loadServerURL()
         loadAuthToken()
         loadUser()
@@ -159,8 +159,14 @@ class AuthManager {
         let status = SecItemCopyMatching(query as CFDictionary, &item)
 
         if status == errSecSuccess, let data = item as? Data, let token = String(data: data, encoding: .utf8) {
-            apiClient?.setAuthToken(token)
-            isAuthenticated = true
+            // Only set token if API client exists
+            if let client = apiClient {
+                client.setAuthToken(token)
+                isAuthenticated = true
+            } else {
+                // If no API client yet, we'll set the token when the client is created
+                isAuthenticated = false
+            }
         } else {
             isAuthenticated = false
         }
@@ -176,9 +182,27 @@ class AuthManager {
             serverURL = url
             do {
                 apiClient = try APIClient(serverURL: url)
+                // After creating the API client, load and set the auth token
+                loadAndSetAuthToken()
             } catch {
                 print("Error creating API client: \(error)")
             }
+        }
+    }
+    
+    private func loadAndSetAuthToken() {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrAccount as String: tokenKey,
+            kSecReturnData as String: true
+        ]
+
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+
+        if status == errSecSuccess, let data = item as? Data, let token = String(data: data, encoding: .utf8) {
+            apiClient?.setAuthToken(token)
+            isAuthenticated = true
         }
     }
 
