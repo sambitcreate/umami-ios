@@ -14,6 +14,8 @@ class AuthManager {
 
     private let tokenKey = "umami.auth.token"
     private let serverURLKey = "umami.server.url"
+    private let cloudAPIKeyKey = "umami.cloud.api.key"
+    private let serverTypeKey = "umami.server.type" // values: "cloud" | "self"
     private let userKey = "umami.auth.user"
 
     private(set) var apiClient: APIClient?
@@ -23,12 +25,59 @@ class AuthManager {
     @Published var currentUser: User?
     @Published var serverURL: String?
     @Published var isLoading = false
+    @Published var isCloud: Bool = false
 
     private init() {
-        // Load saved server URL and token
+        // Load saved server type, server URL and credentials
+        loadServerType()
         loadServerURL()
-        loadAuthToken()
+        if isCloud {
+            loadCloudAPIKey()
+        } else {
+            loadAuthToken()
+        }
         loadUser()
+    }
+
+    // MARK: - Cloud API Key Authentication
+
+    func loginWithAPIKey(apiKey: String, completion: @escaping (Result<User, Error>) -> Void) {
+        // Configure for Umami Cloud
+        do {
+            let client = try APIClient(serverURL: "https://api.umami.is")
+            client.configureForCloud(apiKey: apiKey)
+            self.apiClient = client
+
+            // Verify key by calling /v1/me
+            client.verifyToken()
+                .receive(on: DispatchQueue.main)
+                .sink(
+                    receiveCompletion: { [weak self] result in
+                        if case .failure(let error) = result {
+                            completion(.failure(error))
+                            self?.isAuthenticated = false
+                        }
+                    },
+                    receiveValue: { [weak self] user in
+                        guard let self = self else { return }
+
+                        // Save key + server configuration
+                        self.saveCloudAPIKey(apiKey)
+                        self.saveServerURL("https://api.umami.is")
+                        self.saveServerType("cloud")
+
+                        // Update state
+                        self.currentUser = user
+                        self.isAuthenticated = true
+                        self.isCloud = true
+
+                        completion(.success(user))
+                    }
+                )
+                .store(in: &cancellables)
+        } catch {
+            completion(.failure(error))
+        }
     }
 
     // MARK: - Authentication
@@ -66,12 +115,14 @@ class AuthManager {
                         self.saveAuthToken(response.token)
                         self.saveServerURL(finalURL)
                         self.saveUser(response.user)
+                        self.saveServerType("self")
 
                         // Update state
                         self.apiClient?.setAuthToken(response.token)
                         self.currentUser = response.user
                         self.isAuthenticated = true
                         self.serverURL = finalURL
+                        self.isCloud = false
 
                         completion(.success(response.user))
                     }
@@ -176,10 +227,54 @@ class AuthManager {
             serverURL = url
             do {
                 apiClient = try APIClient(serverURL: url)
+                if isCloud {
+                    // Will configure with API key in loadCloudAPIKey
+                }
             } catch {
                 print("Error creating API client: \(error)")
             }
         }
+    }
+
+    private func saveCloudAPIKey(_ key: String) {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrAccount as String: cloudAPIKeyKey,
+            kSecValueData as String: key.data(using: .utf8)!
+        ]
+        SecItemDelete(query as CFDictionary)
+        SecItemAdd(query as CFDictionary, nil)
+    }
+
+    private func loadCloudAPIKey() {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrAccount as String: cloudAPIKeyKey,
+            kSecReturnData as String: true
+        ]
+
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+
+        if status == errSecSuccess, let data = item as? Data, let key = String(data: data, encoding: .utf8) {
+            if apiClient == nil {
+                do { apiClient = try APIClient(serverURL: serverURL ?? "https://api.umami.is") } catch { }
+            }
+            apiClient?.configureForCloud(apiKey: key)
+            isAuthenticated = true
+        } else {
+            isAuthenticated = false
+        }
+    }
+
+    private func saveServerType(_ type: String) {
+        UserDefaults.standard.set(type, forKey: serverTypeKey)
+        isCloud = (type == "cloud")
+    }
+
+    private func loadServerType() {
+        let type = UserDefaults.standard.string(forKey: serverTypeKey)
+        isCloud = (type == "cloud")
     }
 
     private func saveUser(_ user: User) {
@@ -204,12 +299,21 @@ class AuthManager {
         ]
         SecItemDelete(query as CFDictionary)
 
+        // Clear cloud API key from keychain
+        let cloudQuery: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrAccount as String: cloudAPIKeyKey
+        ]
+        SecItemDelete(cloudQuery as CFDictionary)
+
         // Clear user data
         UserDefaults.standard.removeObject(forKey: userKey)
+        UserDefaults.standard.removeObject(forKey: serverTypeKey)
 
         // Update state
         apiClient?.clearAuthToken()
         isAuthenticated = false
         currentUser = nil
+        isCloud = false
     }
 }

@@ -11,6 +11,8 @@ import Combine
 class APIClient {
     private var baseURL: URL
     private var authToken: String?
+    private var apiKey: String?
+    private var isCloud: Bool = false
     private let jsonDecoder: JSONDecoder
     private let jsonEncoder: JSONEncoder
     private var apiVersion: APIVersion = .unknown
@@ -51,16 +53,44 @@ class APIClient {
         self.authToken = nil
     }
 
+    // MARK: - Cloud Configuration
+
+    func configureForCloud(apiKey: String) {
+        self.isCloud = true
+        self.apiKey = apiKey
+        // In Cloud mode, base should be api.umami.is (without /v1); paths will be normalized.
+        if baseURL.host?.contains("api.umami.is") == false {
+            if let url = URL(string: "https://api.umami.is") {
+                self.baseURL = url
+            }
+        }
+    }
+
+    func setAPIKey(_ key: String?) {
+        self.apiKey = key
+    }
+
     // MARK: - Helper Methods
 
     private func createRequest(path: String, method: String, body: Encodable? = nil) -> URLRequest {
-        let apiURL = baseURL.appendingPathComponent(path)
+        // Normalize path for Cloud vs self-hosted
+        let effectivePath: String
+        if isCloud {
+            effectivePath = normalizeCloudPath(path)
+        } else {
+            effectivePath = path
+        }
+
+        let apiURL = baseURL.appendingPathComponent(effectivePath)
 
         var request = URLRequest(url: apiURL)
         request.httpMethod = method
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
 
-        if let token = authToken {
+        // Prefer Cloud API key header when configured
+        if isCloud, let apiKey = apiKey, !apiKey.isEmpty {
+            request.addValue(apiKey, forHTTPHeaderField: "x-umami-api-key")
+        } else if let token = authToken {
             request.addValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
 
@@ -73,6 +103,28 @@ class APIClient {
         }
 
         return request
+    }
+
+    private func normalizeCloudPath(_ path: String) -> String {
+        // Convert self-hosted style paths to Cloud v1 paths.
+        // Rules:
+        //  - "/api/v1/..." -> "/v1/..."
+        //  - "/api/..."     -> "/v1/..."
+        //  - "/v1/..."      -> unchanged
+        //  - otherwise, prefix with "/v1" if it starts with "/"
+        if path.hasPrefix("/api/v1/") {
+            let remainder = String(path.dropFirst("/api/v1".count)) // keeps leading '/'
+            return "/v1" + remainder
+        } else if path.hasPrefix("/api/") {
+            let remainder = String(path.dropFirst("/api".count)) // keeps leading '/'
+            return "/v1" + remainder
+        } else if path.hasPrefix("/v1/") {
+            return path
+        } else if path.hasPrefix("/") {
+            return "/v1" + path
+        } else {
+            return "/v1/\(path)"
+        }
     }
 
     private func performRequest<T: Decodable>(request: URLRequest) -> AnyPublisher<T, Error> {
@@ -562,6 +614,31 @@ class APIClient {
     }
 
     func verifyToken() -> AnyPublisher<User, Error> {
+        // Cloud flow: validate API key by calling /v1/me
+        if isCloud {
+            guard apiKey != nil else {
+                return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
+            }
+
+            let meReq = createRequest(path: "/api/me", method: "GET") // will normalize to /v1/me
+
+            // Try to decode directly to User
+            let meAsUser: AnyPublisher<User, Error> = performRequest(request: meReq)
+                .eraseToAnyPublisher()
+
+            // Or wrapped { user: User }
+            struct MeResponse: Codable { let user: User }
+            let meWrappedPublisher: AnyPublisher<MeResponse, Error> = performRequest(request: meReq)
+            let meAsWrappedUser: AnyPublisher<User, Error> = meWrappedPublisher
+                .map { $0.user }
+                .eraseToAnyPublisher()
+
+            return meAsUser
+                .catch { _ in meAsWrappedUser }
+                .eraseToAnyPublisher()
+        }
+
+        // Self-hosted flow: must have bearer token
         guard authToken != nil else {
             return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
         }
