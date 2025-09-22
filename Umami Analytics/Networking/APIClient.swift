@@ -566,15 +566,57 @@ class APIClient {
             return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
         }
 
-        let request = createRequest(path: "/api/auth/verify", method: "GET")
-        return performRequest(request: request)
+        // Some Umami deployments expect POST for /api/auth/verify or expose /api/me instead.
+        // Strategy:
+        // 1) Try GET /api/auth/verify
+        // 2) On 405/404, try POST /api/auth/verify
+        // 3) If that fails, try GET /api/me decoding either User or { user: User }
+
+        // Step 1: GET /api/auth/verify
+        let getVerify = createRequest(path: "/api/auth/verify", method: "GET")
+        let publisher: AnyPublisher<User, Error> = performRequest(request: getVerify)
             .handleEvents(receiveOutput: { [weak self] _ in
-                // After successful verification, detect the API version if we haven't already
-                if self?.apiVersion == .unknown {
-                    self?.detectAPIVersion()
-                }
+                if self?.apiVersion == .unknown { self?.detectAPIVersion() }
             })
             .eraseToAnyPublisher()
+
+        return publisher.catch { [weak self] error -> AnyPublisher<User, Error> in
+            guard let self = self else { return Fail(error: error).eraseToAnyPublisher() }
+
+            // Only fall back on method/endpoint issues
+            if case APIError.serverError(let message) = error, message.contains("405") || message.contains("404") {
+                print("🔄 auth/verify fallback: trying POST /api/auth/verify due to \(message)")
+                // Step 2: POST /api/auth/verify
+                let postVerify = self.createRequest(path: "/api/auth/verify", method: "POST")
+                return self.performRequest(request: postVerify)
+                    .handleEvents(receiveOutput: { [weak self] _ in
+                        if self?.apiVersion == .unknown { self?.detectAPIVersion() }
+                    })
+                    .catch { postError -> AnyPublisher<User, Error> in
+                        print("⚠️ POST /api/auth/verify failed: \(postError)")
+                        // Step 3: GET /api/me (v2) – try decoding User first, then { user: User }
+                        let meReq = self.createRequest(path: "/api/me", method: "GET")
+
+                        // Try to decode directly to User
+                        let meAsUser: AnyPublisher<User, Error> = self.performRequest(request: meReq)
+                            .eraseToAnyPublisher()
+
+                        // If that fails, try decoding { user: User }
+                        struct MeResponse: Codable { let user: User }
+                        let meAsWrappedUser: AnyPublisher<User, Error> = self.performRequest(request: meReq) as AnyPublisher<MeResponse, Error>
+                            .map { $0.user }
+                            .eraseToAnyPublisher()
+
+                        return meAsUser
+                            .catch { _ in meAsWrappedUser }
+                            .eraseToAnyPublisher()
+                    }
+                    .eraseToAnyPublisher()
+            }
+
+            return Fail(error: error).eraseToAnyPublisher()
+        }
+        .eraseToAnyPublisher()
     }
 
     func getServerInfo() -> AnyPublisher<ServerInfo, Error> {
