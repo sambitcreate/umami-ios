@@ -17,7 +17,7 @@ struct ContentView: View {
     var body: some View {
         TabView(selection: $selectedTab) {
             // Dashboard Tab
-            DashboardView()
+            DashboardView(selectedTab: $selectedTab)
                 .tabItem {
                     Label("Dashboard", systemImage: "chart.bar")
                 }
@@ -43,7 +43,8 @@ struct ContentView: View {
 struct DashboardView: View {
     @EnvironmentObject private var appState: AppState
     @StateObject private var viewModel = WebsiteViewModel()
-    @State private var selectedPeriod: StatsPeriod = .day
+    @Binding var selectedTab: Int
+    // Dashboard now focuses on greeting + recent sites
 
     var body: some View {
         NavigationView {
@@ -66,72 +67,24 @@ struct DashboardView: View {
                         .padding(.horizontal)
                     }
 
-                    // Period selector
-                    HStack {
-                        Text("Period:")
-                            .font(.headline)
-
-                        Picker("Period", selection: $selectedPeriod) {
-                            Text("Today").tag(StatsPeriod.day)
-                            Text("This Week").tag(StatsPeriod.week)
-                            Text("This Month").tag(StatsPeriod.month)
-                            Text("This Year").tag(StatsPeriod.year)
-                        }
-                        .pickerStyle(SegmentedPickerStyle())
-                        .onChange(of: selectedPeriod) { newValue in
-                            viewModel.changePeriod(newValue)
-                        }
-                    }
-                    .padding(.horizontal)
-
                     if viewModel.hasWebsites {
-                        // Total stats cards
-                        VStack(spacing: 16) {
-                            HStack(spacing: 16) {
-                                StatCard(title: "Visitors", value: viewModel.formattedVisitors, icon: "person.fill")
-                                StatCard(title: "Pageviews", value: viewModel.formattedPageviews, icon: "doc.text.fill")
-                            }
-
-                            HStack(spacing: 16) {
-                                StatCard(title: "Bounce Rate", value: viewModel.formattedBounceRate, icon: "arrow.up.arrow.down")
-                                StatCard(title: "Avg. Duration", value: viewModel.formattedDuration, icon: "clock.fill")
-                            }
-                        }
-                        .padding(.horizontal)
-
-                        // Chart
-                        if let metrics = viewModel.websiteMetrics {
-                            AnalyticsChartView(
-                                pageviews: metrics.pageviews,
-                                visitors: metrics.sessions,
-                                period: viewModel.selectedPeriod
-                            )
-                            .padding(.horizontal)
-                        } else {
-                            AnalyticsChartView(
-                                pageviews: [],
-                                visitors: [],
-                                period: viewModel.selectedPeriod
-                            )
-                            .padding(.horizontal)
-                        }
-
-                        // Website list
+                        // Recent sites
                         VStack(alignment: .leading, spacing: 12) {
-                            Text("Your Websites")
+                            Text("Your Recent Sites:")
                                 .font(.headline)
                                 .padding(.horizontal)
 
                             ForEach(viewModel.websites.prefix(3)) { website in
-                                NavigationLink(destination: WebsiteDetailView(viewModel: viewModel)) {
+                                NavigationLink(
+                                    destination: WebsiteDetailView(
+                                        viewModel: WebsiteViewModel(selectedWebsite: website)
+                                    )
+                                ) {
                                     DashboardWebsiteRow(website: website)
-                                        .onTapGesture {
-                                            viewModel.selectWebsite(website)
-                                        }
                                 }
                             }
 
-                            NavigationLink(destination: WebsitesView()) {
+                            Button(action: { selectedTab = 1 }) {
                                 Text("View All Websites")
                                     .font(.headline)
                                     .foregroundColor(.blue)
@@ -159,7 +112,7 @@ struct DashboardView: View {
                                 .multilineTextAlignment(.center)
                                 .padding(.horizontal, 40)
 
-                            NavigationLink(destination: WebsitesView()) {
+                            Button(action: { selectedTab = 1 }) {
                                 Text("Go to Websites")
                                     .fontWeight(.semibold)
                                     .padding(.horizontal, 20)
@@ -249,11 +202,12 @@ struct WebsitesView: View {
                 if viewModel.hasWebsites {
                     List {
                         ForEach(viewModel.websites) { website in
-                            NavigationLink(destination: WebsiteDetailView(viewModel: viewModel)) {
+                            NavigationLink(
+                                destination: WebsiteDetailView(
+                                    viewModel: WebsiteViewModel(selectedWebsite: website)
+                                )
+                            ) {
                                 WebsiteRowView(website: website)
-                            }
-                            .onTapGesture {
-                                viewModel.selectWebsite(website)
                             }
                         }
                     }

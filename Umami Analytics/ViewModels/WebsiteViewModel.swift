@@ -64,6 +64,14 @@ class WebsiteViewModel: ObservableObject {
         loadCachedWebsites()
     }
 
+    /// Designated initializer to start focused on a specific website
+    /// and immediately load its data without auto-loading cached list.
+    init(selectedWebsite: WebsiteModel) {
+        // Properties have default values; just set the selection and load
+        self.selectedWebsite = selectedWebsite
+        self.loadWebsiteData(website: selectedWebsite)
+    }
+
     // MARK: - Data Loading
 
     func loadWebsites() {
