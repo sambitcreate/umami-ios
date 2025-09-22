@@ -603,7 +603,8 @@ class APIClient {
 
                         // If that fails, try decoding { user: User }
                         struct MeResponse: Codable { let user: User }
-                        let meAsWrappedUser: AnyPublisher<User, Error> = self.performRequest(request: meReq) as AnyPublisher<MeResponse, Error>
+                        let meWrappedPublisher: AnyPublisher<MeResponse, Error> = self.performRequest(request: meReq)
+                        let meAsWrappedUser: AnyPublisher<User, Error> = meWrappedPublisher
                             .map { $0.user }
                             .eraseToAnyPublisher()
 
