@@ -2,7 +2,7 @@
 
 A SwiftUI iOS client for Umami analytics (self‑hosted and Umami Cloud).
 
-**Date:** September 22, 2025
+**Date:** September 23, 2025
 
 ## What Changed Today
 
@@ -17,6 +17,28 @@ A SwiftUI iOS client for Umami analytics (self‑hosted and Umami Cloud).
   - Keychain: bearer token (self‑hosted) and Cloud API key.
   - UserDefaults: last server URL and server type (`cloud` | `self`).
 - Kept existing self‑hosted bearer‑token flow unchanged.
+
+### Networking & API compatibility
+- Fixed URL building so query strings are not percent‑encoded as `%3F` (prevents 404s from paths like `/metrics%3FstartAt=...`).
+- Websites listing now requests a larger page size to avoid truncation:
+  - `GET /api/websites?page=1&pageSize=1000`.
+- Metrics fetching reworked to match the documented API shape:
+  - Calls `GET /api/websites/{id}/metrics` with required `type` per group (`url`, `referrer`, `browser`, `os`, `device`, `country`).
+  - Adds `limit=50` to keep payloads reasonable.
+  - Time‑series uses `GET /api/websites/{id}/pageviews` for `pageviews` and `sessions`.
+  - All requests use millisecond `startAt/endAt` plus `unit` and `timezone` (from device).
+
+### Caching & UX (stale‑while‑revalidate)
+- Websites: show cached list immediately; spinner only on cold start.
+- Stats: load cached stats first per website/period; refresh in background.
+- Metrics: load cached pageviews/sessions and Top Pages/Referrers immediately; refresh in background.
+- Added caches for Browsers, Devices, and Countries so those sections render instantly on cold start.
+- Added subtle “Last updated …” under the period picker (caption2, 40% opacity) indicating cache/network freshness.
+
+### Core Data
+- New entity: `UmamiWebsiteMetrics` with binary blobs for:
+  - `pageviewsData`, `sessionsData`, `pagesData`, `referrersData`, `browsersData`, `devicesData`, `countriesData`.
+- Enabled lightweight migration in `Persistence.swift` so existing installs upgrade automatically.
 
 ## How To Use
 
@@ -46,6 +68,11 @@ A SwiftUI iOS client for Umami analytics (self‑hosted and Umami Cloud).
   - `Umami Analytics/Auth/AuthManager.swift` — Cloud API‑key login (`loginWithAPIKey`), Keychain storage for API key, server‑type persistence, bootstrap on launch.
 - Networking
   - `Umami Analytics/Networking/APIClient.swift` — Cloud mode (`configureForCloud`), `x-umami-api-key` header, Cloud path normalization, `verifyToken()` handles Cloud `/v1/me`.
+  - Query handling preserves `?` in paths; do not use `appendingPathComponent` for paths with queries.
+  - Websites list uses `pageSize=1000`.
+  - Metrics pipeline:
+    - `GET /api/websites/{id}/metrics?type=<group>&startAt=...&endAt=...&unit=...&timezone=...&limit=50` for url/referrer/browser/os/device/country.
+    - `GET /api/websites/{id}/pageviews?startAt=...&endAt=...&unit=...&timezone=...` for series.
 
 ## Persistence Keys
 
@@ -57,11 +84,22 @@ A SwiftUI iOS client for Umami analytics (self‑hosted and Umami Cloud).
   - `umami.server.type` — `cloud` or `self`
   - Existing feature flags (e.g., endpoint format hints) remain unchanged
 
+## Performance & UX
+
+- Stale‑while‑revalidate keeps screens responsive; cached data renders instantly, network updates replace it quietly.
+- The detail view spinner only appears on a true cold start (no cached stats/metrics).
+
 ## Notes & Caveats
 
 - Cloud login uses API key (recommended by Umami) rather than username/password.
 - The login UI shows `https://cloud.umami.is` as the Cloud host label, but API requests target `https://api.umami.is/v1/...` under the hood.
 - Existing users with a stored self‑hosted URL are auto‑selected into Self Hosted; saved Cloud setups are auto‑selected into Umami.is.
+
+## Endpoint Reference
+
+See `api-reference.md` for endpoint shapes and parameters, particularly:
+- Websites API (pagination via `page`, `pageSize`).
+- Website statistics and metrics: `startAt`, `endAt`, `unit`, `timezone`, and `type` for metrics groups.
 
 ## Quick Test Steps
 
@@ -69,4 +107,3 @@ A SwiftUI iOS client for Umami analytics (self‑hosted and Umami Cloud).
 - Self‑hosted: Select `Self Hosted` → enter URL + username/password → Sign In → confirm websites load.
 
 For endpoint reference and Cloud notes, see `api-reference.md` and `troubleshoot.md`.
-
