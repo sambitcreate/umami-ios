@@ -830,189 +830,223 @@ class APIClient {
             print("⚠️ Note: Multiple persistent failures with metrics data")
         }
 
-        // Prepare different date formats
         let startAtStr = String(format: "%.0f", Double(dateRange.startAt))
         let endAtStr = String(format: "%.0f", Double(dateRange.endAt))
-        let startAtSecondsStr = String(format: "%.0f", Double(dateRange.startAt) / 1000)
-        let endAtSecondsStr = String(format: "%.0f", Double(dateRange.endAt) / 1000)
-        let startAtISOStr = ISO8601DateFormatter().string(from: Date(timeIntervalSince1970: Double(dateRange.startAt) / 1000))
-        let endAtISOStr = ISO8601DateFormatter().string(from: Date(timeIntervalSince1970: Double(dateRange.endAt) / 1000))
+        let unit = dateRange.unit
+        let tz = dateRange.timezone
 
-        print("📊 Metrics request with dates:")
-        print("  - Milliseconds: start=\(startAtStr), end=\(endAtStr)")
-        print("  - Seconds: start=\(startAtSecondsStr), end=\(endAtSecondsStr)")
-        print("  - ISO: start=\(startAtISOStr), end=\(endAtISOStr)")
-        print("  - Unit: \(dateRange.unit)")
+        print("📊 Metrics request with dates (ms): start=\(startAtStr), end=\(endAtStr), unit=\(unit)")
 
-        // Check if we've already determined the metrics endpoint format
-        let metricsFormat = UserDefaults.standard.string(forKey: "umami_metrics_format")
-
-        // Choose the appropriate endpoint format based on what we know
-        let basePath: String
-
-        if let format = metricsFormat {
-            // Use the stored format that we know works
-            switch format {
-            case "singular_metrics":
-                basePath = "/api/website/\(id)/metrics"
-                print("📊 Using cached singular metrics endpoint: \(basePath)")
-            case "alt_metrics":
-                basePath = "/api/metrics/\(id)"
-                print("📊 Using cached alternative metrics endpoint: \(basePath)")
-            case "v1_plural_metrics":
-                basePath = "/api/v1/websites/\(id)/metrics"
-                print("📊 Using cached v1 plural metrics endpoint: \(basePath)")
-            case "v1_singular_metrics":
-                basePath = "/api/v1/website/\(id)/metrics"
-                print("📊 Using cached v1 singular metrics endpoint: \(basePath)")
-            case "v2_metrics":
-                basePath = "/api/v2/websites/\(id)/metrics"
-                print("📊 Using cached v2 metrics endpoint: \(basePath)")
-            case "snake_case_params":
-                basePath = "/api/websites/\(id)/metrics"
-                print("📊 Using cached metrics endpoint with snake_case params: \(basePath)")
-            case "seconds_timestamps":
-                basePath = "/api/websites/\(id)/metrics"
-                print("📊 Using cached metrics endpoint with seconds timestamps: \(basePath)")
-            case "iso_dates":
-                basePath = "/api/websites/\(id)/metrics"
-                print("📊 Using cached metrics endpoint with ISO date strings: \(basePath)")
-            case "no_unit":
-                basePath = "/api/websites/\(id)/metrics"
-                print("📊 Using cached metrics endpoint without unit parameter: \(basePath)")
-            default:
-                // Default to the standard v2 format
-                basePath = "/api/websites/\(id)/metrics"
-                print("📊 Using standard metrics endpoint: \(basePath)")
-            }
-        } else if apiVersion == .v1 {
-            // If we know it's v1 API but don't have a specific format yet
-            basePath = "/api/website/\(id)/metrics"
-            print("📊 Using v1 singular metrics endpoint based on API version: \(basePath)")
-        } else {
-            // Default to the standard v2 format if we don't know yet
-            basePath = "/api/websites/\(id)/metrics"
-            print("📊 Using standard metrics endpoint: \(basePath)")
-        }
-
-        // Create URL components with the appropriate query parameters
-        var components = URLComponents(string: basePath)
-
-        // Use the appropriate parameter format based on the cached format
-        if let format = metricsFormat {
-            switch format {
-            case "snake_case_params":
-                components?.queryItems = [
-                    URLQueryItem(name: "start_at", value: startAtStr),
-                    URLQueryItem(name: "end_at", value: endAtStr),
-                    URLQueryItem(name: "unit", value: dateRange.unit)
-                ]
-            case "seconds_timestamps":
-                components?.queryItems = [
-                    URLQueryItem(name: "startAt", value: startAtSecondsStr),
-                    URLQueryItem(name: "endAt", value: endAtSecondsStr),
-                    URLQueryItem(name: "unit", value: dateRange.unit)
-                ]
-            case "iso_dates":
-                components?.queryItems = [
-                    URLQueryItem(name: "startAt", value: startAtISOStr),
-                    URLQueryItem(name: "endAt", value: endAtISOStr),
-                    URLQueryItem(name: "unit", value: dateRange.unit)
-                ]
-            case "no_unit":
-                components?.queryItems = [
-                    URLQueryItem(name: "startAt", value: startAtStr),
-                    URLQueryItem(name: "endAt", value: endAtStr)
-                ]
-            default:
-                components?.queryItems = [
-                    URLQueryItem(name: "startAt", value: startAtStr),
-                    URLQueryItem(name: "endAt", value: endAtStr),
-                    URLQueryItem(name: "unit", value: dateRange.unit)
-                ]
-            }
-        } else {
-            components?.queryItems = [
+        // Helper to build a metrics request with required 'type' param
+        func metricsRequest(type: String) -> URLRequest? {
+            var c = URLComponents(string: "/api/websites/\(id)/metrics")
+            var items = [
+                URLQueryItem(name: "type", value: type),
                 URLQueryItem(name: "startAt", value: startAtStr),
-                URLQueryItem(name: "endAt", value: endAtStr),
-                URLQueryItem(name: "unit", value: dateRange.unit)
+                URLQueryItem(name: "endAt", value: endAtStr)
             ]
+            items.append(URLQueryItem(name: "unit", value: unit))
+            if let tz = tz { items.append(URLQueryItem(name: "timezone", value: tz)) }
+            c?.queryItems = items
+            guard let path = c?.string else { return nil }
+            return createRequest(path: path, method: "GET")
         }
 
-        // Add timezone parameter unless we're using the no_unit format
-        if let timezone = dateRange.timezone, metricsFormat != "no_unit" {
-            components?.queryItems?.append(URLQueryItem(name: "timezone", value: timezone))
+        // Generic shapes from Umami metrics APIs
+        struct XY: Codable { let x: String?; let y: Int?; let value: Int?; let url: String?; let referrer: String?; let name: String?; let device: String?; let os: String?; let country: String?; let title: String? }
+        struct XYEnvelope: Codable { let data: [XY]?; let metrics: [XY]? }
+        func decodeXY(_ data: Data) throws -> [XY] {
+            if let env = try? self.jsonDecoder.decode(XYEnvelope.self, from: data) {
+                if let list = env.data { return list }
+                if let list = env.metrics { return list }
+            }
+            if let list = try? self.jsonDecoder.decode([XY].self, from: data) { return list }
+            // Fallback: try to coerce dynamically
+            if let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
+                return arr.map { dict in
+                    let x = dict["x"] as? String ?? dict["name"] as? String ?? dict["url"] as? String ?? dict["referrer"] as? String
+                    let y = dict["y"] as? Int ?? dict["value"] as? Int
+                    return XY(x: x, y: y, value: nil, url: nil, referrer: nil, name: nil, device: nil, os: nil, country: nil, title: nil)
+                }
+            }
+            throw APIError.decodingError
         }
 
-        guard let path = components?.string else {
+        // Pageviews + sessions series endpoint
+        struct SeriesPoint: Codable { let date: String?; let value: Int?; let x: String?; let y: Int? }
+        struct PageviewsResp: Codable { let pageviews: [SeriesPoint]?; let sessions: [SeriesPoint]? }
+        func decodeSeries(_ data: Data) throws -> ([PageviewMetric], [SessionMetric]) {
+            if let env = try? self.jsonDecoder.decode(PageviewsResp.self, from: data) {
+                let p = (env.pageviews ?? []).compactMap { pt in
+                    let d = pt.date ?? pt.x
+                    let v = pt.value ?? pt.y
+                    if let d = d, let v = v { return PageviewMetric(date: d, value: v) }
+                    return nil
+                }
+                let s = (env.sessions ?? []).compactMap { pt in
+                    let d = pt.date ?? pt.x
+                    let v = pt.value ?? pt.y
+                    if let d = d, let v = v { return SessionMetric(date: d, value: v) }
+                    return nil
+                }
+                return (p, s)
+            }
+            // Fallback: top-level array to pageviews only
+            if let arr = try? self.jsonDecoder.decode([SeriesPoint].self, from: data) {
+                let p = arr.compactMap { pt -> PageviewMetric? in
+                    let d = pt.date ?? pt.x
+                    let v = pt.value ?? pt.y
+                    if let d = d, let v = v { return PageviewMetric(date: d, value: v) }
+                    return nil
+                }
+                return (p, [])
+            }
+            throw APIError.decodingError
+        }
+
+        // Build requests
+        guard let urlsReq = metricsRequest(type: "url"),
+              let refsReq = metricsRequest(type: "referrer"),
+              let browsersReq = metricsRequest(type: "browser"),
+              let osReq = metricsRequest(type: "os"),
+              let devicesReq = metricsRequest(type: "device"),
+              let countriesReq = metricsRequest(type: "country") else {
             return Fail(error: APIError.invalidURL).eraseToAnyPublisher()
         }
 
-        let request = createRequest(path: path, method: "GET")
+        var pvComponents = URLComponents(string: "/api/websites/\(id)/pageviews")
+        var pvItems = [
+            URLQueryItem(name: "startAt", value: startAtStr),
+            URLQueryItem(name: "endAt", value: endAtStr),
+            URLQueryItem(name: "unit", value: unit)
+        ]
+        if let tz = tz { pvItems.append(URLQueryItem(name: "timezone", value: tz)) }
+        pvComponents?.queryItems = pvItems
+        guard let pvPath = pvComponents?.string else {
+            return Fail(error: APIError.invalidURL).eraseToAnyPublisher()
+        }
+        let pvReq = createRequest(path: pvPath, method: "GET")
 
-        return performRequest(request: request)
-            .catch { error -> AnyPublisher<WebsiteMetricsResponse, Error> in
-                // If we get a 404 error or other server error, try alternative endpoints
-                if case APIError.endpointNotFound = error {
-                    print("⚠️ Primary metrics endpoint failed (404), trying alternatives")
-                    // Clear the stored format since it's not working
-                    UserDefaults.standard.removeObject(forKey: "umami_metrics_format")
-                    return self.tryAlternativeMetricsEndpoints(id: id, dateRange: dateRange, startAtStr: startAtStr, endAtStr: endAtStr)
-                } else if case APIError.serverError = error {
-                    print("⚠️ Primary metrics endpoint failed (server error), trying alternatives")
-                    return self.tryAlternativeMetricsEndpoints(id: id, dateRange: dateRange, startAtStr: startAtStr, endAtStr: endAtStr)
-                } else if case APIError.decodingError = error {
-                    // If we get a decoding error, the API might be returning a different format
-                    print("⚠️ Decoding error for metrics data: \(error.localizedDescription)")
-
-                    // Try alternative date formats if we haven't already determined a working format
-                    if metricsFormat == nil {
-                        print("🔄 Trying alternative date formats for metrics")
-                        return self.tryAlternativeMetricsEndpoints(id: id, dateRange: dateRange, startAtStr: startAtStr, endAtStr: endAtStr)
-                    }
-
-                    // Increment the failure counter for tracking purposes
-                    let currentCount = UserDefaults.standard.integer(forKey: "umami_metrics_failure_count")
-                    UserDefaults.standard.set(currentCount + 1, forKey: "umami_metrics_failure_count")
-
-                    // Return the error
-                    return Fail(error: APIError.decodingError)
-                        .eraseToAnyPublisher()
+        // Fetch each metric category
+        let urlsP: AnyPublisher<[PageMetric], Error> = performRequest(request: urlsReq)
+            .tryMap { data -> [PageMetric] in
+                let list = try decodeXY(data)
+                return list.compactMap { xy in
+                    let url = xy.url ?? xy.x
+                    guard let url = url else { return nil }
+                    let val = xy.y ?? xy.value ?? 0
+                    return PageMetric(url: url, title: xy.title, value: val)
                 }
+            }
+            .mapError { $0 }
+            .eraseToAnyPublisher()
 
-                // If we can't handle the error, just pass it through
-                return Fail(error: error).eraseToAnyPublisher()
+        let refsP: AnyPublisher<[ReferrerMetric], Error> = performRequest(request: refsReq)
+            .tryMap { data -> [ReferrerMetric] in
+                let list = try decodeXY(data)
+                return list.compactMap { xy in
+                    let ref = xy.referrer ?? xy.x ?? xy.name
+                    guard let ref = ref else { return nil }
+                    let val = xy.y ?? xy.value ?? 0
+                    return ReferrerMetric(referrer: ref, value: val)
+                }
+            }
+            .mapError { $0 }
+            .eraseToAnyPublisher()
+
+        let browsersP: AnyPublisher<[BrowserMetric], Error> = performRequest(request: browsersReq)
+            .tryMap { data -> [BrowserMetric] in
+                let list = try decodeXY(data)
+                return list.compactMap { xy in
+                    let name = xy.name ?? xy.x
+                    guard let name = name else { return nil }
+                    let val = xy.y ?? xy.value ?? 0
+                    return BrowserMetric(name: name, value: val)
+                }
+            }
+            .mapError { $0 }
+            .eraseToAnyPublisher()
+
+        let osP: AnyPublisher<[OSMetric], Error> = performRequest(request: osReq)
+            .tryMap { data -> [OSMetric] in
+                let list = try decodeXY(data)
+                return list.compactMap { xy in
+                    let name = xy.os ?? xy.name ?? xy.x
+                    guard let name = name else { return nil }
+                    let val = xy.y ?? xy.value ?? 0
+                    return OSMetric(name: name, value: val)
+                }
+            }
+            .mapError { $0 }
+            .eraseToAnyPublisher()
+
+        let devicesP: AnyPublisher<[DeviceMetric], Error> = performRequest(request: devicesReq)
+            .tryMap { data -> [DeviceMetric] in
+                let list = try decodeXY(data)
+                return list.compactMap { xy in
+                    let name = xy.device ?? xy.name ?? xy.x
+                    guard let name = name else { return nil }
+                    let val = xy.y ?? xy.value ?? 0
+                    return DeviceMetric(device: name, value: val)
+                }
+            }
+            .mapError { $0 }
+            .eraseToAnyPublisher()
+
+        let countriesP: AnyPublisher<[CountryMetric], Error> = performRequest(request: countriesReq)
+            .tryMap { data -> [CountryMetric] in
+                let list = try decodeXY(data)
+                return list.compactMap { xy in
+                    let codeOrName = xy.country ?? xy.name ?? xy.x
+                    guard let label = codeOrName else { return nil }
+                    let val = xy.y ?? xy.value ?? 0
+                    return CountryMetric(code: label.uppercased(), name: label, value: val)
+                }
+            }
+            .mapError { $0 }
+            .eraseToAnyPublisher()
+
+        let pageviewsP: AnyPublisher<(pageviews: [PageviewMetric], sessions: [SessionMetric]), Error> = performRequest(request: pvReq)
+            .tryMap { data in
+                try decodeSeries(data)
+            }
+            .mapError { $0 }
+            .eraseToAnyPublisher()
+
+        // Combine results
+        let combined = Publishers.Zip3(Publishers.Zip(urlsP, refsP), Publishers.Zip(browsersP, osP), Publishers.Zip(devicesP, countriesP))
+            .zip(pageviewsP)
+            .map { (grouped, series) -> WebsiteMetricsResponse in
+                let ((pages, refs), (browsers, oss), (devices, countries)) = grouped
+                let pageviews = series.pageviews
+                let sessions = series.sessions
+
+                let metrics = WebsiteMetrics(
+                    pageviews: pageviews,
+                    sessions: sessions,
+                    events: [],
+                    countries: countries,
+                    browsers: browsers,
+                    os: oss,
+                    devices: devices,
+                    referrers: refs,
+                    pages: pages
+                )
+
+                let startISO = ISO8601DateFormatter().string(from: Date(timeIntervalSince1970: Double(dateRange.startAt) / 1000))
+                let endISO = ISO8601DateFormatter().string(from: Date(timeIntervalSince1970: Double(dateRange.endAt) / 1000))
+                return WebsiteMetricsResponse(websiteId: id, startDate: startISO, endDate: endISO, metrics: metrics)
+            }
+            .mapError { error in
+                if let apiError = error as? APIError { return apiError }
+                return APIError.networkError(error)
             }
             .handleEvents(receiveOutput: { _ in
-                // On success, reset the failure counter
                 UserDefaults.standard.set(0, forKey: "umami_metrics_failure_count")
-
-                // If we don't have a stored format yet, store this successful one
-                if metricsFormat == nil {
-                    if path.contains("/api/websites/") {
-                        if path.contains("start_at") {
-                            UserDefaults.standard.set("snake_case_params", forKey: "umami_metrics_format")
-                            print("✅ Caching successful endpoint format: snake_case_params")
-                        } else {
-                            UserDefaults.standard.set("standard", forKey: "umami_metrics_format")
-                            print("✅ Caching successful endpoint format: standard")
-                        }
-                    } else if path.contains("/api/website/") {
-                        UserDefaults.standard.set("singular_metrics", forKey: "umami_metrics_format")
-                        print("✅ Caching successful endpoint format: singular_metrics")
-                    } else if path.contains("/api/metrics/") {
-                        UserDefaults.standard.set("alt_metrics", forKey: "umami_metrics_format")
-                        print("✅ Caching successful endpoint format: alt_metrics")
-                    } else if path.contains("/api/v1/websites/") {
-                        UserDefaults.standard.set("v1_plural_metrics", forKey: "umami_metrics_format")
-                        print("✅ Caching successful endpoint format: v1_plural_metrics")
-                    } else if path.contains("/api/v1/website/") {
-                        UserDefaults.standard.set("v1_singular_metrics", forKey: "umami_metrics_format")
-                        print("✅ Caching successful endpoint format: v1_singular_metrics")
-                    }
-                }
             })
             .eraseToAnyPublisher()
+
+        return combined
     }
 
     func getWebsitePageviews(id: String, dateRange: DateRange) -> AnyPublisher<[PageviewMetric], Error> {
