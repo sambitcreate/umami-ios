@@ -45,17 +45,15 @@ struct LoginView: View {
             VStack(spacing: 30) {
                 // Logo and title
                 VStack(spacing: 10) {
-                    Image(systemName: "chart.bar.fill")
-                        .font(.system(size: 60))
-                        .foregroundColor(.blue)
+                    Image(colorScheme == .dark ? "umami-light" : "umami")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 120, height: 120)
+                        .accessibilityLabel("Umami Analytics Logo")
 
                     Text("Umami Analytics")
                         .font(.largeTitle)
                         .fontWeight(.bold)
-
-                    Text("Privacy-focused web analytics")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
                 }
                 .padding(.top, 50)
 
@@ -99,12 +97,15 @@ struct LoginView: View {
                             Text("Server URL")
                                 .font(.headline)
                                 .foregroundColor(.primary)
+                                .opacity(0.5)
                             HStack {
                                 Image(systemName: "lock.circle.fill")
                                     .foregroundColor(.blue)
+                                    .opacity(0.5)
                                 Text("https://cloud.umami.is")
                                     .font(.subheadline)
                                     .foregroundColor(.secondary)
+                                    .opacity(0.5)
                             }
                         }
                     }
@@ -116,7 +117,7 @@ struct LoginView: View {
                                 .font(.headline)
                                 .foregroundColor(.primary)
 
-                            SecureField("umami_api_key_...", text: $apiKey)
+                            SecureField("Your Umami API key", text: $apiKey)
                                 .textInputAutocapitalization(.never)
                                 .autocapitalization(.none)
                                 .disableAutocorrection(true)
@@ -177,7 +178,7 @@ struct LoginView: View {
                                 .background(Color.blue)
                                 .cornerRadius(10)
                         } else {
-                            Text("Sign In")
+                            Text("Sign In →")
                                 .fontWeight(.bold)
                                 .foregroundColor(.white)
                                 .frame(maxWidth: .infinity)

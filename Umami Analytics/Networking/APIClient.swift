@@ -81,7 +81,17 @@ class APIClient {
             effectivePath = path
         }
 
-        let apiURL = baseURL.appendingPathComponent(effectivePath)
+        // IMPORTANT: Do NOT use appendingPathComponent when `effectivePath` may include a query string.
+        // Using appendingPathComponent would percent-encode '?' into '%3F', breaking endpoints like
+        // /api/websites/{id}/metrics?startAt=... (seen in logs).
+        let apiURL: URL
+        if let url = URL(string: effectivePath, relativeTo: baseURL) {
+            // `URL(string:relativeTo:)` preserves query components in `effectivePath` correctly.
+            apiURL = url
+        } else {
+            // Fallback for strictly path-only inputs (no query). This mirrors previous behavior.
+            apiURL = baseURL.appendingPathComponent(effectivePath)
+        }
 
         var request = URLRequest(url: apiURL)
         request.httpMethod = method
