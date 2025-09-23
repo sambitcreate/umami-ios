@@ -138,7 +138,8 @@ struct DashboardView: View {
                 }
             }
             .overlay {
-                if viewModel.isLoading {
+                // Only block UI on cold start when there is no cached data
+                if viewModel.isLoading && !viewModel.hasWebsites {
                     ProgressView()
                         .scaleEffect(1.5)
                         .background(
@@ -248,7 +249,8 @@ struct WebsitesView: View {
                 }
             }
             .overlay {
-                if viewModel.isLoading {
+                // Only block UI if there is no list yet
+                if viewModel.isLoading && !viewModel.hasWebsites {
                     ProgressView()
                 }
             }

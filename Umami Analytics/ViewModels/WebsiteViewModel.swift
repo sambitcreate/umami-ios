@@ -23,6 +23,7 @@ class WebsiteViewModel: ObservableObject {
     @Published var websiteStats: WebsiteStatsModel?
     @Published var websiteMetrics: WebsiteMetrics?
     @Published var realtimeData: RealtimeData?
+    @Published var lastUpdated: Date?
 
     // Computed properties for UI
     var hasWebsites: Bool {
@@ -57,6 +58,13 @@ class WebsiteViewModel: ObservableObject {
         }
     }
 
+    var lastUpdatedText: String {
+        guard let lastUpdated else { return "" }
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        return formatter.localizedString(for: lastUpdated, relativeTo: Date())
+    }
+
     // MARK: - Initialization
 
     init() {
@@ -75,7 +83,9 @@ class WebsiteViewModel: ObservableObject {
     // MARK: - Data Loading
 
     func loadWebsites() {
-        isLoading = true
+        // Stale-while-revalidate: show cached list immediately and only block on cold start
+        if websites.isEmpty { loadCachedWebsites() }
+        isLoading = websites.isEmpty
         errorMessage = nil
 
         WebsiteService.shared.fetchWebsites()
@@ -164,7 +174,16 @@ class WebsiteViewModel: ObservableObject {
     // MARK: - Stats and Metrics
 
     private func loadWebsiteStats(websiteId: String) {
-        isLoading = true
+        // Stale-while-revalidate: prefer cached stats if available
+        if let cachedStats = WebsiteService.shared.fetchCachedStats(for: websiteId, period: selectedPeriod) {
+            let stats = WebsiteService.convertCachedStatsToModel(cachedStats)
+            self.websiteStats = stats
+            self.lastUpdated = max(self.lastUpdated ?? .distantPast, cachedStats.date ?? Date())
+            // Only show blocking loader if we have no data at all
+            isLoading = false
+        } else {
+            isLoading = true
+        }
 
         WebsiteService.shared.fetchWebsiteStats(id: websiteId, period: selectedPeriod)
             .receive(on: DispatchQueue.main)
@@ -204,12 +223,20 @@ class WebsiteViewModel: ObservableObject {
                     self?.websiteStats = response.stats
                     // Clear any previous error messages on success
                     self?.errorMessage = nil
+                    self?.isLoading = false
+                    self?.lastUpdated = Date()
                 }
             )
             .store(in: &cancellables)
     }
 
     private func loadWebsiteMetrics(websiteId: String) {
+        // Show cached metrics immediately if available
+        if let (cachedMetrics, date) = WebsiteService.shared.fetchCachedMetrics(for: websiteId, period: selectedPeriod) {
+            self.websiteMetrics = cachedMetrics
+            self.lastUpdated = max(self.lastUpdated ?? .distantPast, date)
+        }
+
         WebsiteService.shared.fetchWebsiteMetrics(id: websiteId, period: selectedPeriod)
             .receive(on: DispatchQueue.main)
             .sink(
@@ -238,6 +265,7 @@ class WebsiteViewModel: ObservableObject {
                 },
                 receiveValue: { [weak self] response in
                     self?.websiteMetrics = response.metrics
+                    self?.lastUpdated = Date()
                 }
             )
             .store(in: &cancellables)

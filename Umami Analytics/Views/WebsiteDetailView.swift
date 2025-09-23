@@ -79,7 +79,8 @@ struct WebsiteDetailView: View {
             }
         }
         .overlay {
-            if viewModel.isLoading {
+            // Only show blocking loader if we have no stats yet (cold start)
+            if viewModel.isLoading && viewModel.websiteStats == nil {
                 ProgressView()
                     .scaleEffect(1.5)
                     .background(
@@ -118,19 +119,27 @@ struct WebsiteDetailView: View {
     }
 
     private var periodSelector: some View {
-        HStack {
-            Text("Period:")
-                .font(.headline)
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("Period:")
+                    .font(.headline)
 
-            Picker("Period", selection: $viewModel.selectedPeriod) {
-                Text("Today").tag(StatsPeriod.day)
-                Text("This Week").tag(StatsPeriod.week)
-                Text("This Month").tag(StatsPeriod.month)
-                Text("This Year").tag(StatsPeriod.year)
+                Picker("Period", selection: $viewModel.selectedPeriod) {
+                    Text("Today").tag(StatsPeriod.day)
+                    Text("This Week").tag(StatsPeriod.week)
+                    Text("This Month").tag(StatsPeriod.month)
+                    Text("This Year").tag(StatsPeriod.year)
+                }
+                .pickerStyle(SegmentedPickerStyle())
+                .onChange(of: viewModel.selectedPeriod) { newValue in
+                    viewModel.changePeriod(newValue)
+                }
             }
-            .pickerStyle(SegmentedPickerStyle())
-            .onChange(of: viewModel.selectedPeriod) { newValue in
-                viewModel.changePeriod(newValue)
+
+            if !viewModel.lastUpdatedText.isEmpty {
+                Text("Last updated \(viewModel.lastUpdatedText)")
+                    .font(.caption2)
+                    .opacity(0.4)
             }
         }
         .padding(.horizontal)

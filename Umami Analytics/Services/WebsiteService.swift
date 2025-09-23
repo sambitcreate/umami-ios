@@ -352,9 +352,98 @@ class WebsiteService {
     }
 
     private func saveMetricsToCache(websiteId: String, metrics: WebsiteMetrics, period: StatsPeriod) {
-        // For simplicity, we're not implementing full metrics caching in this example
-        // In a real app, you would create additional CoreData entities for each metric type
-        print("Metrics received for website \(websiteId) for period \(period.rawValue)")
+        let context = PersistenceController.shared.container.viewContext
+
+        context.perform {
+            // Fetch the website
+            let websiteFetchRequest: NSFetchRequest<UmamiWebsite> = UmamiWebsite.fetchRequest()
+            websiteFetchRequest.predicate = NSPredicate(format: "id == %@", websiteId)
+
+            do {
+                let websites = try context.fetch(websiteFetchRequest)
+                guard let website = websites.first else { return }
+
+                // Encode series we chart: pageviews and sessions, and cache top pages/referrers
+                let encoder = JSONEncoder()
+                guard let pvData = try? encoder.encode(metrics.pageviews),
+                      let sessionsData = try? encoder.encode(metrics.sessions),
+                      let pagesData = try? encoder.encode(metrics.pages),
+                      let referrersData = try? encoder.encode(metrics.referrers) else {
+                    return
+                }
+
+                // Fetch or create cache entity
+                let fetch: NSFetchRequest<NSManagedObject> = NSFetchRequest(entityName: "UmamiWebsiteMetrics")
+                fetch.predicate = NSPredicate(format: "website == %@ AND period == %@", website, period.rawValue)
+
+                let existing = try context.fetch(fetch).first
+                let cacheObject: NSManagedObject
+                if let existing = existing {
+                    cacheObject = existing
+                } else {
+                    let entity = NSEntityDescription.entity(forEntityName: "UmamiWebsiteMetrics", in: context)!
+                    cacheObject = NSManagedObject(entity: entity, insertInto: context)
+                    cacheObject.setValue(website, forKey: "website")
+                    cacheObject.setValue(period.rawValue, forKey: "period")
+                }
+
+                cacheObject.setValue(Date(), forKey: "date")
+                cacheObject.setValue(pvData, forKey: "pageviewsData")
+                cacheObject.setValue(sessionsData, forKey: "sessionsData")
+                cacheObject.setValue(pagesData, forKey: "pagesData")
+                cacheObject.setValue(referrersData, forKey: "referrersData")
+
+                try context.save()
+            } catch {
+                print("Error saving metrics to CoreData: \(error)")
+            }
+        }
+    }
+
+    func fetchCachedMetrics(for websiteId: String, period: StatsPeriod) -> (WebsiteMetrics, Date)? {
+        let context = PersistenceController.shared.container.viewContext
+
+        // Fetch the website first
+        let websiteFetchRequest: NSFetchRequest<UmamiWebsite> = UmamiWebsite.fetchRequest()
+        websiteFetchRequest.predicate = NSPredicate(format: "id == %@", websiteId)
+
+        do {
+            let websites = try context.fetch(websiteFetchRequest)
+            guard let website = websites.first else { return nil }
+
+            let fetch: NSFetchRequest<NSManagedObject> = NSFetchRequest(entityName: "UmamiWebsiteMetrics")
+            fetch.predicate = NSPredicate(format: "website == %@ AND period == %@", website, period.rawValue)
+
+            if let cache = try context.fetch(fetch).first,
+               let pvData = cache.value(forKey: "pageviewsData") as? Data,
+               let sessionsData = cache.value(forKey: "sessionsData") as? Data,
+               let date = cache.value(forKey: "date") as? Date {
+
+                let decoder = JSONDecoder()
+                let pageviews = (try? decoder.decode([PageviewMetric].self, from: pvData)) ?? []
+                let sessions = (try? decoder.decode([SessionMetric].self, from: sessionsData)) ?? []
+                let pages = (cache.value(forKey: "pagesData") as? Data).flatMap { try? decoder.decode([PageMetric].self, from: $0) } ?? []
+                let referrers = (cache.value(forKey: "referrersData") as? Data).flatMap { try? decoder.decode([ReferrerMetric].self, from: $0) } ?? []
+
+                let metrics = WebsiteMetrics(
+                    pageviews: pageviews,
+                    sessions: sessions,
+                    events: [],
+                    countries: [],
+                    browsers: [],
+                    os: [],
+                    devices: [],
+                    referrers: referrers,
+                    pages: pages
+                )
+
+                return (metrics, date)
+            }
+        } catch {
+            print("Error fetching metrics from CoreData: \(error)")
+        }
+
+        return nil
     }
 
     // MARK: - Helper Methods
@@ -436,6 +525,16 @@ class WebsiteService {
 
         return nil
     }
+
+    // Convenience helper to convert cached CoreData stats into the in-app model
+    static func convertCachedStatsToModel(_ cached: UmamiWebsiteStats) -> WebsiteStatsModel {
+        WebsiteStatsModel(
+            pageviews: Int(cached.pageviews),
+            uniques: Int(cached.visitors),
+            bounces: 0,
+            totalTime: 0
+        )
+    }
 }
 
 // MARK: - Helper Types
@@ -455,5 +554,3 @@ enum StatsPeriod: String {
         }
     }
 }
-
-

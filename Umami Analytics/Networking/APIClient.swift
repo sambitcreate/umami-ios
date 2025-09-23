@@ -740,8 +740,20 @@ class APIClient {
 
     // MARK: - Websites
 
-    func getWebsites() -> AnyPublisher<WebsiteListResponse, Error> {
-        let request = createRequest(path: "/api/websites", method: "GET")
+    func getWebsites(page: Int = 1, pageSize: Int = 1000) -> AnyPublisher<WebsiteListResponse, Error> {
+        // Many Umami deployments paginate /api/websites. Default page size can hide items.
+        // Request a large page to show all sites in the app's list view.
+        var components = URLComponents(string: "/api/websites")
+        components?.queryItems = [
+            URLQueryItem(name: "page", value: String(page)),
+            URLQueryItem(name: "pageSize", value: String(pageSize))
+        ]
+
+        guard let path = components?.string else {
+            return Fail(error: APIError.invalidURL).eraseToAnyPublisher()
+        }
+
+        let request = createRequest(path: path, method: "GET")
         return performRequest(request: request)
     }
 
