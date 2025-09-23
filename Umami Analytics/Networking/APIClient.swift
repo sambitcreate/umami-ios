@@ -838,7 +838,7 @@ class APIClient {
         print("📊 Metrics request with dates (ms): start=\(startAtStr), end=\(endAtStr), unit=\(unit)")
 
         // Helper to build a metrics request with required 'type' param
-        func metricsRequest(type: String) -> URLRequest? {
+        func metricsRequest(type: String, limit: Int = 50) -> URLRequest? {
             var c = URLComponents(string: "/api/websites/\(id)/metrics")
             var items = [
                 URLQueryItem(name: "type", value: type),
@@ -846,6 +846,7 @@ class APIClient {
                 URLQueryItem(name: "endAt", value: endAtStr)
             ]
             items.append(URLQueryItem(name: "unit", value: unit))
+            items.append(URLQueryItem(name: "limit", value: String(limit)))
             if let tz = tz { items.append(URLQueryItem(name: "timezone", value: tz)) }
             c?.queryItems = items
             guard let path = c?.string else { return nil }

@@ -31,6 +31,9 @@
         <attribute name="sessionsData" optional="YES" attributeType="Binary" allowsExternalBinaryDataStorage="YES"/>
         <attribute name="pagesData" optional="YES" attributeType="Binary" allowsExternalBinaryDataStorage="YES"/>
         <attribute name="referrersData" optional="YES" attributeType="Binary" allowsExternalBinaryDataStorage="YES"/>
+        <attribute name="browsersData" optional="YES" attributeType="Binary" allowsExternalBinaryDataStorage="YES"/>
+        <attribute name="devicesData" optional="YES" attributeType="Binary" allowsExternalBinaryDataStorage="YES"/>
+        <attribute name="countriesData" optional="YES" attributeType="Binary" allowsExternalBinaryDataStorage="YES"/>
         <relationship name="website" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="UmamiWebsite" inverseName="metrics" inverseEntity="UmamiWebsite"/>
     </entity>
     <elements>

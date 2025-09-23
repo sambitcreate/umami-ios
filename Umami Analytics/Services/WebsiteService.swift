@@ -363,12 +363,15 @@ class WebsiteService {
                 let websites = try context.fetch(websiteFetchRequest)
                 guard let website = websites.first else { return }
 
-                // Encode series we chart: pageviews and sessions, and cache top pages/referrers
+                // Encode series we chart: pageviews and sessions, and cache top pages/referrers/browsers/devices/countries
                 let encoder = JSONEncoder()
                 guard let pvData = try? encoder.encode(metrics.pageviews),
                       let sessionsData = try? encoder.encode(metrics.sessions),
                       let pagesData = try? encoder.encode(metrics.pages),
-                      let referrersData = try? encoder.encode(metrics.referrers) else {
+                      let referrersData = try? encoder.encode(metrics.referrers),
+                      let browsersData = try? encoder.encode(metrics.browsers),
+                      let devicesData = try? encoder.encode(metrics.devices),
+                      let countriesData = try? encoder.encode(metrics.countries) else {
                     return
                 }
 
@@ -392,6 +395,9 @@ class WebsiteService {
                 cacheObject.setValue(sessionsData, forKey: "sessionsData")
                 cacheObject.setValue(pagesData, forKey: "pagesData")
                 cacheObject.setValue(referrersData, forKey: "referrersData")
+                cacheObject.setValue(browsersData, forKey: "browsersData")
+                cacheObject.setValue(devicesData, forKey: "devicesData")
+                cacheObject.setValue(countriesData, forKey: "countriesData")
 
                 try context.save()
             } catch {
@@ -424,15 +430,18 @@ class WebsiteService {
                 let sessions = (try? decoder.decode([SessionMetric].self, from: sessionsData)) ?? []
                 let pages = (cache.value(forKey: "pagesData") as? Data).flatMap { try? decoder.decode([PageMetric].self, from: $0) } ?? []
                 let referrers = (cache.value(forKey: "referrersData") as? Data).flatMap { try? decoder.decode([ReferrerMetric].self, from: $0) } ?? []
+                let browsers = (cache.value(forKey: "browsersData") as? Data).flatMap { try? decoder.decode([BrowserMetric].self, from: $0) } ?? []
+                let devices = (cache.value(forKey: "devicesData") as? Data).flatMap { try? decoder.decode([DeviceMetric].self, from: $0) } ?? []
+                let countries = (cache.value(forKey: "countriesData") as? Data).flatMap { try? decoder.decode([CountryMetric].self, from: $0) } ?? []
 
                 let metrics = WebsiteMetrics(
                     pageviews: pageviews,
                     sessions: sessions,
                     events: [],
-                    countries: [],
-                    browsers: [],
+                    countries: countries,
+                    browsers: browsers,
                     os: [],
-                    devices: [],
+                    devices: devices,
                     referrers: referrers,
                     pages: pages
                 )
