@@ -823,7 +823,7 @@ class APIClient {
             .eraseToAnyPublisher()
     }
 
-    func getWebsiteMetrics(id: String, dateRange: DateRange) -> AnyPublisher<WebsiteMetricsResponse, Error> {
+    func getWebsiteMetrics(id: String, dateRange: DateRange) -> AnyPublisher<WebsiteMetricsResponse, APIError> {
         // Track persistent failures but don't use mock data
         let persistentFailureCount = UserDefaults.standard.integer(forKey: "umami_metrics_failure_count")
         if persistentFailureCount > 5 {
