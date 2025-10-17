@@ -80,7 +80,7 @@ class APIClient {
         if let headers = request.allHTTPHeaderFields {
             print("🔑 Headers: \(headers)")
         }
-        
+
         return URLSession.shared.dataTaskPublisher(for: request)
             .tryMap { data, response in
                 guard let httpResponse = response as? HTTPURLResponse else {
@@ -119,6 +119,47 @@ class APIClient {
                 } else {
                     return APIError.networkError(error)
                 }
+            }
+            .eraseToAnyPublisher()
+    }
+
+    private func performVoidRequest(request: URLRequest) -> AnyPublisher<Void, Error> {
+        print("🌐 API Request: \(request.httpMethod ?? "GET") \(request.url?.absoluteString ?? "unknown")")
+        if let headers = request.allHTTPHeaderFields {
+            print("🔑 Headers: \(headers)")
+        }
+
+        return URLSession.shared.dataTaskPublisher(for: request)
+            .tryMap { data, response in
+                guard let httpResponse = response as? HTTPURLResponse else {
+                    throw APIError.unknown
+                }
+
+                print("📡 Response Status: \(httpResponse.statusCode) for \(request.url?.absoluteString ?? "unknown")")
+                if let responseString = String(data: data, encoding: .utf8), !responseString.isEmpty {
+                    print("📄 Response Body: \(responseString)")
+                }
+
+                if httpResponse.statusCode == 401 {
+                    throw APIError.unauthorized
+                }
+
+                guard (200...299).contains(httpResponse.statusCode) else {
+                    if let errorResponse = try? JSONDecoder().decode([String: String].self, from: data),
+                       let errorMessage = errorResponse["error"] ?? errorResponse["message"] {
+                        throw APIError.serverError(errorMessage)
+                    }
+
+                    throw APIError.serverError("Status code: \(httpResponse.statusCode)")
+                }
+
+                return ()
+            }
+            .mapError { error in
+                if let apiError = error as? APIError {
+                    return apiError
+                }
+                return APIError.networkError(error)
             }
             .eraseToAnyPublisher()
     }
@@ -211,6 +252,21 @@ class APIClient {
     func getWebsite(id: String) -> AnyPublisher<WebsiteModel, Error> {
         let request = createRequest(path: "/api/websites/\(id)", method: "GET")
         return performRequest(request: request)
+    }
+
+    func createWebsite(body: CreateWebsiteRequest) -> AnyPublisher<WebsiteModel, Error> {
+        let request = createRequest(path: "/api/websites", method: "POST", body: body)
+        return performRequest(request: request)
+    }
+
+    func updateWebsite(id: String, body: UpdateWebsiteRequest) -> AnyPublisher<WebsiteModel, Error> {
+        let request = createRequest(path: "/api/websites/\(id)", method: "POST", body: body)
+        return performRequest(request: request)
+    }
+
+    func deleteWebsite(id: String) -> AnyPublisher<Void, Error> {
+        let request = createRequest(path: "/api/websites/\(id)", method: "DELETE")
+        return performVoidRequest(request: request)
     }
 
     func getWebsiteStats(id: String, dateRange: DateRange) -> AnyPublisher<WebsiteStatsResponse, Error> {

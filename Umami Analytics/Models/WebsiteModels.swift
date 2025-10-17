@@ -131,6 +131,20 @@ struct WebsiteRequest: Codable {
     let filters: [String: String]?
 }
 
+struct CreateWebsiteRequest: Codable {
+    let name: String
+    let domain: String
+    let shareId: String?
+    let teamId: String?
+    let id: String?
+}
+
+struct UpdateWebsiteRequest: Codable {
+    let name: String?
+    let domain: String?
+    let shareId: String?
+}
+
 struct WebsiteListResponse: Codable {
     let data: [WebsiteModel]
     let count: Int
