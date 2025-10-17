@@ -12,241 +12,349 @@ import Security
 class AuthManager {
     static let shared = AuthManager()
 
+    private enum Constants {
+        static let cloudBaseURL = "https://api.umami.is"
+    }
+
     private let tokenKey = "umami.auth.token"
+    private let apiKeyKey = "umami.auth.apiKey"
     private let serverURLKey = "umami.server.url"
+    private let serverTypeKey = "umami.server.type"
     private let userKey = "umami.auth.user"
 
     private(set) var apiClient: APIClient?
     private var cancellables = Set<AnyCancellable>()
+    private var storedSelfHostedServerURL: String?
 
     @Published var isAuthenticated = false
     @Published var currentUser: User?
     @Published var serverURL: String?
+    @Published var serverType: ServerType = .selfHosted
     @Published var isLoading = false
+    @Published var cloudAPIKey: String?
 
     private init() {
-        // Load saved server URL first (this also loads and sets auth token)
-        loadServerURL()
+        loadServerType()
+        loadSavedServerURL()
+        restoreSession()
         loadUser()
+        if cloudAPIKey == nil {
+            cloudAPIKey = loadAPIKey()
+        }
+    }
+
+    var savedSelfHostedServerURL: String? {
+        storedSelfHostedServerURL
     }
 
     // MARK: - Authentication
 
-    func login(serverURL: String, username: String, password: String, completion: @escaping (Result<User, Error>) -> Void) {
-        // Ensure URL has a scheme
-        var finalURL = serverURL
-        if !serverURL.lowercased().hasPrefix("http") {
-            finalURL = "https://\(serverURL)"
+    func setServerType(_ type: ServerType) {
+        serverType = type
+        saveServerType(type)
+
+        switch type {
+        case .cloud:
+            serverURL = Constants.cloudBaseURL
+            cloudAPIKey = loadAPIKey()
+        case .selfHosted:
+            serverURL = storedSelfHostedServerURL
         }
+    }
 
-        // Remove trailing slash if present
-        if finalURL.hasSuffix("/") {
-            finalURL.removeLast()
-        }
+    func login(
+        serverType: ServerType,
+        serverURL: String?,
+        username: String?,
+        password: String?,
+        apiKey: String?,
+        completion: @escaping (Result<Void, Error>) -> Void
+    ) {
+        switch serverType {
+        case .selfHosted:
+            guard let trimmedURL = serverURL?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !trimmedURL.isEmpty else {
+                completion(.failure(AuthError.invalidURL))
+                return
+            }
 
-        do {
-            // Create API client with the server URL
-            let client = try APIClient(serverURL: finalURL)
-            self.apiClient = client
+            var finalURL = trimmedURL
+            if !finalURL.lowercased().hasPrefix("http") {
+                finalURL = "https://\(finalURL)"
+            }
+            if finalURL.hasSuffix("/") {
+                finalURL.removeLast()
+            }
 
-            client.login(username: username, password: password)
-                .receive(on: DispatchQueue.main)
-                .sink(
-                    receiveCompletion: { [weak self] result in
-                        if case .failure(let error) = result {
-                            completion(.failure(error))
-                            self?.isAuthenticated = false
+            guard let username = username?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !username.isEmpty,
+                  let password = password,
+                  !password.isEmpty else {
+                completion(.failure(AuthError.invalidCredentials))
+                return
+            }
+
+            do {
+                let client = try APIClient(serverURL: finalURL, serverType: .selfHosted)
+                apiClient = client
+
+                client.login(username: username, password: password)
+                    .receive(on: DispatchQueue.main)
+                    .sink(
+                        receiveCompletion: { [weak self] result in
+                            if case .failure(let error) = result {
+                                self?.isAuthenticated = false
+                                completion(.failure(error))
+                            }
+                        },
+                        receiveValue: { [weak self] response in
+                            guard let self = self else { return }
+
+                            self.saveAuthToken(response.token)
+                            self.saveServerURL(finalURL)
+                            self.saveServerType(.selfHosted)
+                            self.serverType = .selfHosted
+                            self.serverURL = finalURL
+                            self.storedSelfHostedServerURL = finalURL
+
+                            self.apiClient?.setAuthToken(response.token)
+                            self.currentUser = response.user
+                            self.saveUser(response.user)
+
+                            self.isAuthenticated = true
+                            completion(.success(()))
                         }
-                    },
-                    receiveValue: { [weak self] response in
-                        guard let self = self else { return }
+                    )
+                    .store(in: &cancellables)
+            } catch {
+                completion(.failure(error))
+            }
 
-                        // Save token and server URL
-                        self.saveAuthToken(response.token)
-                        self.saveServerURL(finalURL)
-                        self.saveUser(response.user)
+        case .cloud:
+            guard let key = apiKey?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !key.isEmpty else {
+                completion(.failure(AuthError.missingAPIKey))
+                return
+            }
 
-                        // Update state
-                        self.apiClient?.setAuthToken(response.token)
-                        self.currentUser = response.user
-                        self.isAuthenticated = true
-                        self.serverURL = finalURL
+            do {
+                let client = try APIClient(serverURL: Constants.cloudBaseURL, serverType: .cloud)
+                client.setAPIKey(key)
 
-                        // Verify the token works by calling verify endpoint
-                        client.verifyToken()
-                            .sink(
-                                receiveCompletion: { verifyResult in
-                                    switch verifyResult {
-                                    case .failure(let error):
-                                        print("⚠️ Token verification failed: \(error)")
-                                        // Still complete successfully since login worked
-                                        completion(.success(response.user))
-                                    case .finished:
-                                        print("✅ Token verification successful")
-                                        completion(.success(response.user))
-                                    }
-                                },
-                                receiveValue: { verifiedUser in
-                                    print("✅ Token verified for user: \(verifiedUser.username)")
-                                }
-                            )
-                            .store(in: &self.cancellables)
-                    }
-                )
-                .store(in: &cancellables)
-        } catch {
-            completion(.failure(error))
+                client.getWebsites(page: 1, pageSize: 1)
+                    .receive(on: DispatchQueue.main)
+                    .sink(
+                        receiveCompletion: { [weak self] result in
+                            if case .failure(let error) = result {
+                                self?.isAuthenticated = false
+                                completion(.failure(error))
+                            }
+                        },
+                        receiveValue: { [weak self] _ in
+                            guard let self = self else { return }
+
+                            self.apiClient = client
+                            self.saveAPIKey(key)
+                            self.cloudAPIKey = key
+                            self.serverType = .cloud
+                            self.saveServerType(.cloud)
+                            self.serverURL = Constants.cloudBaseURL
+
+                            self.clearStoredUser()
+                            self.isAuthenticated = true
+                            completion(.success(()))
+                        }
+                    )
+                    .store(in: &cancellables)
+            } catch {
+                completion(.failure(error))
+            }
         }
     }
 
     func logout(completion: @escaping (Result<Void, Error>) -> Void) {
-        guard let apiClient = apiClient else {
-            clearAuthData()
-            completion(.success(()))
-            return
-        }
+        switch serverType {
+        case .selfHosted:
+            guard let apiClient = apiClient else {
+                clearAuthData(for: .selfHosted)
+                completion(.success(()))
+                return
+            }
 
-        apiClient.logout()
-            .receive(on: DispatchQueue.main)
-            .sink(
-                receiveCompletion: { [weak self] result in
-                    if case .failure(let error) = result {
-                        completion(.failure(error))
-                    } else {
-                        self?.clearAuthData()
+            apiClient.logout()
+                .receive(on: DispatchQueue.main)
+                .sink(
+                    receiveCompletion: { [weak self] result in
+                        switch result {
+                        case .failure(let error):
+                            completion(.failure(error))
+                        case .finished:
+                            self?.clearAuthData(for: .selfHosted)
+                            completion(.success(()))
+                        }
+                    },
+                    receiveValue: { [weak self] _ in
+                        self?.clearAuthData(for: .selfHosted)
                         completion(.success(()))
                     }
-                },
-                receiveValue: { [weak self] _ in
-                    self?.clearAuthData()
-                    completion(.success(()))
-                }
-            )
-            .store(in: &cancellables)
+                )
+                .store(in: &cancellables)
+
+        case .cloud:
+            clearAuthData(for: .cloud)
+            completion(.success(()))
+        }
     }
 
-    func verifyAuthentication(completion: @escaping (Result<User, Error>) -> Void) {
+    func verifyAuthentication(completion: @escaping (Result<Void, Error>) -> Void) {
         guard let apiClient = apiClient, isAuthenticated else {
             completion(.failure(AuthError.invalidCredentials))
             return
         }
 
-        print("🔍 Verifying authentication token...")
-        apiClient.verifyToken()
-            .receive(on: DispatchQueue.main)
-            .sink(
-                receiveCompletion: { [weak self] result in
-                    if case .failure(let error) = result {
-                        print("❌ Token verification failed: \(error)")
-                        
-                        // Only log out for authentication errors, not network errors
-                        if let apiError = error as? APIError {
-                            switch apiError {
-                            case .unauthorized:
-                                print("🚪 Authentication error - logging out user")
+        switch serverType {
+        case .selfHosted:
+            apiClient.verifyToken()
+                .receive(on: DispatchQueue.main)
+                .sink(
+                    receiveCompletion: { [weak self] result in
+                        if case .failure(let error) = result {
+                            if let apiError = error as? APIError, case .unauthorized = apiError {
                                 self?.isAuthenticated = false
-                            default:
-                                print("⚠️ Network/other error - keeping user logged in")
                             }
-                        } else {
-                            print("⚠️ Unknown error - keeping user logged in")
+                            completion(.failure(error))
                         }
-                        completion(.failure(error))
+                    },
+                    receiveValue: { [weak self] user in
+                        self?.currentUser = user
+                        self?.saveUser(user)
+                        completion(.success(()))
                     }
-                },
-                receiveValue: { [weak self] user in
-                    print("✅ Token verification successful for user: \(user.username)")
-                    self?.currentUser = user
-                    self?.saveUser(user)
-                    completion(.success(user))
-                }
-            )
-            .store(in: &cancellables)
-    }
+                )
+                .store(in: &cancellables)
 
-    // MARK: - Token Management
-
-    private func saveAuthToken(_ token: String) {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrAccount as String: tokenKey,
-            kSecValueData as String: token.data(using: .utf8)!
-        ]
-
-        // Delete any existing token
-        SecItemDelete(query as CFDictionary)
-
-        // Add the new token
-        SecItemAdd(query as CFDictionary, nil)
-    }
-
-    private func loadAuthToken() {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrAccount as String: tokenKey,
-            kSecReturnData as String: true
-        ]
-
-        var item: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &item)
-
-        if status == errSecSuccess, let data = item as? Data, let token = String(data: data, encoding: .utf8) {
-            // Only set token if API client exists
-            if let client = apiClient {
-                client.setAuthToken(token)
-                isAuthenticated = true
-            } else {
-                // If no API client yet, we'll set the token when the client is created
-                isAuthenticated = false
-            }
-        } else {
-            isAuthenticated = false
+        case .cloud:
+            apiClient.getWebsites(page: 1, pageSize: 1)
+                .receive(on: DispatchQueue.main)
+                .sink(
+                    receiveCompletion: { result in
+                        if case .failure(let error) = result {
+                            completion(.failure(error))
+                        }
+                    },
+                    receiveValue: { _ in
+                        completion(.success(()))
+                    }
+                )
+                .store(in: &cancellables)
         }
     }
 
-    private func saveServerURL(_ url: String) {
-        UserDefaults.standard.set(url, forKey: serverURLKey)
-        serverURL = url
+    // MARK: - Token & Secret Management
+
+    private func saveAuthToken(_ token: String) {
+        saveToKeychain(value: token, key: tokenKey)
     }
 
-    private func loadServerURL() {
+    private func loadAuthToken() -> String? {
+        loadFromKeychain(key: tokenKey)
+    }
+
+    private func clearAuthToken() {
+        deleteFromKeychain(key: tokenKey)
+    }
+
+    private func saveAPIKey(_ key: String) {
+        saveToKeychain(value: key, key: apiKeyKey)
+    }
+
+    private func loadAPIKey() -> String? {
+        loadFromKeychain(key: apiKeyKey)
+    }
+
+    private func clearAPIKey() {
+        deleteFromKeychain(key: apiKeyKey)
+        cloudAPIKey = nil
+    }
+
+    private func saveServerURL(_ url: String) {
+        storedSelfHostedServerURL = url
+        UserDefaults.standard.set(url, forKey: serverURLKey)
+    }
+
+    private func loadSavedServerURL() {
         if let url = UserDefaults.standard.string(forKey: serverURLKey) {
             print("📱 Restoring server URL: \(url)")
-            serverURL = url
-            do {
-                apiClient = try APIClient(serverURL: url)
-                print("✅ API client created successfully")
-                // After creating the API client, load and set the auth token
-                loadAndSetAuthToken()
-            } catch {
-                print("❌ Error creating API client: \(error)")
+            storedSelfHostedServerURL = url
+            if serverType == .selfHosted {
+                serverURL = url
             }
         } else {
             print("📱 No saved server URL found")
         }
     }
-    
-    private func loadAndSetAuthToken() {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrAccount as String: tokenKey,
-            kSecReturnData as String: true
-        ]
 
-        var item: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &item)
-
-        if status == errSecSuccess, let data = item as? Data, let token = String(data: data, encoding: .utf8) {
-            apiClient?.setAuthToken(token)
-            isAuthenticated = true
-            print("Auth token restored successfully")
+    private func loadServerType() {
+        if let storedValue = UserDefaults.standard.string(forKey: serverTypeKey),
+           let storedType = ServerType(rawValue: storedValue) {
+            serverType = storedType
         } else {
-            isAuthenticated = false
-            print("No auth token found or failed to load")
+            serverType = .selfHosted
+        }
+    }
+
+    private func saveServerType(_ type: ServerType) {
+        UserDefaults.standard.set(type.rawValue, forKey: serverTypeKey)
+    }
+
+    private func restoreSession() {
+        switch serverType {
+        case .selfHosted:
+            guard let url = storedSelfHostedServerURL else {
+                isAuthenticated = false
+                cloudAPIKey = loadAPIKey()
+                return
+            }
+
+            do {
+                let client = try APIClient(serverURL: url, serverType: .selfHosted)
+                apiClient = client
+
+                if let token = loadAuthToken() {
+                    client.setAuthToken(token)
+                    serverURL = url
+                    isAuthenticated = true
+                } else {
+                    isAuthenticated = false
+                }
+            } catch {
+                print("❌ Error creating API client: \(error)")
+                isAuthenticated = false
+            }
+
+        case .cloud:
+            do {
+                let client = try APIClient(serverURL: Constants.cloudBaseURL, serverType: .cloud)
+                apiClient = client
+                serverURL = Constants.cloudBaseURL
+
+                if let key = loadAPIKey() {
+                    client.setAPIKey(key)
+                    cloudAPIKey = key
+                    isAuthenticated = true
+                } else {
+                    isAuthenticated = false
+                }
+            } catch {
+                print("❌ Error creating Cloud API client: \(error)")
+                isAuthenticated = false
+            }
         }
     }
 
     private func saveUser(_ user: User) {
+        guard serverType == .selfHosted else { return }
+
         if let userData = try? JSONEncoder().encode(user) {
             UserDefaults.standard.set(userData, forKey: userKey)
             currentUser = user
@@ -254,26 +362,78 @@ class AuthManager {
     }
 
     private func loadUser() {
+        guard serverType == .selfHosted else {
+            currentUser = nil
+            return
+        }
+
         if let userData = UserDefaults.standard.data(forKey: userKey),
            let user = try? JSONDecoder().decode(User.self, from: userData) {
             currentUser = user
         }
     }
 
-    private func clearAuthData() {
-        // Clear token from keychain
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrAccount as String: tokenKey
-        ]
-        SecItemDelete(query as CFDictionary)
-
-        // Clear user data
+    private func clearStoredUser() {
         UserDefaults.standard.removeObject(forKey: userKey)
+        currentUser = nil
+    }
 
-        // Update state
-        apiClient?.clearAuthToken()
+    private func clearAuthData(for type: ServerType) {
+        switch type {
+        case .selfHosted:
+            clearAuthToken()
+            apiClient?.clearAuthToken()
+            clearStoredUser()
+        case .cloud:
+            clearAPIKey()
+        }
+
+        apiClient = nil
         isAuthenticated = false
         currentUser = nil
+    }
+
+    // MARK: - Keychain Helpers
+
+    private func saveToKeychain(value: String, key: String) {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrAccount as String: key
+        ]
+
+        var attributes = query
+        attributes[kSecValueData as String] = value.data(using: .utf8)
+
+        SecItemDelete(query as CFDictionary)
+        SecItemAdd(attributes as CFDictionary, nil)
+    }
+
+    private func loadFromKeychain(key: String) -> String? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrAccount as String: key,
+            kSecReturnData as String: true
+        ]
+
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+
+        guard status == errSecSuccess,
+              let data = item as? Data,
+              !data.isEmpty,
+              let value = String(data: data, encoding: .utf8) else {
+            return nil
+        }
+
+        return value
+    }
+
+    private func deleteFromKeychain(key: String) {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrAccount as String: key
+        ]
+
+        SecItemDelete(query as CFDictionary)
     }
 }
