@@ -170,10 +170,74 @@ struct PageviewsResponse: Codable {
     let sessions: [TimeSeriesData]
 }
 
-struct TimeSeriesData: Codable, Identifiable {
-    var id: String { x }
-    let x: String  // Timestamp
-    let y: Int     // Count
+struct TimeSeriesData: Codable, Identifiable, Equatable {
+    var id: Date { date }
+    let date: Date
+    let value: Int
+
+    private enum CodingKeys: String, CodingKey {
+        case x
+        case y
+    }
+
+    init(date: Date, value: Int) {
+        self.date = date
+        self.value = value
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+
+        if let intValue = try? container.decode(Int.self, forKey: .y) {
+            self.value = intValue
+        } else if let doubleValue = try? container.decode(Double.self, forKey: .y) {
+            self.value = Int(doubleValue.rounded())
+        } else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .y,
+                in: container,
+                debugDescription: "Unable to decode numeric value for time series entry"
+            )
+        }
+
+        if let milliseconds = try? container.decode(Int64.self, forKey: .x) {
+            self.date = Date(timeIntervalSince1970: TimeInterval(milliseconds) / 1000)
+        } else if let doubleMilliseconds = try? container.decode(Double.self, forKey: .x) {
+            self.date = Date(timeIntervalSince1970: doubleMilliseconds / 1000)
+        } else if let stringValue = try? container.decode(String.self, forKey: .x) {
+            if let numericValue = Int64(stringValue) {
+                self.date = Date(timeIntervalSince1970: TimeInterval(numericValue) / 1000)
+            } else {
+                let isoFormatter = ISO8601DateFormatter()
+                if let parsedDate = isoFormatter.date(from: stringValue) {
+                    self.date = parsedDate
+                } else {
+                    throw DecodingError.dataCorruptedError(
+                        forKey: .x,
+                        in: container,
+                        debugDescription: "Unrecognised timestamp format: \(stringValue)"
+                    )
+                }
+            }
+        } else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .x,
+                in: container,
+                debugDescription: "Unable to decode timestamp for time series entry"
+            )
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        let milliseconds = Int64(date.timeIntervalSince1970 * 1000)
+        try container.encode(milliseconds, forKey: .x)
+        try container.encode(value, forKey: .y)
+    }
+
+    static func == (lhs: TimeSeriesData, rhs: TimeSeriesData) -> Bool {
+        lhs.date == rhs.date && lhs.value == rhs.value
+    }
 }
 
 // Active users endpoint response
