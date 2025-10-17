@@ -14,12 +14,12 @@ enum ChartType: String, CaseIterable {
 }
 
 struct AnalyticsChartView: View {
-    var pageviews: [PageviewMetric]
-    var visitors: [SessionMetric]
+    var pageviews: [TimeSeriesData]
+    var visitors: [TimeSeriesData]
     var period: StatsPeriod
 
     @State private var selectedChartType: ChartType = .pageviews
-    @State private var selectedDataPoint: (date: String, value: Int)?
+    @State private var selectedDataPoint: SelectedDataPoint?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -55,7 +55,7 @@ struct AnalyticsChartView: View {
                     .fill(Color(UIColor.secondarySystemBackground))
             )
 
-            if (selectedChartType == .pageviews && pageviews.isEmpty) || (selectedChartType == .visitors && visitors.isEmpty) {
+            if currentDataSet.isEmpty {
                 ChartPlaceholderView()
             } else {
                 chartView
@@ -77,7 +77,7 @@ struct AnalyticsChartView: View {
                             Text(selectedChartType.rawValue)
                                 .font(.caption)
                                 .foregroundColor(.secondary)
-                            Text("\(dataPoint.value)")
+                            Text(formatValue(dataPoint.value))
                                 .font(.subheadline)
                                 .fontWeight(.medium)
                                 .foregroundColor(selectedChartType == .pageviews ? .blue : .orange)
@@ -97,58 +97,79 @@ struct AnalyticsChartView: View {
         .onAppear {
             updateSelectedDataPoint()
         }
+        .onChange(of: selectedChartType) { _, _ in
+            updateSelectedDataPoint()
+        }
+        .onChange(of: pageviews) { _, _ in
+            updateSelectedDataPoint()
+        }
+        .onChange(of: visitors) { _, _ in
+            updateSelectedDataPoint()
+        }
     }
 
     private var chartView: some View {
         Chart {
-            if selectedChartType == .pageviews {
-                ForEach(pageviews) { item in
-                    if let date = parseDate(item.date) {
-                        BarMark(
-                            x: .value("Date", date),
-                            y: .value("Pageviews", item.value)
-                        )
-                        .foregroundStyle(
-                            .linearGradient(
-                                colors: [.blue, .blue.opacity(0.7)],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                        )
-                        .cornerRadius(4)
+            ForEach(currentDataSet) { item in
+                AreaMark(
+                    x: .value("Date", item.date),
+                    y: .value(selectedChartType.rawValue, item.value)
+                )
+                .interpolationMethod(.catmullRom)
+                .foregroundStyle(LinearGradient(
+                    colors: gradientColors.opacityGradient,
+                    startPoint: .top,
+                    endPoint: .bottom
+                ))
+
+                LineMark(
+                    x: .value("Date", item.date),
+                    y: .value(selectedChartType.rawValue, item.value)
+                )
+                .interpolationMethod(.catmullRom)
+                .lineStyle(StrokeStyle(lineWidth: 2))
+                .foregroundStyle(gradientColors.primary)
+
+                if selectedDataPoint?.date == item.date {
+                    PointMark(
+                        x: .value("Date", item.date),
+                        y: .value(selectedChartType.rawValue, item.value)
+                    )
+                    .symbolSize(80)
+                    .foregroundStyle(.white)
+                    .annotation(position: .top) {
+                        Text(formatValue(item.value))
+                            .font(.caption2)
+                            .padding(6)
+                            .background(gradientColors.primary.opacity(0.9))
+                            .foregroundColor(.white)
+                            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                     }
                 }
-            } else {
-                ForEach(visitors) { item in
-                    if let date = parseDate(item.date) {
-                        BarMark(
-                            x: .value("Date", date),
-                            y: .value("Visitors", item.value)
-                        )
-                        .foregroundStyle(
-                            .linearGradient(
-                                colors: [.orange, .orange.opacity(0.7)],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                        )
-                        .cornerRadius(4)
-                    }
-                }
+            }
+
+            if let selectedDataPoint {
+                RuleMark(x: .value("Selected", selectedDataPoint.date))
+                    .lineStyle(StrokeStyle(lineWidth: 1, dash: [3]))
+                    .foregroundStyle(.secondary)
             }
         }
         .chartXAxis {
-            AxisMarks(values: .automatic) { _ in
+            AxisMarks(values: .automatic(desiredCount: xAxisDesiredCount)) { value in
                 AxisGridLine()
                 AxisTick()
-                AxisValueLabel()
+                if let dateValue = value.as(Date.self) {
+                    AxisValueLabel(formatChartDate(dateValue))
+                }
             }
         }
         .chartYAxis {
-            AxisMarks(values: .automatic) { _ in
+            AxisMarks(values: .automatic(desiredCount: 4)) { value in
                 AxisGridLine()
                 AxisTick()
-                AxisValueLabel()
+                if let count = value.as(Int.self) {
+                    AxisValueLabel(formatValue(count))
+                }
             }
         }
         .chartOverlay { proxy in
@@ -159,103 +180,102 @@ struct AnalyticsChartView: View {
                     .gesture(
                         DragGesture(minimumDistance: 0)
                             .onChanged { value in
-                                let xPosition = value.location.x
+                                let plotAreaFrame = proxy.plotAreaFrame
+                                let originX = plotAreaFrame.origin.x
+                                let locationX = value.location.x - originX
 
-                                guard let date = proxy.value(atX: xPosition, as: String.self) else { return }
-
-                                if selectedChartType == .pageviews {
-                                    if let pageviewIndex = pageviews.firstIndex(where: { formatChartDate($0.date) == date }) {
-                                        let pageview = pageviews[pageviewIndex]
-                                        selectedDataPoint = (pageview.date, pageview.value)
-                                    }
-                                } else {
-                                    if let visitorIndex = visitors.firstIndex(where: { formatChartDate($0.date) == date }) {
-                                        let visitor = visitors[visitorIndex]
-                                        selectedDataPoint = (visitor.date, visitor.value)
-                                    }
+                                guard locationX >= 0,
+                                      locationX <= plotAreaFrame.size.width,
+                                      let date: Date = proxy.value(atX: value.location.x) else {
+                                    return
                                 }
+
+                                guard let nearestPoint = nearestDataPoint(to: date) else { return }
+                                selectedDataPoint = SelectedDataPoint(date: nearestPoint.date, value: nearestPoint.value)
                             }
                     )
             }
         }
-        .frame(height: 200)
+        .frame(height: 220)
     }
 
     private func updateSelectedDataPoint() {
-        if selectedChartType == .pageviews {
-            if let lastPageview = pageviews.last {
-                selectedDataPoint = (lastPageview.date, lastPageview.value)
-            }
-        } else {
-            if let lastVisitor = visitors.last {
-                selectedDataPoint = (lastVisitor.date, lastVisitor.value)
-            }
+        guard let latestPoint = currentDataSet.last else {
+            selectedDataPoint = nil
+            return
         }
-    }
-    
-    private func parseDate(_ dateString: String) -> Date? {
-        let dateFormatter = DateFormatter()
-        
-        // Try different timestamp formats that Umami might use
-        let formats = [
-            "yyyy-MM-dd'T'HH:mm:ss.SSSZ",
-            "yyyy-MM-dd'T'HH:mm:ssZ",
-            "yyyy-MM-dd'T'HH:mm:ss",
-            "yyyy-MM-dd HH:mm:ss",
-            "yyyy-MM-dd"
-        ]
-        
-        for format in formats {
-            dateFormatter.dateFormat = format
-            if let date = dateFormatter.date(from: dateString) {
-                return date
-            }
-        }
-        
-        // If it's a Unix timestamp (number as string)
-        if let timestamp = Double(dateString) {
-            return Date(timeIntervalSince1970: timestamp / 1000) // Convert from milliseconds
-        }
-        
-        return nil
-    }
-    
-    private func formatChartDate(_ dateString: String) -> String {
-        guard let date = parseDate(dateString) else {
-            return dateString
-        }
-        
-        let dateFormatter = DateFormatter()
-        switch period {
-        case .day:
-            dateFormatter.dateFormat = "HH:mm"
-        case .week:
-            dateFormatter.dateFormat = "MMM d"
-        case .month:
-            dateFormatter.dateFormat = "MMM d"
-        case .year:
-            dateFormatter.dateFormat = "MMM yyyy"
-        }
-        
-        return dateFormatter.string(from: date)
+
+        selectedDataPoint = SelectedDataPoint(date: latestPoint.date, value: latestPoint.value)
     }
 
-    private func formatDate(_ dateString: String) -> String {
-        guard let date = parseDate(dateString) else {
-            return dateString
+    private func nearestDataPoint(to date: Date) -> TimeSeriesData? {
+        let data = currentDataSet
+        guard !data.isEmpty else { return nil }
+        return data.min(by: { abs($0.date.timeIntervalSince(date)) < abs($1.date.timeIntervalSince(date)) })
+    }
+
+    private var gradientColors: (primary: Color, opacityGradient: [Color]) {
+        switch selectedChartType {
+        case .pageviews:
+            return (.blue, [.blue.opacity(0.45), .blue.opacity(0.1)])
+        case .visitors:
+            return (.orange, [.orange.opacity(0.5), .orange.opacity(0.15)])
         }
-        
-        let dateFormatter = DateFormatter()
+    }
+
+    private var currentDataSet: [TimeSeriesData] {
+        selectedChartType == .pageviews ? pageviews : visitors
+    }
+
+    private var xAxisDesiredCount: Int {
         switch period {
         case .day:
-            dateFormatter.dateFormat = "h:mm a"
-        case .week, .month:
-            dateFormatter.dateFormat = "MMM d"
+            return min(max(currentDataSet.count / 3, 4), 8)
+        case .week:
+            return 7
+        case .month:
+            return 8
         case .year:
-            dateFormatter.dateFormat = "MMM yyyy"
+            return 6
         }
-        
-        return dateFormatter.string(from: date)
+    }
+
+    private func formatChartDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale.current
+
+        switch period {
+        case .day:
+            formatter.dateFormat = "HH:mm"
+        case .week, .month:
+            formatter.dateFormat = "MMM d"
+        case .year:
+            formatter.dateFormat = "MMM yyyy"
+        }
+
+        return formatter.string(from: date)
+    }
+
+    private func formatDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale.current
+
+        switch period {
+        case .day:
+            formatter.dateFormat = "MMM d, h:mm a"
+        case .week, .month:
+            formatter.dateFormat = "EEEE, MMM d"
+        case .year:
+            formatter.dateFormat = "MMM yyyy"
+        }
+
+        return formatter.string(from: date)
+    }
+
+    private func formatValue(_ value: Int) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        return formatter.string(from: NSNumber(value: value)) ?? "\(value)"
     }
 }
 
@@ -281,26 +301,21 @@ struct ChartPlaceholderView: View {
 }
 
 #Preview {
-    let pageviews = [
-        PageviewMetric(date: "2023-04-01T00:00:00.000Z", value: 120),
-        PageviewMetric(date: "2023-04-02T00:00:00.000Z", value: 145),
-        PageviewMetric(date: "2023-04-03T00:00:00.000Z", value: 132),
-        PageviewMetric(date: "2023-04-04T00:00:00.000Z", value: 167),
-        PageviewMetric(date: "2023-04-05T00:00:00.000Z", value: 189),
-        PageviewMetric(date: "2023-04-06T00:00:00.000Z", value: 201),
-        PageviewMetric(date: "2023-04-07T00:00:00.000Z", value: 176)
-    ]
+    let pageviews = (0..<7).map { index -> TimeSeriesData in
+        let date = Calendar.current.date(byAdding: .day, value: index, to: Date()) ?? Date()
+        return TimeSeriesData(date: date, value: Int.random(in: 120...220))
+    }
 
-    let visitors = [
-        SessionMetric(date: "2023-04-01T00:00:00.000Z", value: 78),
-        SessionMetric(date: "2023-04-02T00:00:00.000Z", value: 92),
-        SessionMetric(date: "2023-04-03T00:00:00.000Z", value: 86),
-        SessionMetric(date: "2023-04-04T00:00:00.000Z", value: 105),
-        SessionMetric(date: "2023-04-05T00:00:00.000Z", value: 118),
-        SessionMetric(date: "2023-04-06T00:00:00.000Z", value: 132),
-        SessionMetric(date: "2023-04-07T00:00:00.000Z", value: 109)
-    ]
+    let visitors = (0..<7).map { index -> TimeSeriesData in
+        let date = Calendar.current.date(byAdding: .day, value: index, to: Date()) ?? Date()
+        return TimeSeriesData(date: date, value: Int.random(in: 60...180))
+    }
 
     return AnalyticsChartView(pageviews: pageviews, visitors: visitors, period: .week)
         .padding()
+}
+
+private struct SelectedDataPoint {
+    let date: Date
+    let value: Int
 }

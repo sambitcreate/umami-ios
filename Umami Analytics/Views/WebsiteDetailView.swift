@@ -26,8 +26,8 @@ struct WebsiteDetailView: View {
                 // Chart
                 if let pageviewsData = viewModel.pageviewsData {
                     AnalyticsChartView(
-                        pageviews: pageviewsData.pageviews.map { PageviewMetric(date: $0.x, value: $0.y) },
-                        visitors: pageviewsData.sessions.map { SessionMetric(date: $0.x, value: $0.y) },
+                        pageviews: pageviewsData.pageviews,
+                        visitors: pageviewsData.sessions,
                         period: viewModel.selectedPeriod
                     )
                     .padding(.horizontal)
@@ -69,7 +69,7 @@ struct WebsiteDetailView: View {
                 */
 
                 // Active visitors
-                if viewModel.activeUsersCount > 0 {
+                if viewModel.hasActiveUsersData {
                     activeUsersSection(viewModel.activeUsersCount)
                 }
 
@@ -106,11 +106,23 @@ struct WebsiteDetailView: View {
     // MARK: - UI Components
 
     private var websiteHeader: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 12) {
             if let website = viewModel.selectedWebsite {
-                Text(website.domain)
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
+                HStack(alignment: .center, spacing: 14) {
+                    WebsiteFaviconView(domain: website.domain, size: 40)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(website.name)
+                            .font(.title3)
+                            .fontWeight(.semibold)
+
+                        Text(website.domain)
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+
+                    Spacer()
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -333,23 +345,30 @@ struct WebsiteDetailView: View {
 
     private func activeUsersSection(_ activeCount: Int) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
+            HStack(spacing: 12) {
                 Text("Active Visitors")
                     .font(.headline)
 
                 Spacer()
 
-                Text("\(activeCount) online now")
-                    .font(.subheadline)
-                    .foregroundColor(.green)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(Color.green.opacity(0.1))
-                    .cornerRadius(20)
+                Label {
+                    Text(activeCount > 0 ? "\(activeCount) online now" : "No active visitors")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                } icon: {
+                    Circle()
+                        .fill(activeCount > 0 ? Color.green : Color.gray)
+                        .frame(width: 10, height: 10)
+                        .overlay(Circle().stroke(Color.white, lineWidth: 1))
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background((activeCount > 0 ? Color.green : Color.gray).opacity(0.1))
+                .clipShape(Capsule())
             }
             .padding(.horizontal)
-            
-            Text("Real-time visitor count")
+
+            Text(activeCount > 0 ? "These visitors are browsing your site right now." : "We'll update this section as soon as someone arrives on your site.")
                 .font(.caption)
                 .foregroundColor(.secondary)
                 .padding(.horizontal)

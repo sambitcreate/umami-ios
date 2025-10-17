@@ -25,6 +25,7 @@ class WebsiteViewModel: ObservableObject {
     @Published var pageviewsData: PageviewsResponse?
     @Published var activeUsers: ActiveUsersResponse?
     @Published var activeUsersCount: Int = 0
+    @Published var hasActiveUsersData: Bool = false
 
     // Computed properties for UI
     var hasWebsites: Bool {
@@ -141,6 +142,9 @@ class WebsiteViewModel: ObservableObject {
     }
 
     func loadWebsiteData(website: WebsiteModel) {
+        hasActiveUsersData = false
+        activeUsersCount = 0
+
         loadWebsiteStats(websiteId: website.id)
         loadWebsiteMetrics(websiteId: website.id)
         loadPageviewsData(websiteId: website.id)
@@ -234,6 +238,8 @@ class WebsiteViewModel: ObservableObject {
                 },
                 receiveValue: { [weak self] response in
                     self?.activeUsers = response
+                    self?.activeUsersCount = response.visitors
+                    self?.hasActiveUsersData = true
                 }
             )
             .store(in: &cancellables)
@@ -245,6 +251,7 @@ class WebsiteViewModel: ObservableObject {
         WebsiteService.shared.startRealtimeUpdates(for: websiteId) { [weak self] count in
             DispatchQueue.main.async {
                 self?.activeUsersCount = count
+                self?.hasActiveUsersData = true
             }
         }
     }

@@ -102,8 +102,8 @@ struct DashboardView: View {
                         // Chart
                         if let pageviewsData = viewModel.pageviewsData {
                             AnalyticsChartView(
-                                pageviews: pageviewsData.pageviews.map { PageviewMetric(date: $0.x, value: $0.y) },
-                                visitors: pageviewsData.sessions.map { SessionMetric(date: $0.x, value: $0.y) },
+                                pageviews: pageviewsData.pageviews,
+                                visitors: pageviewsData.sessions,
                                 period: viewModel.selectedPeriod
                             )
                             .padding(.horizontal)
@@ -219,7 +219,9 @@ struct DashboardWebsiteRow: View {
     let website: WebsiteModel
 
     var body: some View {
-        HStack {
+        HStack(spacing: 12) {
+            WebsiteFaviconView(domain: website.domain)
+
             VStack(alignment: .leading, spacing: 4) {
                 Text(website.name)
                     .font(.headline)
@@ -323,15 +325,73 @@ struct WebsiteRowView: View {
     let website: WebsiteModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(website.name)
-                .font(.headline)
+        HStack(spacing: 12) {
+            WebsiteFaviconView(domain: website.domain, size: 28)
 
-            Text(website.domain)
-                .font(.subheadline)
-                .foregroundColor(.secondary)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(website.name)
+                    .font(.headline)
+
+                Text(website.domain)
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            }
         }
         .padding(.vertical, 4)
+    }
+}
+
+struct WebsiteFaviconView: View {
+    var domain: String
+    var size: CGFloat = 36
+
+    private var faviconURL: URL? {
+        var trimmedDomain = domain.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if trimmedDomain.hasPrefix("http://") || trimmedDomain.hasPrefix("https://") {
+            if let url = URL(string: trimmedDomain), let host = url.host {
+                trimmedDomain = host
+            }
+        }
+
+        guard !trimmedDomain.isEmpty else { return nil }
+
+        let encodedDomain = trimmedDomain.addingPercentEncoding(withAllowedCharacters: .urlHostAllowed) ?? trimmedDomain
+        let urlString = "https://www.google.com/s2/favicons?sz=64&domain=\(encodedDomain)"
+        return URL(string: urlString)
+    }
+
+    var body: some View {
+        AsyncImage(url: faviconURL) { phase in
+            switch phase {
+            case .success(let image):
+                image
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: size, height: size)
+                    .clipShape(RoundedRectangle(cornerRadius: size / 4, style: .continuous))
+            case .failure:
+                placeholder
+            case .empty:
+                placeholder.overlay(
+                    ProgressView()
+                        .scaleEffect(0.6)
+                )
+            @unknown default:
+                placeholder
+            }
+        }
+        .frame(width: size, height: size)
+    }
+
+    private var placeholder: some View {
+        RoundedRectangle(cornerRadius: size / 4, style: .continuous)
+            .fill(Color(UIColor.secondarySystemBackground))
+            .overlay(
+                Image(systemName: "globe")
+                    .font(.system(size: size / 2))
+                    .foregroundColor(.secondary)
+            )
     }
 }
 
