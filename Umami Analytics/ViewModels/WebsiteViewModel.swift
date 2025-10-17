@@ -15,6 +15,7 @@ class WebsiteViewModel: ObservableObject {
     // Published properties for UI updates
     @Published var websites: [WebsiteModel] = []
     @Published var isLoading = false
+    @Published var isPerformingAction = false
     @Published var errorMessage: String?
     @Published var selectedPeriod: StatsPeriod = .day
 
@@ -139,6 +140,123 @@ class WebsiteViewModel: ObservableObject {
     func selectWebsite(_ website: WebsiteModel) {
         selectedWebsite = website
         loadWebsiteData(website: website)
+    }
+
+    func createWebsite(name: String, domain: String, shareId: String?, teamId: String?, completion: @escaping (Result<WebsiteModel, Error>) -> Void) {
+        isPerformingAction = true
+
+        WebsiteService.shared.createWebsite(name: name, domain: domain, shareId: shareId, teamId: teamId)
+            .receive(on: DispatchQueue.main)
+            .sink(
+                receiveCompletion: { [weak self] result in
+                    self?.isPerformingAction = false
+
+                    if case .failure(let error) = result {
+                        if let apiError = error as? APIError {
+                            self?.errorMessage = apiError.message
+                            completion(.failure(apiError))
+                        } else {
+                            self?.errorMessage = error.localizedDescription
+                            completion(.failure(error))
+                        }
+                    }
+                },
+                receiveValue: { [weak self] website in
+                    guard let self = self else { return }
+
+                    if let index = self.websites.firstIndex(where: { $0.id == website.id }) {
+                        self.websites[index] = website
+                    } else {
+                        self.websites.insert(website, at: 0)
+                    }
+
+                    completion(.success(website))
+                }
+            )
+            .store(in: &cancellables)
+    }
+
+    func updateWebsite(_ website: WebsiteModel, name: String, domain: String, shareId: String?, completion: @escaping (Result<WebsiteModel, Error>) -> Void) {
+        isPerformingAction = true
+
+        WebsiteService.shared.updateWebsite(id: website.id, name: name, domain: domain, shareId: shareId)
+            .receive(on: DispatchQueue.main)
+            .sink(
+                receiveCompletion: { [weak self] result in
+                    self?.isPerformingAction = false
+
+                    if case .failure(let error) = result {
+                        if let apiError = error as? APIError {
+                            self?.errorMessage = apiError.message
+                            completion(.failure(apiError))
+                        } else {
+                            self?.errorMessage = error.localizedDescription
+                            completion(.failure(error))
+                        }
+                    }
+                },
+                receiveValue: { [weak self] updatedWebsite in
+                    guard let self = self else { return }
+
+                    if let index = self.websites.firstIndex(where: { $0.id == updatedWebsite.id }) {
+                        self.websites[index] = updatedWebsite
+                    }
+
+                    if self.selectedWebsite?.id == updatedWebsite.id {
+                        self.selectedWebsite = updatedWebsite
+                        self.loadWebsiteData(website: updatedWebsite)
+                    }
+
+                    completion(.success(updatedWebsite))
+                }
+            )
+            .store(in: &cancellables)
+    }
+
+    func deleteWebsite(_ website: WebsiteModel, completion: @escaping (Result<Void, Error>) -> Void) {
+        isPerformingAction = true
+
+        WebsiteService.shared.deleteWebsite(id: website.id)
+            .receive(on: DispatchQueue.main)
+            .sink(
+                receiveCompletion: { [weak self] result in
+                    self?.isPerformingAction = false
+
+                    switch result {
+                    case .failure(let error):
+                        if let apiError = error as? APIError {
+                            self?.errorMessage = apiError.message
+                            completion(.failure(apiError))
+                        } else {
+                            self?.errorMessage = error.localizedDescription
+                            completion(.failure(error))
+                        }
+                    case .finished:
+                        completion(.success(()))
+                    }
+                },
+                receiveValue: { [weak self] in
+                    guard let self = self else { return }
+
+                    self.websites.removeAll { $0.id == website.id }
+
+                    if self.selectedWebsite?.id == website.id {
+                        self.stopRealtimeUpdates()
+                        self.selectedWebsite = nil
+                        self.websiteStats = nil
+                        self.websiteMetrics = nil
+                        self.pageviewsData = nil
+                        self.activeUsers = nil
+                        self.activeUsersCount = 0
+                        self.hasActiveUsersData = false
+
+                        if let nextWebsite = self.websites.first {
+                            self.selectWebsite(nextWebsite)
+                        }
+                    }
+                }
+            )
+            .store(in: &cancellables)
     }
 
     func loadWebsiteData(website: WebsiteModel) {
