@@ -50,14 +50,35 @@ struct DashboardView: View {
             ScrollView {
                 VStack(spacing: 20) {
                     // Welcome header
-                    if let user = AuthManager.shared.currentUser {
+                    let authManager = AuthManager.shared
+                    if let user = authManager.currentUser {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Welcome, \(user.username)")
                                 .font(.title)
                                 .fontWeight(.bold)
 
-                            if let serverURL = AuthManager.shared.serverURL {
+                            if let serverURL = authManager.serverURL {
                                 Text("Connected to: \(serverURL)")
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal)
+                    } else {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(authManager.serverType.displayName)
+                                .font(.title)
+                                .fontWeight(.bold)
+
+                            if authManager.serverType == .cloud {
+                                Text("Connected using your Umami Cloud API key.")
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                            }
+
+                            if let serverURL = authManager.serverURL {
+                                Text("Endpoint: \(serverURL)")
                                     .font(.subheadline)
                                     .foregroundColor(.secondary)
                             }
@@ -488,11 +509,23 @@ struct SettingsView: View {
     @EnvironmentObject private var appState: AppState
     @State private var showingLogoutConfirmation = false
 
+    private var authManager: AuthManager { AuthManager.shared }
+
+    private var maskedAPIKey: String {
+        guard let key = authManager.cloudAPIKey, !key.isEmpty else {
+            return "Not stored"
+        }
+
+        let prefix = key.prefix(4)
+        let suffix = key.suffix(4)
+        return "\(prefix)…\(suffix)"
+    }
+
     var body: some View {
         NavigationView {
             List {
                 Section(header: Text("Account")) {
-                    if let user = AuthManager.shared.currentUser {
+                    if let user = authManager.currentUser {
                         HStack {
                             Text("Username")
                             Spacer()
@@ -506,6 +539,22 @@ struct SettingsView: View {
                             Text(user.role)
                                 .foregroundColor(.secondary)
                         }
+                    } else {
+                        HStack {
+                            Text("Mode")
+                            Spacer()
+                            Text(authManager.serverType.displayName)
+                                .foregroundColor(.secondary)
+                        }
+
+                        if authManager.serverType == .cloud {
+                            HStack {
+                                Text("API Key")
+                                Spacer()
+                                Text(maskedAPIKey)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
                     }
 
                     Button("Sign Out") {
@@ -515,11 +564,34 @@ struct SettingsView: View {
                 }
 
                 Section(header: Text("Server")) {
-                    if let serverURL = AuthManager.shared.serverURL {
+                    HStack {
+                        Text("Type")
+                        Spacer()
+                        Text(authManager.serverType.displayName)
+                            .foregroundColor(.secondary)
+                    }
+
+                    if let serverURL = authManager.serverURL {
                         HStack {
                             Text("URL")
                             Spacer()
                             Text(serverURL)
+                                .foregroundColor(.secondary)
+                        }
+                    } else if let savedURL = authManager.savedSelfHostedServerURL {
+                        HStack {
+                            Text("Last URL")
+                            Spacer()
+                            Text(savedURL)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+
+                    if authManager.serverType == .cloud {
+                        HStack {
+                            Text("Authentication")
+                            Spacer()
+                            Text("API Key Header")
                                 .foregroundColor(.secondary)
                         }
                     }
