@@ -15,6 +15,50 @@ class WebsiteService {
     private var cancellables = Set<AnyCancellable>()
     private var realtimeTimers: [String: Timer] = [:]
 
+    // MARK: - Website Management
+
+    func createWebsite(name: String, domain: String, shareId: String?, teamId: String?, id: String? = nil) -> AnyPublisher<WebsiteModel, Error> {
+        guard let apiClient = AuthManager.shared.apiClient else {
+            return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
+        }
+
+        let payload = CreateWebsiteRequest(name: name, domain: domain, shareId: shareId, teamId: teamId, id: id)
+
+        return apiClient.createWebsite(body: payload)
+            .handleEvents(receiveOutput: { [weak self] website in
+                self?.saveWebsitesToCoreData([website])
+            })
+            .eraseToAnyPublisher()
+    }
+
+    func updateWebsite(id: String, name: String?, domain: String?, shareId: String?) -> AnyPublisher<WebsiteModel, Error> {
+        guard let apiClient = AuthManager.shared.apiClient else {
+            return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
+        }
+
+        let payload = UpdateWebsiteRequest(name: name, domain: domain, shareId: shareId)
+
+        return apiClient.updateWebsite(id: id, body: payload)
+            .handleEvents(receiveOutput: { [weak self] website in
+                self?.saveWebsitesToCoreData([website])
+            })
+            .eraseToAnyPublisher()
+    }
+
+    func deleteWebsite(id: String) -> AnyPublisher<Void, Error> {
+        guard let apiClient = AuthManager.shared.apiClient else {
+            return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
+        }
+
+        return apiClient.deleteWebsite(id: id)
+            .handleEvents(receiveCompletion: { [weak self] completion in
+                if case .finished = completion {
+                    self?.deleteWebsiteFromCoreData(id)
+                }
+            })
+            .eraseToAnyPublisher()
+    }
+
     // MARK: - Website List
 
     func fetchWebsites() -> AnyPublisher<[WebsiteModel], Error> {
@@ -193,6 +237,28 @@ class WebsiteService {
                 } catch {
                     print("Error saving websites to CoreData: \(error)")
                 }
+            }
+        }
+    }
+
+    private func deleteWebsiteFromCoreData(_ websiteId: String) {
+        let context = PersistenceController.shared.container.viewContext
+
+        context.perform {
+            let fetchRequest: NSFetchRequest<UmamiWebsite> = UmamiWebsite.fetchRequest()
+            fetchRequest.predicate = NSPredicate(format: "id == %@", websiteId)
+
+            do {
+                let results = try context.fetch(fetchRequest)
+                for object in results {
+                    context.delete(object)
+                }
+
+                if context.hasChanges {
+                    try context.save()
+                }
+            } catch {
+                print("Error deleting website from CoreData: \(error)")
             }
         }
     }

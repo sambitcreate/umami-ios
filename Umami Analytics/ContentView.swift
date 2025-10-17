@@ -246,6 +246,10 @@ struct DashboardWebsiteRow: View {
 struct WebsitesView: View {
     @StateObject private var viewModel = WebsiteViewModel()
     @State private var showingAddWebsite = false
+    @State private var websiteToEdit: WebsiteModel?
+    @State private var websiteForScript: WebsiteModel?
+    @State private var websitePendingDeletion: WebsiteModel?
+    @State private var showingDeleteConfirmation = false
 
     var body: some View {
         NavigationView {
@@ -261,9 +265,57 @@ struct WebsitesView: View {
                             }()) {
                                 WebsiteRowView(website: website)
                             }
+                            .swipeActions(edge: .leading, allowsFullSwipe: false) {
+                                Button {
+                                    websiteForScript = website
+                                } label: {
+                                    Label("Script", systemImage: "doc.on.doc")
+                                }
+                                .tint(.purple)
+                            }
+                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                Button {
+                                    websiteToEdit = website
+                                } label: {
+                                    Label("Edit", systemImage: "square.and.pencil")
+                                }
+                                .tint(.blue)
+
+                                Button(role: .destructive) {
+                                    websitePendingDeletion = website
+                                    showingDeleteConfirmation = true
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                            }
+                            .contextMenu {
+                                Button {
+                                    websiteToEdit = website
+                                } label: {
+                                    Label("Edit Website", systemImage: "square.and.pencil")
+                                }
+
+                                Button {
+                                    websiteForScript = website
+                                } label: {
+                                    Label("Tracking Script", systemImage: "doc.on.doc")
+                                }
+
+                                Divider()
+
+                                Button(role: .destructive) {
+                                    websitePendingDeletion = website
+                                    showingDeleteConfirmation = true
+                                } label: {
+                                    Label("Delete Website", systemImage: "trash")
+                                }
+                            }
                         }
                     }
                     .listStyle(InsetGroupedListStyle())
+                    .refreshable {
+                        viewModel.loadWebsites()
+                    }
                 } else {
                     VStack(spacing: 20) {
                         Image(systemName: "globe")
@@ -280,6 +332,11 @@ struct WebsitesView: View {
                             .multilineTextAlignment(.center)
                             .padding(.horizontal, 40)
 
+                        Button("Add Website") {
+                            showingAddWebsite = true
+                        }
+                        .buttonStyle(.borderedProminent)
+
                         Button("Refresh") {
                             viewModel.loadWebsites()
                         }
@@ -291,7 +348,13 @@ struct WebsitesView: View {
             }
             .navigationTitle("Websites")
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
+                ToolbarItemGroup(placement: .navigationBarTrailing) {
+                    Button {
+                        showingAddWebsite = true
+                    } label: {
+                        Image(systemName: "plus")
+                    }
+
                     Button(action: {
                         viewModel.loadWebsites()
                     }) {
@@ -300,7 +363,7 @@ struct WebsitesView: View {
                 }
             }
             .overlay {
-                if viewModel.isLoading {
+                if viewModel.isLoading || viewModel.isPerformingAction {
                     ProgressView()
                 }
             }
@@ -314,9 +377,35 @@ struct WebsitesView: View {
                     dismissButton: .default(Text("OK"))
                 )
             }
+            .confirmationDialog(
+                "Delete Website",
+                isPresented: $showingDeleteConfirmation,
+                presenting: websitePendingDeletion
+            ) { website in
+                Button("Delete", role: .destructive) {
+                    viewModel.deleteWebsite(website) { _ in
+                        websitePendingDeletion = nil
+                    }
+                }
+
+                Button("Cancel", role: .cancel) {
+                    websitePendingDeletion = nil
+                }
+            } message: { website in
+                Text("Are you sure you want to delete \(website.name)? This action cannot be undone.")
+            }
         }
         .onAppear {
             viewModel.loadWebsites()
+        }
+        .sheet(isPresented: $showingAddWebsite) {
+            WebsiteFormView(mode: .create, viewModel: viewModel)
+        }
+        .sheet(item: $websiteToEdit) { website in
+            WebsiteFormView(mode: .edit(website), viewModel: viewModel)
+        }
+        .sheet(item: $websiteForScript) { website in
+            TrackingScriptView(website: website)
         }
     }
 }
