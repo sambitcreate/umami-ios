@@ -11,14 +11,17 @@ import Combine
 class APIClient {
     private var baseURL: URL
     private var authToken: String?
+    private var apiKey: String?
     private let jsonDecoder: JSONDecoder
     private let jsonEncoder: JSONEncoder
+    private let serverType: ServerType
 
-    init(serverURL: String) throws {
+    init(serverURL: String, serverType: ServerType = .selfHosted) throws {
         guard let url = URL(string: serverURL) else {
             throw AuthError.invalidURL
         }
         self.baseURL = url
+        self.serverType = serverType
 
         self.jsonDecoder = JSONDecoder()
         self.jsonDecoder.keyDecodingStrategy = .convertFromSnakeCase
@@ -42,25 +45,37 @@ class APIClient {
         self.authToken = nil
     }
 
+    func setAPIKey(_ key: String) {
+        self.apiKey = key
+    }
+
     // MARK: - Helper Methods
 
     private func createRequest(path: String, method: String, body: Encodable? = nil) -> URLRequest {
+        let normalizedPath = normalize(path: path)
         // Handle URLs with query parameters correctly
         let apiURL: URL
-        if path.contains("?") {
+        if normalizedPath.contains("?") {
             // Path contains query parameters, construct URL directly
-            apiURL = URL(string: path, relativeTo: baseURL) ?? baseURL.appendingPathComponent(path)
+            apiURL = URL(string: normalizedPath, relativeTo: baseURL) ?? baseURL.appendingPathComponent(normalizedPath)
         } else {
             // Path is just a path component, use appendingPathComponent
-            apiURL = baseURL.appendingPathComponent(path)
+            apiURL = baseURL.appendingPathComponent(normalizedPath)
         }
 
         var request = URLRequest(url: apiURL)
         request.httpMethod = method
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
 
-        if let token = authToken {
-            request.addValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        switch serverType {
+        case .selfHosted:
+            if let token = authToken {
+                request.addValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            }
+        case .cloud:
+            if let apiKey = apiKey {
+                request.addValue(apiKey, forHTTPHeaderField: "x-umami-api-key")
+            }
         }
 
         if let body = body {
@@ -86,7 +101,7 @@ class APIClient {
                 guard let httpResponse = response as? HTTPURLResponse else {
                     throw APIError.unknown
                 }
-                
+
                 // Debug: Print response details
                 print("📡 Response Status: \(httpResponse.statusCode) for \(request.url?.absoluteString ?? "unknown")")
                 if let responseString = String(data: data, encoding: .utf8) {
@@ -97,19 +112,39 @@ class APIClient {
                     throw APIError.unauthorized
                 }
 
-                if httpResponse.statusCode != 200 {
+                guard (200...299).contains(httpResponse.statusCode) else {
                     // Try to parse error message from response
                     if let errorResponse = try? JSONDecoder().decode([String: String].self, from: data),
-                       let errorMessage = errorResponse["error"] {
+                       let errorMessage = errorResponse["error"] ?? errorResponse["message"] {
                         throw APIError.serverError(errorMessage)
                     } else {
                         throw APIError.serverError("Status code: \(httpResponse.statusCode)")
                     }
                 }
-
                 return data
             }
-            .decode(type: T.self, decoder: jsonDecoder)
+            .flatMap { data -> AnyPublisher<T, Error> in
+                if data.isEmpty, T.self == EmptyResponse.self,
+                   let emptyResponse = EmptyResponse() as? T {
+                    return Just(emptyResponse)
+                        .setFailureType(to: Error.self)
+                        .eraseToAnyPublisher()
+                }
+
+                return Just(data)
+                    .decode(type: T.self, decoder: jsonDecoder)
+                    .mapError { error in
+                        if let apiError = error as? APIError {
+                            return apiError
+                        } else if error is DecodingError {
+                            print("Decoding error: \(error)")
+                            return APIError.decodingError
+                        } else {
+                            return APIError.networkError(error)
+                        }
+                    }
+                    .eraseToAnyPublisher()
+            }
             .mapError { error in
                 if let apiError = error as? APIError {
                     return apiError
@@ -162,6 +197,28 @@ class APIClient {
                 return APIError.networkError(error)
             }
             .eraseToAnyPublisher()
+    }
+
+    private func normalize(path: String) -> String {
+        guard serverType == .cloud else { return path }
+
+        if path.hasPrefix("/api/me/") {
+            return "/v1/" + path.dropFirst("/api/me/".count)
+        }
+
+        if path == "/api/me" {
+            return "/v1/account"
+        }
+
+        if path.hasPrefix("/api/") {
+            return "/v1/" + path.dropFirst("/api/".count)
+        }
+
+        if path == "/api" {
+            return "/v1"
+        }
+
+        return path
     }
 
     // MARK: - Authentication
