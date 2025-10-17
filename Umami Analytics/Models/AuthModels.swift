@@ -23,7 +23,7 @@ struct User: Codable {
     let role: String
     let createdAt: String?
     let isAdmin: Bool
-    
+
     enum CodingKeys: String, CodingKey {
         case id, username, role, createdAt, isAdmin
     }
@@ -34,20 +34,37 @@ struct ServerInfo: Codable {
     let name: String
 }
 
+enum ServerType: String, Codable, CaseIterable {
+    case cloud
+    case selfHosted = "self"
+
+    var displayName: String {
+        switch self {
+        case .cloud:
+            return "Umami Cloud"
+        case .selfHosted:
+            return "Self Hosted"
+        }
+    }
+}
+
 enum AuthError: Error {
     case invalidURL
     case invalidCredentials
+    case missingAPIKey
     case networkError(Error)
     case serverError(String)
     case decodingError
     case unknown
-    
+
     var message: String {
         switch self {
         case .invalidURL:
             return "Invalid server URL. Please check the URL and try again."
         case .invalidCredentials:
             return "Incorrect username or password."
+        case .missingAPIKey:
+            return "Please enter your Umami Cloud API key."
         case .networkError(let error):
             return "Network error: \(error.localizedDescription)"
         case .serverError(let message):
