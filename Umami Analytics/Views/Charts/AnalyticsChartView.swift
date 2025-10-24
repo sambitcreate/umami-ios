@@ -181,11 +181,12 @@ struct AnalyticsChartView: View {
                         DragGesture(minimumDistance: 0)
                             .onChanged { value in
                                 let plotAreaFrame = proxy.plotAreaFrame
-                                let originX = plotAreaFrame.origin.x
+                                let resolvedFrame = geometry[plotAreaFrame]
+                                let originX = resolvedFrame.origin.x
                                 let locationX = value.location.x - originX
 
                                 guard locationX >= 0,
-                                      locationX <= plotAreaFrame.size.width,
+                                      locationX <= resolvedFrame.size.width,
                                       let date: Date = proxy.value(atX: value.location.x) else {
                                     return
                                 }
