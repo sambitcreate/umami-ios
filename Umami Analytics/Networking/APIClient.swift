@@ -129,10 +129,7 @@ class APIClient {
                     return Just(emptyResponse)
                         .setFailureType(to: Error.self)
                         .eraseToAnyPublisher()
-                }
-
-                return Just(data)
-                    .decode(type: T.self, decoder: jsonDecoder)
+                    .decode(type: T.self, decoder: self.jsonDecoder)
                     .mapError { error in
                         if let apiError = error as? APIError {
                             return apiError
