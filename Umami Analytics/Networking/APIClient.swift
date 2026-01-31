@@ -27,7 +27,6 @@ class APIClient {
         self.jsonDecoder.keyDecodingStrategy = .convertFromSnakeCase
 
         self.jsonEncoder = JSONEncoder()
-        self.jsonEncoder.keyEncodingStrategy = .convertToSnakeCase
     }
 
     func setBaseURL(_ urlString: String) throws {
@@ -129,8 +128,11 @@ class APIClient {
                     return Just(emptyResponse)
                         .setFailureType(to: Error.self)
                         .eraseToAnyPublisher()
+                }
+
+                return Just(data)
                     .decode(type: T.self, decoder: self.jsonDecoder)
-                    .mapError { error in
+                    .mapError { error -> Error in
                         if let apiError = error as? APIError {
                             return apiError
                         } else if error is DecodingError {
@@ -142,7 +144,7 @@ class APIClient {
                     }
                     .eraseToAnyPublisher()
             }
-            .mapError { error in
+            .mapError { error -> Error in
                 if let apiError = error as? APIError {
                     return apiError
                 } else if error is DecodingError {
@@ -199,20 +201,17 @@ class APIClient {
     private func normalize(path: String) -> String {
         guard serverType == .cloud else { return path }
 
-        if path.hasPrefix("/api/me/") {
-            return "/v1/" + path.dropFirst("/api/me/".count)
+        // Separate path from query string for prefix matching
+        let components = path.split(separator: "?", maxSplits: 1)
+        let pathPart = String(components[0])
+        let queryPart = components.count > 1 ? "?" + components[1] : ""
+
+        if pathPart.hasPrefix("/api/") {
+            return "/v1/" + pathPart.dropFirst("/api/".count) + queryPart
         }
 
-        if path == "/api/me" {
-            return "/v1/account"
-        }
-
-        if path.hasPrefix("/api/") {
-            return "/v1/" + path.dropFirst("/api/".count)
-        }
-
-        if path == "/api" {
-            return "/v1"
+        if pathPart == "/api" {
+            return "/v1" + queryPart
         }
 
         return path
@@ -231,7 +230,7 @@ class APIClient {
             return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
         }
 
-        let request = createRequest(path: "/api/auth/verify", method: "GET")
+        let request = createRequest(path: "/api/auth/verify", method: "POST")
         return performRequest(request: request)
     }
 
@@ -247,13 +246,13 @@ class APIClient {
     // MARK: - Websites
 
     func getWebsites(page: Int = 1, pageSize: Int = 10) -> AnyPublisher<WebsiteListResponse, Error> {
-        var components = URLComponents(string: "/api/me/websites")
+        var components = URLComponents(string: "/api/websites")
         components?.queryItems = [
             URLQueryItem(name: "page", value: "\(page)"),
             URLQueryItem(name: "pageSize", value: "\(pageSize)")
         ]
-        
-        let path = components?.url?.absoluteString ?? "/api/me/websites"
+
+        let path = components?.string ?? "/api/websites?page=\(page)&pageSize=\(pageSize)"
         let request = createRequest(path: path, method: "GET")
         return performRequest(request: request)
     }
@@ -342,7 +341,7 @@ class APIClient {
         return performRequest(request: request)
     }
 
-    func getWebsiteMetrics(id: String, dateRange: DateRange, type: String = "url") -> AnyPublisher<WebsiteMetricsResponse, Error> {
+    func getWebsiteMetrics(id: String, dateRange: DateRange, type: String = "path") -> AnyPublisher<WebsiteMetricsResponse, Error> {
         var components = URLComponents(string: "/api/websites/\(id)/metrics")
         components?.queryItems = [
             URLQueryItem(name: "startAt", value: "\(dateRange.startAt)"),
@@ -383,11 +382,6 @@ class APIClient {
     }
 
     // MARK: - Active Users & Realtime
-
-    func getWebsiteActive(id: String) -> AnyPublisher<ActiveUsersResponse, Error> {
-        let request = createRequest(path: "/api/websites/\(id)/active", method: "GET")
-        return performRequest(request: request)
-    }
 
     func getActiveUsers(websiteId: String) -> AnyPublisher<ActiveUsersResponse, Error> {
         let request = createRequest(path: "/api/websites/\(websiteId)/active", method: "GET")

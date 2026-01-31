@@ -102,7 +102,7 @@ class WebsiteService {
 
     // MARK: - Website Metrics
 
-    func fetchWebsiteMetrics(id: String, period: StatsPeriod = .day, type: String = "url") -> AnyPublisher<WebsiteMetricsResponse, Error> {
+    func fetchWebsiteMetrics(id: String, period: StatsPeriod = .day, type: String = "path") -> AnyPublisher<WebsiteMetricsResponse, Error> {
         guard let apiClient = AuthManager.shared.apiClient else {
             return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
         }
@@ -136,7 +136,7 @@ class WebsiteService {
             return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
         }
 
-        return apiClient.getWebsiteActive(id: id)
+        return apiClient.getActiveUsers(websiteId: id)
             .eraseToAnyPublisher()
     }
 
@@ -283,15 +283,15 @@ class WebsiteService {
 
                     if let existingStats = existingStats.first {
                         // Update existing stats
-                        existingStats.pageviews = Int64(stats.pageviews.value)
-                        existingStats.visitors = Int64(stats.visitors.value)
+                        existingStats.pageviews = Int64(stats.pageviews)
+                        existingStats.visitors = Int64(stats.visitors)
                         existingStats.date = Date()
                     } else {
                         // Create new stats
                         let newStats = UmamiWebsiteStats(context: context)
                         newStats.website = website
-                        newStats.pageviews = Int64(stats.pageviews.value)
-                        newStats.visitors = Int64(stats.visitors.value)
+                        newStats.pageviews = Int64(stats.pageviews)
+                        newStats.visitors = Int64(stats.visitors)
                         newStats.date = Date()
                         newStats.period = period.rawValue
                     }
