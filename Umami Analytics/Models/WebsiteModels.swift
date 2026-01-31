@@ -266,6 +266,10 @@ struct WebsiteStatsResponse: Codable {
         } else {
             // Cloud API format: returns stats directly without wrapping
             // {"pageviews": 19, "visitors": 18, "visits": 19, "bounces": 19, "totaltime": 0, "comparison": {...}}
+
+            // Use a separate container for the Cloud API fields
+            let cloudContainer = try decoder.container(keyedBy: CloudAPIKeys.self)
+
             let dateFormatter = ISO8601DateFormatter()
             let now = dateFormatter.string(from: Date())
 
@@ -273,11 +277,11 @@ struct WebsiteStatsResponse: Codable {
             endDate = now
 
             // Decode stats from the root level
-            let pageviews = try container.decodeIfPresent(Int.self, forKey: .pageviews) ?? 0
-            let visitors = try container.decodeIfPresent(Int.self, forKey: .visitors) ?? 0
-            let visits = try container.decodeIfPresent(Int.self, forKey: .visits) ?? 0
-            let bounces = try container.decodeIfPresent(Int.self, forKey: .bounces) ?? 0
-            let totalTime = try container.decodeIfPresent(Int.self, forKey: .totaltime) ?? 0
+            let pageviews = try cloudContainer.decodeIfPresent(Int.self, forKey: .pageviews) ?? 0
+            let visitors = try cloudContainer.decodeIfPresent(Int.self, forKey: .visitors) ?? 0
+            let visits = try cloudContainer.decodeIfPresent(Int.self, forKey: .visits) ?? 0
+            let bounces = try cloudContainer.decodeIfPresent(Int.self, forKey: .bounces) ?? 0
+            let totalTime = try cloudContainer.decodeIfPresent(Int.self, forKey: .totaltime) ?? 0
 
             stats = WebsiteStatsModel(
                 pageviews: pageviews,
@@ -289,7 +293,12 @@ struct WebsiteStatsResponse: Codable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case websiteId, startDate, endDate, stats, pageviews, visitors, visits, bounces, totaltime
+        case websiteId, startDate, endDate, stats
+    }
+
+    // Helper coding keys for Cloud API format
+    enum CloudAPIKeys: String, CodingKey {
+        case pageviews, visitors, visits, bounces, totaltime
     }
 }
 
