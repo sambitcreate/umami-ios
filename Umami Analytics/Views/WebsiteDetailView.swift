@@ -77,21 +77,17 @@ struct WebsiteDetailView: View {
             }
         }
         .navigationTitle(viewModel.selectedWebsite?.name ?? "Website Details")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                if viewModel.isRefreshing {
+                    ProgressView()
+                        .scaleEffect(0.8)
+                }
+            }
+        }
         .refreshable {
             if let website = viewModel.selectedWebsite {
                 viewModel.loadWebsiteData(website: website)
-            }
-        }
-        .overlay {
-            if viewModel.isLoading {
-                ProgressView()
-                    .scaleEffect(1.5)
-                    .background(
-                        RoundedRectangle(cornerRadius: 10)
-                            .fill(Color(UIColor.systemBackground))
-                            .frame(width: 100, height: 100)
-                            .shadow(radius: 5)
-                    )
             }
         }
         .alert(isPresented: Binding<Bool>(get: { viewModel.errorMessage != nil }, set: { if !$0 { viewModel.errorMessage = nil } })) {

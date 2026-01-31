@@ -19,6 +19,7 @@ class WebsiteViewModel: ObservableObject {
     // Published properties for UI updates
     @Published var websites: [WebsiteModel] = []
     @Published var isLoading = false
+    @Published var isRefreshing = false
     @Published var isPerformingAction = false
     @Published var errorMessage: String?
     @Published var selectedPeriod: StatsPeriod = .day
@@ -180,6 +181,22 @@ class WebsiteViewModel: ObservableObject {
                 if self.selectedWebsite == nil, let firstWebsite = modelWebsites.first {
                     self.selectWebsite(firstWebsite)
                 }
+            }
+        }
+    }
+
+    private func loadCachedStats(websiteId: String) {
+        if let cachedStats = WebsiteService.shared.fetchCachedStats(for: websiteId, period: selectedPeriod) {
+            let stats = WebsiteStatsResponse(
+                pageviews: Int(cachedStats.pageviews),
+                visitors: Int(cachedStats.visitors),
+                visits: 0,  // Not cached, will be updated with fresh data
+                bounces: 0, // Not cached, will be updated with fresh data
+                totaltime: 0, // Not cached, will be updated with fresh data
+                comparison: nil
+            )
+            DispatchQueue.main.async {
+                self.websiteStats = stats
             }
         }
     }
@@ -348,13 +365,24 @@ class WebsiteViewModel: ObservableObject {
     // MARK: - Stats and Metrics
 
     private func loadWebsiteStats(websiteId: String) {
-        isLoading = true
+        // Load cached data first
+        loadCachedStats(websiteId: websiteId)
+
+        // Check if we have cached data to determine loading state
+        let hasCachedData = WebsiteService.shared.fetchCachedStats(for: websiteId, period: selectedPeriod) != nil
+
+        if hasCachedData {
+            isRefreshing = true
+        } else {
+            isLoading = true
+        }
 
         WebsiteService.shared.fetchWebsiteStats(id: websiteId, period: selectedPeriod)
             .receive(on: DispatchQueue.main)
             .sink(
                 receiveCompletion: { [weak self] completion in
                     self?.isLoading = false
+                    self?.isRefreshing = false
 
                     if case .failure(let error) = completion {
                         if let apiError = error as? APIError {
