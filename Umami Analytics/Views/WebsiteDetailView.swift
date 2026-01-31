@@ -385,42 +385,6 @@ struct WebsiteDetailView: View {
     }
 }
 
-struct StatCard: View {
-    var title: String
-    var value: String
-    var icon: String
-    
-    var body: some View {
-        VStack {
-            HStack {
-                Image(systemName: icon)
-                    .font(.title2)
-                    .foregroundColor(.blue)
-                Spacer()
-            }
-            .padding(.bottom, 5)
-            
-            HStack {
-                Text(value)
-                    .font(.title)
-                    .fontWeight(.bold)
-                    .contentTransition(.numericText())
-                Spacer()
-            }
-            
-            HStack {
-                Text(title)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                Spacer()
-            }
-        }
-        .padding()
-        .background(Color(UIColor.secondarySystemBackground))
-        .cornerRadius(10)
-    }
-}
-
 #Preview {
     NavigationView {
         WebsiteDetailView(viewModel: WebsiteViewModel())
