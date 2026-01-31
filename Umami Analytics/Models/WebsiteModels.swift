@@ -16,10 +16,41 @@ struct WebsiteModel: Codable, Identifiable {
     let shareId: String?
     let userId: String?
     let teamId: String?
-    let createdAt: String
+    let createdAt: String?
+    let updatedAt: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, name, domain, shareId, userId, teamId, createdAt
+        case id, name, domain, shareId, userId, teamId, createdAt, updatedAt
+    }
+
+    // Custom decoder to handle different API formats
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+
+        // Required fields
+        id = try container.decode(String.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        domain = try container.decode(String.self, forKey: .domain)
+
+        // Optional fields
+        shareId = try container.decodeIfPresent(String.self, forKey: .shareId)
+        userId = try container.decodeIfPresent(String.self, forKey: .userId)
+        teamId = try container.decodeIfPresent(String.self, forKey: .teamId)
+        createdAt = try container.decodeIfPresent(String.self, forKey: .createdAt)
+        updatedAt = try container.decodeIfPresent(String.self, forKey: .updatedAt)
+    }
+
+    // Standard encoder
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(name, forKey: .name)
+        try container.encode(domain, forKey: .domain)
+        try container.encodeIfPresent(shareId, forKey: .shareId)
+        try container.encodeIfPresent(userId, forKey: .userId)
+        try container.encodeIfPresent(teamId, forKey: .teamId)
+        try container.encodeIfPresent(createdAt, forKey: .createdAt)
+        try container.encodeIfPresent(updatedAt, forKey: .updatedAt)
     }
 }
 
@@ -167,7 +198,44 @@ struct WebsiteRequest: Codable {
 
 struct WebsiteListResponse: Codable {
     let data: [WebsiteModel]
-    let count: Int
+    let count: Int?
+    let pagination: Pagination?
+
+    // Custom decoder to handle different API formats
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+
+        // Decode required data field
+        data = try container.decode([WebsiteModel].self, forKey: .data)
+
+        // Decode optional fields
+        count = try container.decodeIfPresent(Int.self, forKey: .count)
+        pagination = try container.decodeIfPresent(Pagination.self, forKey: .pagination)
+    }
+
+    // Standard encoder
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(data, forKey: .data)
+        try container.encodeIfPresent(count, forKey: .count)
+        try container.encodeIfPresent(pagination, forKey: .pagination)
+    }
+
+    // Computed property for total count
+    var totalCount: Int {
+        count ?? data.count
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case data, count, pagination
+    }
+}
+
+struct Pagination: Codable {
+    let page: Int?
+    let pageSize: Int?
+    let count: Int?
+    let totalPages: Int?
 }
 
 struct WebsiteStatsResponse: Codable {

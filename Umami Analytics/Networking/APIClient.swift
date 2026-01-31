@@ -20,6 +20,7 @@ class APIClient {
     enum APIVersion {
         case v1
         case v2
+        case v3
         case unknown
     }
 
@@ -167,7 +168,7 @@ class APIClient {
                     // Special handling for 404 errors - might be API version incompatibility
                     print("⚠️ 404 Not Found: This might indicate an API version incompatibility")
 
-                    // Try to detect if this is a v1 vs v2 API issue
+                    // Try to detect if this is a v1, v2, or v3 API issue
                     if request.url?.path.contains("/api/websites") == true {
                         // Check if we need to try alternative endpoint formats
                         if self.apiVersion == .unknown {
@@ -206,15 +207,25 @@ class APIClient {
                         .decode(type: T.self, decoder: self.jsonDecoder)
                         .mapError { error in
                             if let decodingError = error as? DecodingError {
-                                print("❌ Decoding error: \(decodingError)")
+                                print("❌ Decoding error for \(String(describing: T.self)): \(decodingError)")
+
+                                // Log the actual response data for debugging
+                                if let responseString = String(data: data, encoding: .utf8) {
+                                    let truncated = responseString.count > 1000 ? String(responseString.prefix(1000)) + "..." : responseString
+                                    print("   Response data: \(truncated)")
+                                }
+
                                 // Log more details about the decoding error
                                 switch decodingError {
                                 case let .typeMismatch(type, context):
                                     print("   Type mismatch: Expected \(type) at \(context.codingPath)")
+                                    if let underlyingError = context.underlyingError {
+                                        print("   Underlying error: \(underlyingError)")
+                                    }
                                 case let .valueNotFound(type, context):
                                     print("   Value not found: Expected \(type) at \(context.codingPath)")
                                 case let .keyNotFound(key, context):
-                                    print("   Key not found: \(key) at \(context.codingPath)")
+                                    print("   Key not found: \(key.stringValue) at \(context.codingPath)")
                                 case let .dataCorrupted(context):
                                     print("   Data corrupted: \(context)")
                                 @unknown default:
@@ -338,49 +349,82 @@ class APIClient {
     }
 
     private func detectAPIVersion() {
-        // This method will be called when we encounter a 404 error
-        // We'll try to determine if we're dealing with a v1 or v2 API
+        // This method will be called to detect the Umami API version
+        // For Umami Cloud: v1, for Self-hosted: v3 (latest)
         print("🔍 Attempting to detect Umami API version...")
 
-        // Make a request to a common endpoint that exists in both v1 and v2
-        let request = createRequest(path: "/api/me", method: "GET")
+        // Skip detection for Cloud - it's always v1
+        if isCloud {
+            self.apiVersion = .v1
+            print("✅ Umami Cloud detected - using API v1")
+            return
+        }
 
-        URLSession.shared.dataTask(with: request) { data, response, error in
+        // For self-hosted, detect the version by checking available endpoints
+        // v3 is the latest self-hosted version (uses /api/me and POST /api/auth/verify)
+        // v2 also uses similar endpoints but with some differences
+
+        // First, try POST /api/auth/verify (v3 and v2 standard)
+        let verifyRequest = createRequest(path: "/api/auth/verify", method: "POST")
+
+        URLSession.shared.dataTask(with: verifyRequest) { data, response, error in
             if let httpResponse = response as? HTTPURLResponse {
                 if httpResponse.statusCode == 200 {
-                    // This endpoint exists in v2
-                    self.apiVersion = .v2
-                    print("✅ Detected Umami API v2")
+                    // POST /api/auth/verify works - this is v2 or v3
+                    // Try to determine by checking the response structure
+                    // For now, we'll assume v3 for self-hosted as it's the latest
+                    self.apiVersion = .v3
+                    print("✅ Detected Umami API v3 (self-hosted)")
 
-                    // Check if this is a newer version of v2 that uses different realtime endpoint
+                    // Check if this is a newer version that uses different realtime endpoint
                     self.checkRealtimeEndpointFormat()
-                } else if httpResponse.statusCode == 404 {
-                    // Try a v1 specific endpoint
-                    let v1Request = self.createRequest(path: "/api/account", method: "GET")
+                } else if httpResponse.statusCode == 405 || httpResponse.statusCode == 404 {
+                    // POST not supported, try GET /api/me for v2
+                    let meRequest = self.createRequest(path: "/api/me", method: "GET")
 
-                    URLSession.shared.dataTask(with: v1Request) { data, response, error in
+                    URLSession.shared.dataTask(with: meRequest) { data, response, error in
                         if let httpResponse = response as? HTTPURLResponse {
                             if httpResponse.statusCode == 200 {
-                                self.apiVersion = .v1
-                                print("✅ Detected Umami API v1")
-
-                                // Check if this is a newer version of v1 that uses different realtime endpoint
+                                // GET /api/me works - this is v2
+                                self.apiVersion = .v2
+                                print("✅ Detected Umami API v2 (self-hosted)")
                                 self.checkRealtimeEndpointFormat()
                             } else {
-                                print("❓ Unable to determine API version, defaulting to v2")
-                                self.apiVersion = .v2
-                                self.checkRealtimeEndpointFormat()
+                                // Try v1 specific endpoint
+                                let v1Request = self.createRequest(path: "/api/account", method: "GET")
+
+                                URLSession.shared.dataTask(with: v1Request) { data, response, error in
+                                    if let httpResponse = response as? HTTPURLResponse {
+                                        if httpResponse.statusCode == 200 {
+                                            self.apiVersion = .v1
+                                            print("✅ Detected Umami API v1 (legacy)")
+                                            self.checkRealtimeEndpointFormat()
+                                        } else {
+                                            print("❓ Unable to determine API version, defaulting to v3")
+                                            self.apiVersion = .v3
+                                            self.checkRealtimeEndpointFormat()
+                                        }
+                                    } else {
+                                        print("❓ Unable to determine API version, defaulting to v3")
+                                        self.apiVersion = .v3
+                                        self.checkRealtimeEndpointFormat()
+                                    }
+                                }.resume()
                             }
+                        } else {
+                            print("❓ Unable to determine API version, defaulting to v3")
+                            self.apiVersion = .v3
+                            self.checkRealtimeEndpointFormat()
                         }
                     }.resume()
                 } else {
-                    print("❓ Unable to determine API version, defaulting to v2")
-                    self.apiVersion = .v2
+                    print("❓ Unable to determine API version, defaulting to v3")
+                    self.apiVersion = .v3
                     self.checkRealtimeEndpointFormat()
                 }
             } else {
-                print("❓ Unable to determine API version, defaulting to v2")
-                self.apiVersion = .v2
+                print("❓ Unable to determine API version, defaulting to v3")
+                self.apiVersion = .v3
                 self.checkRealtimeEndpointFormat()
             }
         }.resume()
@@ -451,8 +495,8 @@ class APIClient {
                     let request = createRequest(path: v1Path, method: "GET")
                     return performRequest(request: request)
                 }
-            } else if apiVersion == .v2 || apiVersion == .unknown {
-                // Try v2 format if we're not sure
+            } else if apiVersion == .v2 || apiVersion == .v3 || apiVersion == .unknown {
+                // Try v2/v3 format if we're not sure
                 if let websiteId = extractWebsiteId(from: originalPath) {
                     let v2Path = "/api/websites/\(websiteId)/stats"
                     print("🔄 Trying alternative v2 endpoint: \(v2Path)")
@@ -653,15 +697,13 @@ class APIClient {
             return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
         }
 
-        // Some Umami deployments expect POST for /api/auth/verify or expose /api/me instead.
-        // Strategy:
-        // 1) Try GET /api/auth/verify
-        // 2) On 405/404, try POST /api/auth/verify
-        // 3) If that fails, try GET /api/me decoding either User or { user: User }
+        // Umami v3 self-hosted verification strategy:
+        // 1) Try POST /api/auth/verify (recommended for v3)
+        // 2) On 405/404, fall back to GET /api/me for backward compatibility
 
-        // Step 1: GET /api/auth/verify
-        let getVerify = createRequest(path: "/api/auth/verify", method: "GET")
-        let publisher: AnyPublisher<User, Error> = performRequest(request: getVerify)
+        // Step 1: POST /api/auth/verify (v3 standard)
+        let postVerify = createRequest(path: "/api/auth/verify", method: "POST")
+        let publisher: AnyPublisher<User, Error> = performRequest(request: postVerify)
             .handleEvents(receiveOutput: { [weak self] _ in
                 if self?.apiVersion == .unknown { self?.detectAPIVersion() }
             })
@@ -670,35 +712,29 @@ class APIClient {
         return publisher.catch { [weak self] error -> AnyPublisher<User, Error> in
             guard let self = self else { return Fail(error: error).eraseToAnyPublisher() }
 
-            // Only fall back on method/endpoint issues
+            // Only fall back on method/endpoint issues (405/404)
             if case APIError.serverError(let message) = error, message.contains("405") || message.contains("404") {
-                print("🔄 auth/verify fallback: trying POST /api/auth/verify due to \(message)")
-                // Step 2: POST /api/auth/verify
-                let postVerify = self.createRequest(path: "/api/auth/verify", method: "POST")
-                return self.performRequest(request: postVerify)
+                print("🔄 auth/verify fallback: trying GET /api/me for backward compatibility")
+
+                // Step 2: GET /api/me – try decoding User first, then { user: User }
+                let meReq = self.createRequest(path: "/api/me", method: "GET")
+
+                // Try to decode directly to User
+                let meAsUser: AnyPublisher<User, Error> = self.performRequest(request: meReq)
                     .handleEvents(receiveOutput: { [weak self] _ in
                         if self?.apiVersion == .unknown { self?.detectAPIVersion() }
                     })
-                    .catch { postError -> AnyPublisher<User, Error> in
-                        print("⚠️ POST /api/auth/verify failed: \(postError)")
-                        // Step 3: GET /api/me (v2) – try decoding User first, then { user: User }
-                        let meReq = self.createRequest(path: "/api/me", method: "GET")
+                    .eraseToAnyPublisher()
 
-                        // Try to decode directly to User
-                        let meAsUser: AnyPublisher<User, Error> = self.performRequest(request: meReq)
-                            .eraseToAnyPublisher()
+                // If that fails, try decoding { user: User }
+                struct MeResponse: Codable { let user: User }
+                let meWrappedPublisher: AnyPublisher<MeResponse, Error> = self.performRequest(request: meReq)
+                let meAsWrappedUser: AnyPublisher<User, Error> = meWrappedPublisher
+                    .map { $0.user }
+                    .eraseToAnyPublisher()
 
-                        // If that fails, try decoding { user: User }
-                        struct MeResponse: Codable { let user: User }
-                        let meWrappedPublisher: AnyPublisher<MeResponse, Error> = self.performRequest(request: meReq)
-                        let meAsWrappedUser: AnyPublisher<User, Error> = meWrappedPublisher
-                            .map { $0.user }
-                            .eraseToAnyPublisher()
-
-                        return meAsUser
-                            .catch { _ in meAsWrappedUser }
-                            .eraseToAnyPublisher()
-                    }
+                return meAsUser
+                    .catch { _ in meAsWrappedUser }
                     .eraseToAnyPublisher()
             }
 
