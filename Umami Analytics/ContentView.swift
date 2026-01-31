@@ -306,7 +306,7 @@ struct SettingsView: View {
                         HStack {
                             Text("Role")
                             Spacer()
-                            Text(user.role)
+                            Text(user.role ?? "user")
                                 .foregroundColor(.secondary)
                         }
                     }
