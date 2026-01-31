@@ -163,7 +163,7 @@ struct LoginView: View {
             )
         })
         .onAppear(perform: loadInitialState)
-        .onChange(of: serverType) { newType in
+        .onChange(of: serverType) { _, newType in
             AuthManager.shared.setServerType(newType)
             if newType == .selfHosted {
                 serverURL = AuthManager.shared.savedSelfHostedServerURL ?? serverURL

@@ -16,73 +16,47 @@ struct WebsiteModel: Codable, Identifiable {
     let shareId: String?
     let userId: String?
     let teamId: String?
-    let createdAt: String
+    let createdAt: String?
+    let resetAt: String?
+    let updatedAt: String?
+    let deletedAt: String?
+    let createdBy: String?
 
     enum CodingKeys: String, CodingKey {
         case id, name, domain, shareId, userId, teamId, createdAt
+        case resetAt, updatedAt, deletedAt, createdBy
+    }
+
+    init(id: String, name: String, domain: String, shareId: String? = nil,
+         userId: String? = nil, teamId: String? = nil, createdAt: String? = nil,
+         resetAt: String? = nil, updatedAt: String? = nil,
+         deletedAt: String? = nil, createdBy: String? = nil) {
+        self.id = id
+        self.name = name
+        self.domain = domain
+        self.shareId = shareId
+        self.userId = userId
+        self.teamId = teamId
+        self.createdAt = createdAt
+        self.resetAt = resetAt
+        self.updatedAt = updatedAt
+        self.deletedAt = deletedAt
+        self.createdBy = createdBy
     }
 }
 
-// Updated to match latest Umami API response structure
-struct WebsiteStatsModel: Codable {
-    let pageviews: StatValue
-    let visitors: StatValue
-    let visits: StatValue
-    let bounces: StatValue
-    let totaltime: StatValue
+// MARK: - Metric Display Models
 
-    var bounceRate: Double {
-        guard visits.value > 0 else { return 0 }
-        return Double(bounces.value) / Double(visits.value)
-    }
-
-    var avgDuration: Double {
-        guard pageviews.value > 0 else { return 0 }
-        return Double(totaltime.value) / Double(pageviews.value)
-    }
-}
-
-struct StatValue: Codable {
-    let value: Int
-    let prev: Int
-}
-
-struct WebsiteMetrics: Codable {
-    let pageviews: [PageviewMetric]
-    let sessions: [SessionMetric]
-    let events: [EventMetric]
-    let countries: [CountryMetric]
-    let browsers: [BrowserMetric]
-    let os: [OSMetric]
-    let devices: [DeviceMetric]
-    let referrers: [ReferrerMetric]
-    let pages: [PageMetric]
-}
-
-// MARK: - Metric Models
-
-struct PageviewMetric: Codable, Identifiable {
-    var id: String { date }
-    let date: String
+struct PageMetric: Codable, Identifiable {
+    var id: String { url }
+    let url: String
+    let title: String?
     let value: Int
 }
 
-struct SessionMetric: Codable, Identifiable {
-    var id: String { date }
-    let date: String
-    let value: Int
-}
-
-struct EventMetric: Codable, Identifiable {
-    var id: String { name }
-    let name: String
-    let value: Int
-}
-
-struct CountryMetric: Codable, Identifiable {
-    var id: String { code }
-    let code: String
-    let name: String
+struct ReferrerMetric: Codable, Identifiable {
+    var id: String { referrer }
+    let referrer: String
     let value: Int
 }
 
@@ -104,16 +78,10 @@ struct DeviceMetric: Codable, Identifiable {
     let value: Int
 }
 
-struct ReferrerMetric: Codable, Identifiable {
-    var id: String { referrer }
-    let referrer: String
-    let value: Int
-}
-
-struct PageMetric: Codable, Identifiable {
-    var id: String { url }
-    let url: String
-    let title: String?
+struct CountryMetric: Codable, Identifiable {
+    var id: String { code }
+    let code: String
+    let name: String
     let value: Int
 }
 
@@ -148,25 +116,36 @@ struct UpdateWebsiteRequest: Codable {
 struct WebsiteListResponse: Codable {
     let data: [WebsiteModel]
     let count: Int
+    let page: Int?
+    let pageSize: Int?
 }
 
-// Updated to match latest Umami API - stats endpoint returns stats directly
+// Matches Umami v3 API: stats returns flat integers + comparison object
 struct WebsiteStatsResponse: Codable {
-    let pageviews: StatValue
-    let visitors: StatValue
-    let visits: StatValue
-    let bounces: StatValue
-    let totaltime: StatValue
+    let pageviews: Int
+    let visitors: Int
+    let visits: Int
+    let bounces: Int
+    let totaltime: Int
+    let comparison: StatsComparison?
 
     var bounceRate: Double {
-        guard visits.value > 0 else { return 0 }
-        return Double(bounces.value) / Double(visits.value)
+        guard visits > 0 else { return 0 }
+        return Double(bounces) / Double(visits)
     }
 
     var avgDuration: Double {
-        guard pageviews.value > 0 else { return 0 }
-        return Double(totaltime.value) / Double(pageviews.value)
+        guard pageviews > 0 else { return 0 }
+        return Double(totaltime) / Double(pageviews)
     }
+}
+
+struct StatsComparison: Codable {
+    let pageviews: Int
+    let visitors: Int
+    let visits: Int
+    let bounces: Int
+    let totaltime: Int
 }
 
 // Updated to match latest Umami API - metrics endpoint returns array directly
