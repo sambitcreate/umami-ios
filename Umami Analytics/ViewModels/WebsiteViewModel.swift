@@ -12,6 +12,8 @@ import SwiftUI
 class WebsiteViewModel: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
 
+    private static let starredKey = "starredWebsiteIds"
+
     // Published properties for UI updates
     @Published var websites: [WebsiteModel] = []
     @Published var isLoading = false
@@ -27,6 +29,12 @@ class WebsiteViewModel: ObservableObject {
     @Published var activeUsers: ActiveUsersResponse?
     @Published var activeUsersCount: Int = 0
     @Published var hasActiveUsersData: Bool = false
+
+    // Starred websites
+    @Published var starredWebsiteIds: Set<String> = []
+
+    // Per-website stats for dashboard cards
+    @Published var dashboardStats: [String: WebsiteStatsResponse] = [:]
 
     // Computed properties for UI
     var hasWebsites: Bool {
@@ -61,10 +69,45 @@ class WebsiteViewModel: ObservableObject {
         }
     }
 
+    // Dashboard websites: starred first, fallback to first 3
+    var dashboardWebsites: [WebsiteModel] {
+        let starred = websites.filter { starredWebsiteIds.contains($0.id) }
+        if !starred.isEmpty {
+            return Array(starred.prefix(3))
+        }
+        return Array(websites.prefix(3))
+    }
+
+    var hasStarredWebsites: Bool {
+        !starredWebsiteIds.isEmpty && websites.contains(where: { starredWebsiteIds.contains($0.id) })
+    }
+
+    func isStarred(_ websiteId: String) -> Bool {
+        starredWebsiteIds.contains(websiteId)
+    }
+
+    func toggleStar(_ websiteId: String) {
+        if starredWebsiteIds.contains(websiteId) {
+            starredWebsiteIds.remove(websiteId)
+        } else {
+            starredWebsiteIds.insert(websiteId)
+        }
+        saveStarredIds()
+    }
+
+    private func loadStarredIds() {
+        let ids = UserDefaults.standard.stringArray(forKey: Self.starredKey) ?? []
+        starredWebsiteIds = Set(ids)
+    }
+
+    private func saveStarredIds() {
+        UserDefaults.standard.set(Array(starredWebsiteIds), forKey: Self.starredKey)
+    }
+
     // MARK: - Initialization
 
     init() {
-        // Load cached websites on init
+        loadStarredIds()
         loadCachedWebsites()
     }
 
@@ -93,6 +136,7 @@ class WebsiteViewModel: ObservableObject {
                 },
                 receiveValue: { [weak self] websites in
                     self?.websites = websites
+                    self?.loadDashboardStats()
 
                     // If we have a selected website, refresh its data
                     if let selectedId = self?.selectedWebsite?.id,
@@ -272,12 +316,29 @@ class WebsiteViewModel: ObservableObject {
 
     func changePeriod(_ period: StatsPeriod) {
         selectedPeriod = period
+        loadDashboardStats()
 
         if let website = selectedWebsite {
             loadWebsiteStats(websiteId: website.id)
             loadWebsiteMetrics(websiteId: website.id)
             loadPageviewsData(websiteId: website.id)
             loadActiveUsers(websiteId: website.id)
+        }
+    }
+
+    // MARK: - Dashboard Stats
+
+    func loadDashboardStats() {
+        for website in dashboardWebsites {
+            WebsiteService.shared.fetchWebsiteStats(id: website.id, period: selectedPeriod)
+                .receive(on: DispatchQueue.main)
+                .sink(
+                    receiveCompletion: { _ in },
+                    receiveValue: { [weak self] response in
+                        self?.dashboardStats[website.id] = response
+                    }
+                )
+                .store(in: &cancellables)
         }
     }
 

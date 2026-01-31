@@ -137,20 +137,32 @@ struct DashboardView: View {
                             .padding(.horizontal)
                         }
 
-                        // Website list
+                        // Starred / top websites
                         VStack(alignment: .leading, spacing: 12) {
-                            Text("Your Websites")
-                                .font(.headline)
-                                .padding(.horizontal)
+                            HStack {
+                                Text(viewModel.hasStarredWebsites ? "Starred Websites" : "Top Websites")
+                                    .font(.headline)
 
-                            ForEach(viewModel.websites.prefix(3)) { website in
+                                Spacer()
+
+                                if !viewModel.hasStarredWebsites && viewModel.hasWebsites {
+                                    Text("Star websites to pin them here")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                            .padding(.horizontal)
+
+                            ForEach(viewModel.dashboardWebsites) { website in
                                 NavigationLink(destination: {
-                                    // Create a new view model instance with the selected website
                                     let detailViewModel = WebsiteViewModel()
                                     detailViewModel.selectWebsite(website)
                                     return WebsiteDetailView(viewModel: detailViewModel)
                                 }()) {
-                                    DashboardWebsiteRow(website: website)
+                                    DashboardWebsiteCard(
+                                        website: website,
+                                        stats: viewModel.dashboardStats[website.id]
+                                    )
                                 }
                             }
 
@@ -232,35 +244,112 @@ struct DashboardView: View {
         }
         .onAppear {
             viewModel.loadWebsites()
+            viewModel.loadDashboardStats()
         }
     }
 }
 
-struct DashboardWebsiteRow: View {
+struct DashboardWebsiteCard: View {
     let website: WebsiteModel
+    let stats: WebsiteStatsResponse?
 
     var body: some View {
-        HStack(spacing: 12) {
-            WebsiteFaviconView(domain: website.domain)
+        VStack(spacing: 0) {
+            // Header row
+            HStack(spacing: 12) {
+                WebsiteFaviconView(domain: website.domain, size: 32)
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text(website.name)
-                    .font(.headline)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(website.name)
+                        .font(.headline)
+                        .foregroundColor(.primary)
 
-                Text(website.domain)
-                    .font(.subheadline)
+                    Text(website.domain)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+
+                Spacer()
+
+                Image(systemName: "chevron.right")
+                    .font(.caption)
                     .foregroundColor(.secondary)
             }
+            .padding(.horizontal, 16)
+            .padding(.top, 14)
+            .padding(.bottom, 10)
 
-            Spacer()
+            // Metrics row
+            HStack(spacing: 0) {
+                metricCell(
+                    icon: "person.fill",
+                    label: "Visitors",
+                    value: stats.map { formatCompact($0.visitors) } ?? "--",
+                    color: .blue
+                )
 
-            Image(systemName: "chevron.right")
+                Divider()
+                    .frame(height: 36)
+
+                metricCell(
+                    icon: "doc.text.fill",
+                    label: "Views",
+                    value: stats.map { formatCompact($0.pageviews) } ?? "--",
+                    color: .indigo
+                )
+
+                Divider()
+                    .frame(height: 36)
+
+                metricCell(
+                    icon: "arrow.up.arrow.down",
+                    label: "Bounce",
+                    value: stats.map { formatBounce($0) } ?? "--",
+                    color: .orange
+                )
+            }
+            .padding(.horizontal, 8)
+            .padding(.bottom, 14)
+        }
+        .background(Color(UIColor.secondarySystemBackground))
+        .cornerRadius(12)
+        .padding(.horizontal)
+    }
+
+    private func metricCell(icon: String, label: String, value: String, color: Color) -> some View {
+        VStack(spacing: 4) {
+            HStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.system(size: 10))
+                    .foregroundColor(color)
+
+                Text(value)
+                    .font(.system(.subheadline, design: .rounded))
+                    .fontWeight(.semibold)
+                    .foregroundColor(.primary)
+            }
+
+            Text(label)
+                .font(.system(size: 10))
                 .foregroundColor(.secondary)
         }
-        .padding()
-        .background(Color(UIColor.secondarySystemBackground))
-        .cornerRadius(10)
-        .padding(.horizontal)
+        .frame(maxWidth: .infinity)
+    }
+
+    private func formatCompact(_ number: Int) -> String {
+        if number >= 1_000_000 {
+            return String(format: "%.1fM", Double(number) / 1_000_000)
+        } else if number >= 1_000 {
+            return String(format: "%.1fK", Double(number) / 1_000)
+        } else {
+            return "\(number)"
+        }
+    }
+
+    private func formatBounce(_ stats: WebsiteStatsResponse) -> String {
+        guard stats.visits > 0 else { return "0%" }
+        let rate = Double(stats.bounces) / Double(stats.visits) * 100
+        return String(format: "%.0f%%", rate)
     }
 }
 
@@ -284,9 +373,19 @@ struct WebsitesView: View {
                                 detailViewModel.selectWebsite(website)
                                 return WebsiteDetailView(viewModel: detailViewModel)
                             }()) {
-                                WebsiteRowView(website: website)
+                                WebsiteRowView(website: website, isStarred: viewModel.isStarred(website.id))
                             }
-                            .swipeActions(edge: .leading, allowsFullSwipe: false) {
+                            .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                                Button {
+                                    viewModel.toggleStar(website.id)
+                                } label: {
+                                    Label(
+                                        viewModel.isStarred(website.id) ? "Unstar" : "Star",
+                                        systemImage: viewModel.isStarred(website.id) ? "star.slash" : "star.fill"
+                                    )
+                                }
+                                .tint(.yellow)
+
                                 Button {
                                     websiteForScript = website
                                 } label: {
@@ -310,6 +409,15 @@ struct WebsitesView: View {
                                 }
                             }
                             .contextMenu {
+                                Button {
+                                    viewModel.toggleStar(website.id)
+                                } label: {
+                                    Label(
+                                        viewModel.isStarred(website.id) ? "Remove from Dashboard" : "Add to Dashboard",
+                                        systemImage: viewModel.isStarred(website.id) ? "star.slash" : "star.fill"
+                                    )
+                                }
+
                                 Button {
                                     websiteToEdit = website
                                 } label: {
@@ -433,6 +541,7 @@ struct WebsitesView: View {
 
 struct WebsiteRowView: View {
     let website: WebsiteModel
+    var isStarred: Bool = false
 
     var body: some View {
         HStack(spacing: 12) {
@@ -445,6 +554,14 @@ struct WebsiteRowView: View {
                 Text(website.domain)
                     .font(.subheadline)
                     .foregroundColor(.secondary)
+            }
+
+            Spacer()
+
+            if isStarred {
+                Image(systemName: "star.fill")
+                    .foregroundColor(.yellow)
+                    .font(.caption)
             }
         }
         .padding(.vertical, 4)
