@@ -182,6 +182,18 @@ class APIClient {
                 }
 
                 if httpResponse.statusCode != 200 {
+                    // Special handling for 400 Bad Request on metrics endpoints
+                    // This often happens when a website has no data for the requested period
+                    if httpResponse.statusCode == 400 {
+                        let path = request.url?.path ?? ""
+                        if path.contains("/metrics") || path.contains("/pageviews") {
+                            print("⚠️ 400 Bad Request for \(path) - website may have no data for this period")
+                            // Return empty data instead of throwing for metrics endpoints
+                            // This allows partial metrics to load successfully
+                            throw APIError.serverError("Bad request (400): \(path)")
+                        }
+                    }
+
                     // Try to parse error message from response
                     if let errorResponse = try? JSONDecoder().decode([String: String].self, from: data),
                        let errorMessage = errorResponse["error"] {
@@ -951,13 +963,15 @@ class APIClient {
         // Generic shapes from Umami metrics APIs
         struct XY: Codable { let x: String?; let y: Int?; let value: Int?; let url: String?; let referrer: String?; let name: String?; let device: String?; let os: String?; let country: String?; let title: String? }
         struct XYEnvelope: Codable { let data: [XY]?; let metrics: [XY]? }
-        func decodeXY(_ data: Data) throws -> [XY] {
+        func decodeXY(_ data: Data) -> [XY] {
+            // Try to decode as envelope first
             if let env = try? self.jsonDecoder.decode(XYEnvelope.self, from: data) {
                 if let list = env.data { return list }
                 if let list = env.metrics { return list }
             }
+            // Try to decode as direct array
             if let list = try? self.jsonDecoder.decode([XY].self, from: data) { return list }
-            // Fallback: try to coerce dynamically
+            // Fallback: try to coerce dynamically from JSON
             if let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
                 return arr.map { dict in
                     let x = dict["x"] as? String ?? dict["name"] as? String ?? dict["url"] as? String ?? dict["referrer"] as? String
@@ -965,13 +979,16 @@ class APIClient {
                     return XY(x: x, y: y, value: nil, url: nil, referrer: nil, name: nil, device: nil, os: nil, country: nil, title: nil)
                 }
             }
-            throw APIError.decodingError
+            // Return empty array instead of throwing - allows partial metric success
+            print("⚠️ decodeXY: Could not decode metrics data, returning empty array")
+            return []
         }
 
         // Pageviews + sessions series endpoint
         struct SeriesPoint: Codable { let date: String?; let value: Int?; let x: String?; let y: Int? }
         struct PageviewsResp: Codable { let pageviews: [SeriesPoint]?; let sessions: [SeriesPoint]? }
-        func decodeSeries(_ data: Data) throws -> ([PageviewMetric], [SessionMetric]) {
+        func decodeSeries(_ data: Data) -> ([PageviewMetric], [SessionMetric]) {
+            // Try to decode wrapped response first
             if let env = try? self.jsonDecoder.decode(PageviewsResp.self, from: data) {
                 let p = (env.pageviews ?? []).compactMap { pt in
                     let d = pt.date ?? pt.x
@@ -997,7 +1014,9 @@ class APIClient {
                 }
                 return (p, [])
             }
-            throw APIError.decodingError
+            // Return empty arrays instead of throwing - allows partial metric success
+            print("⚠️ decodeSeries: Could not decode pageviews/sessions data, returning empty arrays")
+            return ([], [])
         }
 
         // Build requests
@@ -1025,8 +1044,8 @@ class APIClient {
 
         // Fetch each metric category
         let urlsP: AnyPublisher<[PageMetric], Error> = performRequest(request: urlsReq)
-            .tryMap { data -> [PageMetric] in
-                let list = try decodeXY(data)
+            .map { data -> [PageMetric] in
+                let list = decodeXY(data)
                 return list.compactMap { xy in
                     let url = xy.url ?? xy.x
                     guard let url = url else { return nil }
@@ -1034,12 +1053,15 @@ class APIClient {
                     return PageMetric(url: url, title: xy.title, value: val)
                 }
             }
-            .mapError { $0 }
+            .catch { error -> AnyPublisher<[PageMetric], Error> in
+                print("⚠️ Error fetching URLs metrics: \(error.localizedDescription)")
+                return Just([]).setFailureType(to: Error.self).eraseToAnyPublisher()
+            }
             .eraseToAnyPublisher()
 
         let refsP: AnyPublisher<[ReferrerMetric], Error> = performRequest(request: refsReq)
-            .tryMap { data -> [ReferrerMetric] in
-                let list = try decodeXY(data)
+            .map { data -> [ReferrerMetric] in
+                let list = decodeXY(data)
                 return list.compactMap { xy in
                     let ref = xy.referrer ?? xy.x ?? xy.name
                     guard let ref = ref else { return nil }
@@ -1047,12 +1069,15 @@ class APIClient {
                     return ReferrerMetric(referrer: ref, value: val)
                 }
             }
-            .mapError { $0 }
+            .catch { error -> AnyPublisher<[ReferrerMetric], Error> in
+                print("⚠️ Error fetching referrers metrics: \(error.localizedDescription)")
+                return Just([]).setFailureType(to: Error.self).eraseToAnyPublisher()
+            }
             .eraseToAnyPublisher()
 
         let browsersP: AnyPublisher<[BrowserMetric], Error> = performRequest(request: browsersReq)
-            .tryMap { data -> [BrowserMetric] in
-                let list = try decodeXY(data)
+            .map { data -> [BrowserMetric] in
+                let list = decodeXY(data)
                 return list.compactMap { xy in
                     let name = xy.name ?? xy.x
                     guard let name = name else { return nil }
@@ -1060,12 +1085,15 @@ class APIClient {
                     return BrowserMetric(name: name, value: val)
                 }
             }
-            .mapError { $0 }
+            .catch { error -> AnyPublisher<[BrowserMetric], Error> in
+                print("⚠️ Error fetching browsers metrics: \(error.localizedDescription)")
+                return Just([]).setFailureType(to: Error.self).eraseToAnyPublisher()
+            }
             .eraseToAnyPublisher()
 
         let osP: AnyPublisher<[OSMetric], Error> = performRequest(request: osReq)
-            .tryMap { data -> [OSMetric] in
-                let list = try decodeXY(data)
+            .map { data -> [OSMetric] in
+                let list = decodeXY(data)
                 return list.compactMap { xy in
                     let name = xy.os ?? xy.name ?? xy.x
                     guard let name = name else { return nil }
@@ -1073,12 +1101,15 @@ class APIClient {
                     return OSMetric(name: name, value: val)
                 }
             }
-            .mapError { $0 }
+            .catch { error -> AnyPublisher<[OSMetric], Error> in
+                print("⚠️ Error fetching OS metrics: \(error.localizedDescription)")
+                return Just([]).setFailureType(to: Error.self).eraseToAnyPublisher()
+            }
             .eraseToAnyPublisher()
 
         let devicesP: AnyPublisher<[DeviceMetric], Error> = performRequest(request: devicesReq)
-            .tryMap { data -> [DeviceMetric] in
-                let list = try decodeXY(data)
+            .map { data -> [DeviceMetric] in
+                let list = decodeXY(data)
                 return list.compactMap { xy in
                     let name = xy.device ?? xy.name ?? xy.x
                     guard let name = name else { return nil }
@@ -1086,12 +1117,15 @@ class APIClient {
                     return DeviceMetric(device: name, value: val)
                 }
             }
-            .mapError { $0 }
+            .catch { error -> AnyPublisher<[DeviceMetric], Error> in
+                print("⚠️ Error fetching devices metrics: \(error.localizedDescription)")
+                return Just([]).setFailureType(to: Error.self).eraseToAnyPublisher()
+            }
             .eraseToAnyPublisher()
 
         let countriesP: AnyPublisher<[CountryMetric], Error> = performRequest(request: countriesReq)
-            .tryMap { data -> [CountryMetric] in
-                let list = try decodeXY(data)
+            .map { data -> [CountryMetric] in
+                let list = decodeXY(data)
                 return list.compactMap { xy in
                     let codeOrName = xy.country ?? xy.name ?? xy.x
                     guard let label = codeOrName else { return nil }
@@ -1099,14 +1133,20 @@ class APIClient {
                     return CountryMetric(code: label.uppercased(), name: label, value: val)
                 }
             }
-            .mapError { $0 }
+            .catch { error -> AnyPublisher<[CountryMetric], Error> in
+                print("⚠️ Error fetching countries metrics: \(error.localizedDescription)")
+                return Just([]).setFailureType(to: Error.self).eraseToAnyPublisher()
+            }
             .eraseToAnyPublisher()
 
         let pageviewsP: AnyPublisher<(pageviews: [PageviewMetric], sessions: [SessionMetric]), Error> = performRequest(request: pvReq)
-            .tryMap { data in
-                try decodeSeries(data)
+            .map { data in
+                decodeSeries(data)
             }
-            .mapError { $0 }
+            .catch { error -> AnyPublisher<(pageviews: [PageviewMetric], sessions: [SessionMetric]), Error> in
+                print("⚠️ Error fetching pageviews/sessions: \(error.localizedDescription)")
+                return Just(([], [])).setFailureType(to: Error.self).eraseToAnyPublisher()
+            }
             .eraseToAnyPublisher()
 
         // Combine results
@@ -1136,6 +1176,20 @@ class APIClient {
             .mapError { error in
                 if let apiError = error as? APIError { return apiError }
                 return APIError.networkError(error)
+            }
+            .catch { error -> AnyPublisher<WebsiteMetricsResponse, APIError> in
+                // Final fallback: return empty metrics if everything fails
+                print("⚠️ All metric requests failed for website \(id): \(error.localizedDescription)")
+                let emptyMetrics = WebsiteMetrics(
+                    pageviews: [], sessions: [], events: [],
+                    countries: [], browsers: [], os: [], devices: [],
+                    referrers: [], pages: []
+                )
+                let startISO = ISO8601DateFormatter().string(from: Date(timeIntervalSince1970: Double(dateRange.startAt) / 1000))
+                let endISO = ISO8601DateFormatter().string(from: Date(timeIntervalSince1970: Double(dateRange.endAt) / 1000))
+                return Just(WebsiteMetricsResponse(websiteId: id, startDate: startISO, endDate: endISO, metrics: emptyMetrics))
+                    .setFailureType(to: APIError.self)
+                    .eraseToAnyPublisher()
             }
             .handleEvents(receiveOutput: { _ in
                 UserDefaults.standard.set(0, forKey: "umami_metrics_failure_count")
