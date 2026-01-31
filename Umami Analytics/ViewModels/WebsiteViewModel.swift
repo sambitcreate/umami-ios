@@ -35,12 +35,12 @@ class WebsiteViewModel: ObservableObject {
 
     var formattedPageviews: String {
         guard let stats = websiteStats else { return "--" }
-        return formatNumber(stats.pageviews.value)
+        return formatNumber(stats.pageviews)
     }
 
     var formattedVisitors: String {
         guard let stats = websiteStats else { return "--" }
-        return formatNumber(stats.visitors.value)
+        return formatNumber(stats.visitors)
     }
 
     var formattedBounceRate: String {
@@ -308,7 +308,7 @@ class WebsiteViewModel: ObservableObject {
     }
 
     private func loadWebsiteMetrics(websiteId: String) {
-        WebsiteService.shared.fetchWebsiteMetrics(id: websiteId, period: selectedPeriod, type: "url")
+        WebsiteService.shared.fetchWebsiteMetrics(id: websiteId, period: selectedPeriod, type: "path")
             .receive(on: DispatchQueue.main)
             .sink(
                 receiveCompletion: { [weak self] completion in
@@ -388,10 +388,10 @@ class WebsiteViewModel: ObservableObject {
 
         if number >= 1_000_000 {
             formatter.maximumFractionDigits = 1
-            return formatter.string(from: NSNumber(value: Double(number) / 1_000_000)) ?? "0" + "M"
+            return (formatter.string(from: NSNumber(value: Double(number) / 1_000_000)) ?? "0") + "M"
         } else if number >= 1_000 {
             formatter.maximumFractionDigits = 1
-            return formatter.string(from: NSNumber(value: Double(number) / 1_000)) ?? "0" + "K"
+            return (formatter.string(from: NSNumber(value: Double(number) / 1_000)) ?? "0") + "K"
         } else {
             return formatter.string(from: NSNumber(value: number)) ?? "0"
         }

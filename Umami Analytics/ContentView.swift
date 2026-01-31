@@ -99,7 +99,7 @@ struct DashboardView: View {
                             Text("This Year").tag(StatsPeriod.year)
                         }
                         .pickerStyle(SegmentedPickerStyle())
-                        .onChange(of: selectedPeriod) { newValue in
+                        .onChange(of: selectedPeriod) { _, newValue in
                             viewModel.changePeriod(newValue)
                         }
                     }
