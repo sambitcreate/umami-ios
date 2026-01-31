@@ -23,6 +23,18 @@ struct WebsiteModel: Codable, Identifiable {
         case id, name, domain, shareId, userId, teamId, createdAt, updatedAt
     }
 
+    // Standard memberwise initializer for manual creation
+    init(id: String, name: String, domain: String, shareId: String? = nil, userId: String? = nil, teamId: String? = nil, createdAt: String? = nil, updatedAt: String? = nil) {
+        self.id = id
+        self.name = name
+        self.domain = domain
+        self.shareId = shareId
+        self.userId = userId
+        self.teamId = teamId
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+    }
+
     // Custom decoder to handle different API formats
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -38,19 +50,6 @@ struct WebsiteModel: Codable, Identifiable {
         teamId = try container.decodeIfPresent(String.self, forKey: .teamId)
         createdAt = try container.decodeIfPresent(String.self, forKey: .createdAt)
         updatedAt = try container.decodeIfPresent(String.self, forKey: .updatedAt)
-    }
-
-    // Standard encoder
-    func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(id, forKey: .id)
-        try container.encode(name, forKey: .name)
-        try container.encode(domain, forKey: .domain)
-        try container.encodeIfPresent(shareId, forKey: .shareId)
-        try container.encodeIfPresent(userId, forKey: .userId)
-        try container.encodeIfPresent(teamId, forKey: .teamId)
-        try container.encodeIfPresent(createdAt, forKey: .createdAt)
-        try container.encodeIfPresent(updatedAt, forKey: .updatedAt)
     }
 }
 

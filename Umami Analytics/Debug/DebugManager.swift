@@ -37,7 +37,8 @@ class DebugManager {
                 shareId: "share-123",
                 userId: "user-123",
                 teamId: "team-123",
-                createdAt: ISO8601DateFormatter().string(from: Date().addingTimeInterval(-86400 * 30))
+                createdAt: ISO8601DateFormatter().string(from: Date().addingTimeInterval(-86400 * 30)),
+                updatedAt: ISO8601DateFormatter().string(from: Date())
             ),
             WebsiteModel(
                 id: "mock-website-2",
@@ -46,7 +47,8 @@ class DebugManager {
                 shareId: "share-456",
                 userId: "user-123",
                 teamId: "team-123",
-                createdAt: ISO8601DateFormatter().string(from: Date().addingTimeInterval(-86400 * 60))
+                createdAt: ISO8601DateFormatter().string(from: Date().addingTimeInterval(-86400 * 60)),
+                updatedAt: ISO8601DateFormatter().string(from: Date())
             ),
             WebsiteModel(
                 id: "mock-website-3",
@@ -55,7 +57,8 @@ class DebugManager {
                 shareId: "share-789",
                 userId: "user-123",
                 teamId: "team-123",
-                createdAt: ISO8601DateFormatter().string(from: Date().addingTimeInterval(-86400 * 15))
+                createdAt: ISO8601DateFormatter().string(from: Date().addingTimeInterval(-86400 * 15)),
+                updatedAt: ISO8601DateFormatter().string(from: Date())
             )
         ]
     }
