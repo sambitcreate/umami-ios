@@ -11,16 +11,18 @@ import SwiftUI
 
 class WebsiteViewModel: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
-
+    private var refreshTimer: Timer?
+    private let refreshInterval: TimeInterval = 60 // Refresh every 60 seconds
+    
     private static let starredKey = "starredWebsiteIds"
-
+    
     // Published properties for UI updates
     @Published var websites: [WebsiteModel] = []
     @Published var isLoading = false
     @Published var isPerformingAction = false
     @Published var errorMessage: String?
     @Published var selectedPeriod: StatsPeriod = .day
-
+    
     // Selected website properties
     @Published var selectedWebsite: WebsiteModel?
     @Published var websiteStats: WebsiteStatsResponse?
@@ -29,10 +31,10 @@ class WebsiteViewModel: ObservableObject {
     @Published var activeUsers: ActiveUsersResponse?
     @Published var activeUsersCount: Int = 0
     @Published var hasActiveUsersData: Bool = false
-
+    
     // Starred websites
     @Published var starredWebsiteIds: Set<String> = []
-
+    
     // Per-website stats for dashboard cards
     @Published var dashboardStats: [String: WebsiteStatsResponse] = [:]
 
@@ -105,10 +107,11 @@ class WebsiteViewModel: ObservableObject {
     }
 
     // MARK: - Initialization
-
+    
     init() {
         loadStarredIds()
         loadCachedWebsites()
+        startBackgroundRefresh()
     }
 
     // MARK: - Data Loading
@@ -458,9 +461,40 @@ class WebsiteViewModel: ObservableObject {
         }
     }
 
+    // MARK: - Background Refresh
+    
+    private func startBackgroundRefresh() {
+        // Invalidate any existing timer
+        stopBackgroundRefresh()
+        
+        // Create new timer for periodic refresh
+        refreshTimer = Timer.scheduledTimer(withTimeInterval: refreshInterval, repeats: true) { [weak self] _ in
+            self?.refreshDataInBackground()
+        }
+    }
+    
+    private func stopBackgroundRefresh() {
+        refreshTimer?.invalidate()
+        refreshTimer = nil
+    }
+    
+    private func refreshDataInBackground() {
+        // Refresh dashboard stats in background
+        loadDashboardStats()
+        
+        // Refresh selected website data if available
+        if let website = selectedWebsite {
+            loadWebsiteStats(websiteId: website.id)
+            loadWebsiteMetrics(websiteId: website.id)
+            loadPageviewsData(websiteId: website.id)
+            loadActiveUsers(websiteId: website.id)
+        }
+    }
+    
     // MARK: - Cleanup
-
+    
     deinit {
         stopRealtimeUpdates()
+        stopBackgroundRefresh()
     }
 }

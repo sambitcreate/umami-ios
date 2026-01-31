@@ -322,13 +322,14 @@ struct DashboardWebsiteCard: View {
                 Image(systemName: icon)
                     .font(.system(size: 10))
                     .foregroundColor(color)
-
+                
                 Text(value)
                     .font(.system(.subheadline, design: .rounded))
                     .fontWeight(.semibold)
                     .foregroundColor(.primary)
+                    .contentTransition(.numericText())
             }
-
+            
             Text(label)
                 .font(.system(size: 10))
                 .foregroundColor(.secondary)
@@ -742,7 +743,7 @@ struct StatCard: View {
     var title: String
     var value: String
     var icon: String
-
+    
     var body: some View {
         VStack {
             HStack {
@@ -752,14 +753,15 @@ struct StatCard: View {
                 Spacer()
             }
             .padding(.bottom, 5)
-
+            
             HStack {
                 Text(value)
                     .font(.title)
                     .fontWeight(.bold)
+                    .contentTransition(.numericText())
                 Spacer()
             }
-
+            
             HStack {
                 Text(title)
                     .font(.caption)

@@ -376,12 +376,48 @@ struct WebsiteDetailView: View {
     }
 
     // MARK: - Helper Methods
-
+    
     private func formatTimestamp(_ timestamp: Int64) -> String {
         let date = Date(timeIntervalSince1970: Double(timestamp) / 1000)
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .abbreviated
         return formatter.localizedString(for: date, relativeTo: Date())
+    }
+}
+
+struct StatCard: View {
+    var title: String
+    var value: String
+    var icon: String
+    
+    var body: some View {
+        VStack {
+            HStack {
+                Image(systemName: icon)
+                    .font(.title2)
+                    .foregroundColor(.blue)
+                Spacer()
+            }
+            .padding(.bottom, 5)
+            
+            HStack {
+                Text(value)
+                    .font(.title)
+                    .fontWeight(.bold)
+                    .contentTransition(.numericText())
+                Spacer()
+            }
+            
+            HStack {
+                Text(title)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Spacer()
+            }
+        }
+        .padding()
+        .background(Color(UIColor.secondarySystemBackground))
+        .cornerRadius(10)
     }
 }
 
