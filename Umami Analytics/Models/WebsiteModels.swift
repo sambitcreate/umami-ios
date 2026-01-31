@@ -258,16 +258,38 @@ struct WebsiteStatsResponse: Codable {
         // Try to decode websiteId, but make it optional
         websiteId = try container.decodeIfPresent(String.self, forKey: .websiteId)
 
-        // Decode dates
-        startDate = try container.decode(String.self, forKey: .startDate)
-        endDate = try container.decode(String.self, forKey: .endDate)
+        // Try to decode dates - if not present, generate them from current time
+        if let start = try container.decodeIfPresent(String.self, forKey: .startDate) {
+            startDate = start
+            endDate = try container.decode(String.self, forKey: .endDate)
+            stats = try container.decode(WebsiteStatsModel.self, forKey: .stats)
+        } else {
+            // Cloud API format: returns stats directly without wrapping
+            // {"pageviews": 19, "visitors": 18, "visits": 19, "bounces": 19, "totaltime": 0, "comparison": {...}}
+            let dateFormatter = ISO8601DateFormatter()
+            let now = dateFormatter.string(from: Date())
 
-        // Decode stats
-        stats = try container.decode(WebsiteStatsModel.self, forKey: .stats)
+            startDate = now
+            endDate = now
+
+            // Decode stats from the root level
+            let pageviews = try container.decodeIfPresent(Int.self, forKey: .pageviews) ?? 0
+            let visitors = try container.decodeIfPresent(Int.self, forKey: .visitors) ?? 0
+            let visits = try container.decodeIfPresent(Int.self, forKey: .visits) ?? 0
+            let bounces = try container.decodeIfPresent(Int.self, forKey: .bounces) ?? 0
+            let totalTime = try container.decodeIfPresent(Int.self, forKey: .totaltime) ?? 0
+
+            stats = WebsiteStatsModel(
+                pageviews: pageviews,
+                uniques: visitors,
+                bounces: bounces,
+                totalTime: totalTime
+            )
+        }
     }
 
     enum CodingKeys: String, CodingKey {
-        case websiteId, startDate, endDate, stats
+        case websiteId, startDate, endDate, stats, pageviews, visitors, visits, bounces, totaltime
     }
 }
 

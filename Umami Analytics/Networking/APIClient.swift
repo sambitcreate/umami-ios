@@ -676,19 +676,70 @@ class APIClient {
 
             let meReq = createRequest(path: "/api/me", method: "GET") // will normalize to /v1/me
 
-            // Try to decode directly to User
-            let meAsUser: AnyPublisher<User, Error> = performRequest(request: meReq)
+            // Cloud API returns {token, user} format
+            struct CloudMeResponse: Codable { let token: String; let user: User }
+
+            // First try Cloud format: {token, user}
+            let cloudMePublisher: AnyPublisher<User, Error> = performRequest(request: meReq)
+                .map { (_: CloudMeResponse) in
+                    // Return the user from the response
+                    return try! JSONDecoder().decode(CloudMeResponse.self, from: Data()).user
+                }
+                .catch { _ -> AnyPublisher<User, Error> in
+                    // If Cloud format fails, try direct User
+                    return self.performRequest(request: meReq)
+                        .catch { _ -> AnyPublisher<User, Error> in
+                            // If direct User fails, try {user: User} format
+                            struct MeResponse: Codable { let user: User }
+                            return self.performRequest(request: meReq)
+                                .map { (_: MeResponse) in
+                                    return try! JSONDecoder().decode(MeResponse.self, from: Data()).user
+                                }
+                                .eraseToAnyPublisher()
+                        }
+                        .eraseToAnyPublisher()
+                }
                 .eraseToAnyPublisher()
 
-            // Or wrapped { user: User }
-            struct MeResponse: Codable { let user: User }
-            let meWrappedPublisher: AnyPublisher<MeResponse, Error> = performRequest(request: meReq)
-            let meAsWrappedUser: AnyPublisher<User, Error> = meWrappedPublisher
-                .map { $0.user }
-                .eraseToAnyPublisher()
+            // Simpler approach: decode raw data
+            return URLSession.shared.dataTaskPublisher(for: meReq)
+                .tryMap { data, response -> User in
+                    guard let httpResponse = response as? HTTPURLResponse else {
+                        throw APIError.unknown
+                    }
 
-            return meAsUser
-                .catch { _ in meAsWrappedUser }
+                    if httpResponse.statusCode == 401 {
+                        throw APIError.unauthorized
+                    }
+
+                    if httpResponse.statusCode != 200 {
+                        throw APIError.serverError("Status code: \(httpResponse.statusCode)")
+                    }
+
+                    // Try Cloud format first: {token, user}
+                    if let cloudResponse = try? JSONDecoder().decode(CloudMeResponse.self, from: data) {
+                        return cloudResponse.user
+                    }
+
+                    // Try direct User
+                    if let user = try? JSONDecoder().decode(User.self, from: data) {
+                        return user
+                    }
+
+                    // Try {user: User} format
+                    struct MeResponse: Codable { let user: User }
+                    if let meResponse = try? JSONDecoder().decode(MeResponse.self, from: data) {
+                        return meResponse.user
+                    }
+
+                    throw APIError.decodingError
+                }
+                .mapError { error in
+                    if let apiError = error as? APIError {
+                        return apiError
+                    }
+                    return APIError.networkError(error)
+                }
                 .eraseToAnyPublisher()
         }
 
