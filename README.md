@@ -109,7 +109,7 @@ No configuration files needed! The app handles everything through the UI.
 
 ### For Self-hosted Umami
 1. Select "Self-hosted" on the login screen
-2. Enter your server URL (e.g., `https://analytics.example.com`)
+2. Enter your server URL (e.g., `https://umami.example.com`)
 3. Enter your username and password
 4. Tap "Sign In"
 
