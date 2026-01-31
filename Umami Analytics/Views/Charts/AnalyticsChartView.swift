@@ -180,7 +180,7 @@ struct AnalyticsChartView: View {
                     .gesture(
                         DragGesture(minimumDistance: 0)
                             .onChanged { value in
-                                let plotAreaFrame = proxy.plotAreaFrame
+                                let plotAreaFrame = proxy.plotContainerFrame
                                 let resolvedFrame = geometry[plotAreaFrame]
                                 let originX = resolvedFrame.origin.x
                                 let locationX = value.location.x - originX
