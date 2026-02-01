@@ -187,14 +187,17 @@ class WebsiteViewModel: ObservableObject {
 
     private func loadCachedStats(websiteId: String) {
         if let cachedStats = WebsiteService.shared.fetchCachedStats(for: websiteId, period: selectedPeriod) {
-            let stats = WebsiteStatsResponse(
+            var stats = WebsiteStatsResponse(
                 pageviews: Int(cachedStats.pageviews),
                 visitors: Int(cachedStats.visitors),
-                visits: 0,  // Not cached, will be updated with fresh data
-                bounces: 0, // Not cached, will be updated with fresh data
-                totaltime: 0, // Not cached, will be updated with fresh data
+                visits: 0,  // Not needed for cached display
+                bounces: 0, // Not needed for cached display (bounceRate is stored instead)
+                totaltime: 0, // Not needed for cached display (avgDuration is stored instead)
                 comparison: nil
             )
+            // Set cached bounce rate and avg duration
+            stats.cachedBounceRate = cachedStats.bounceRate
+            stats.cachedAvgDuration = cachedStats.avgDuration
             DispatchQueue.main.async {
                 self.websiteStats = stats
             }

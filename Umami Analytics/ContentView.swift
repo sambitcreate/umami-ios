@@ -154,11 +154,11 @@ struct DashboardView: View {
                             .padding(.horizontal)
 
                             ForEach(viewModel.dashboardWebsites) { website in
-                                NavigationLink(destination: {
+                                NavigationLink {
                                     let detailViewModel = WebsiteViewModel()
                                     detailViewModel.selectWebsite(website)
                                     return WebsiteDetailView(viewModel: detailViewModel)
-                                }()) {
+                                } label: {
                                     DashboardWebsiteCard(
                                         website: website,
                                         stats: viewModel.dashboardStats[website.id]
@@ -368,12 +368,12 @@ struct WebsitesView: View {
                 if viewModel.hasWebsites {
                     List {
                         ForEach(viewModel.websites) { website in
-                            NavigationLink(destination: {
+                            NavigationLink {
                                 // Create a new view model instance with the selected website
                                 let detailViewModel = WebsiteViewModel()
                                 detailViewModel.selectWebsite(website)
                                 return WebsiteDetailView(viewModel: detailViewModel)
-                            }()) {
+                            } label: {
                                 WebsiteRowView(website: website, isStarred: viewModel.isStarred(website.id))
                             }
                             .swipeActions(edge: .leading, allowsFullSwipe: true) {

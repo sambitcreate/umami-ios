@@ -263,24 +263,24 @@ class APIClient {
             .flatMap { firstPageResponse -> AnyPublisher<[WebsiteModel], Error> in
                 let totalCount = firstPageResponse.count
                 let firstPageData = firstPageResponse.data
-                
+
                 // If all websites fit in first page, return them
-                if firstPageData.count >= totalCount {
+                if totalCount <= firstPageData.count {
                     return Just(firstPageData)
                         .setFailureType(to: Error.self)
                         .eraseToAnyPublisher()
                 }
-                
+
                 // Calculate how many more pages we need
                 let pageSize = 50
                 let totalPages = (totalCount + pageSize - 1) / pageSize // Ceiling division
-                
+
                 // Create publishers for remaining pages
                 let remainingPagePublishers = (2...totalPages).map { page in
                     self.getWebsites(page: page, pageSize: pageSize)
                         .map { $0.data }
                 }
-                
+
                 // Combine all pages
                 if remainingPagePublishers.isEmpty {
                     return Just(firstPageData)
