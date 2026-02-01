@@ -156,8 +156,8 @@ struct DashboardView: View {
                             ForEach(viewModel.dashboardWebsites) { website in
                                 NavigationLink {
                                     let detailViewModel = WebsiteViewModel()
-                                    detailViewModel.selectWebsite(website)
-                                    return WebsiteDetailView(viewModel: detailViewModel)
+                                    let _ = detailViewModel.selectWebsite(website)
+                                    WebsiteDetailView(viewModel: detailViewModel)
                                 } label: {
                                     DashboardWebsiteCard(
                                         website: website,
@@ -371,8 +371,8 @@ struct WebsitesView: View {
                             NavigationLink {
                                 // Create a new view model instance with the selected website
                                 let detailViewModel = WebsiteViewModel()
-                                detailViewModel.selectWebsite(website)
-                                return WebsiteDetailView(viewModel: detailViewModel)
+                                let _ = detailViewModel.selectWebsite(website)
+                                WebsiteDetailView(viewModel: detailViewModel)
                             } label: {
                                 WebsiteRowView(website: website, isStarred: viewModel.isStarred(website.id))
                             }
