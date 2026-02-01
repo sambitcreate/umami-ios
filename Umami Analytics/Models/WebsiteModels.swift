@@ -129,9 +129,13 @@ struct WebsiteStatsResponse: Codable {
     let totaltime: Int
     let comparison: StatsComparison?
 
-    // Cached values for offline display (not part of Codable)
+    // Cached values for offline display (excluded from Codable via CodingKeys)
     var cachedBounceRate: Double?
     var cachedAvgDuration: Double?
+
+    enum CodingKeys: String, CodingKey {
+        case pageviews, visitors, visits, bounces, totaltime, comparison
+    }
 
     var bounceRate: Double {
         if let cached = cachedBounceRate {
