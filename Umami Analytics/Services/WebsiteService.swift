@@ -285,6 +285,8 @@ class WebsiteService {
                         // Update existing stats
                         existingStats.pageviews = Int64(stats.pageviews)
                         existingStats.visitors = Int64(stats.visitors)
+                        existingStats.bounceRate = stats.bounceRate
+                        existingStats.avgDuration = stats.avgDuration
                         existingStats.date = Date()
                     } else {
                         // Create new stats
@@ -292,6 +294,8 @@ class WebsiteService {
                         newStats.website = website
                         newStats.pageviews = Int64(stats.pageviews)
                         newStats.visitors = Int64(stats.visitors)
+                        newStats.bounceRate = stats.bounceRate
+                        newStats.avgDuration = stats.avgDuration
                         newStats.date = Date()
                         newStats.period = period.rawValue
                     }
