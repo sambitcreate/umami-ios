@@ -50,6 +50,12 @@ class APIClient {
 
     // MARK: - Helper Methods
 
+    private func logDebug(_ message: @autoclosure () -> String) {
+#if DEBUG
+        print(message())
+#endif
+    }
+
     private func createRequest(path: String, method: String, body: Encodable? = nil) -> URLRequest {
         let normalizedPath = normalize(path: path)
         // Handle URLs with query parameters correctly
@@ -81,7 +87,7 @@ class APIClient {
             do {
                 request.httpBody = try jsonEncoder.encode(body)
             } catch {
-                print("Error encoding request body: \(error)")
+                logDebug("Error encoding request body: \(error)")
             }
         }
 
@@ -89,10 +95,9 @@ class APIClient {
     }
 
     private func performRequest<T: Decodable>(request: URLRequest) -> AnyPublisher<T, Error> {
-        // Debug: Print request details
-        print("🌐 API Request: \(request.httpMethod ?? "GET") \(request.url?.absoluteString ?? "unknown")")
+        logDebug("🌐 API Request: \(request.httpMethod ?? "GET") \(request.url?.absoluteString ?? "unknown")")
         if let headers = request.allHTTPHeaderFields {
-            print("🔑 Headers: \(headers)")
+            logDebug("🔑 Headers: \(headers)")
         }
 
         return URLSession.shared.dataTaskPublisher(for: request)
@@ -101,10 +106,9 @@ class APIClient {
                     throw APIError.unknown
                 }
 
-                // Debug: Print response details
-                print("📡 Response Status: \(httpResponse.statusCode) for \(request.url?.absoluteString ?? "unknown")")
+                logDebug("📡 Response Status: \(httpResponse.statusCode) for \(request.url?.absoluteString ?? "unknown")")
                 if let responseString = String(data: data, encoding: .utf8) {
-                    print("📄 Response Body: \(responseString)")
+                    logDebug("📄 Response Body: \(responseString)")
                 }
 
                 if httpResponse.statusCode == 401 {
@@ -136,7 +140,7 @@ class APIClient {
                         if let apiError = error as? APIError {
                             return apiError
                         } else if error is DecodingError {
-                            print("Decoding error: \(error)")
+                            self.logDebug("Decoding error: \(error)")
                             return APIError.decodingError
                         } else {
                             return APIError.networkError(error)
@@ -148,7 +152,7 @@ class APIClient {
                 if let apiError = error as? APIError {
                     return apiError
                 } else if error is DecodingError {
-                    print("Decoding error: \(error)")
+                    self.logDebug("Decoding error: \(error)")
                     return APIError.decodingError
                 } else {
                     return APIError.networkError(error)
@@ -158,9 +162,9 @@ class APIClient {
     }
 
     private func performVoidRequest(request: URLRequest) -> AnyPublisher<Void, Error> {
-        print("🌐 API Request: \(request.httpMethod ?? "GET") \(request.url?.absoluteString ?? "unknown")")
+        logDebug("🌐 API Request: \(request.httpMethod ?? "GET") \(request.url?.absoluteString ?? "unknown")")
         if let headers = request.allHTTPHeaderFields {
-            print("🔑 Headers: \(headers)")
+            logDebug("🔑 Headers: \(headers)")
         }
 
         return URLSession.shared.dataTaskPublisher(for: request)
@@ -169,9 +173,9 @@ class APIClient {
                     throw APIError.unknown
                 }
 
-                print("📡 Response Status: \(httpResponse.statusCode) for \(request.url?.absoluteString ?? "unknown")")
+                self.logDebug("📡 Response Status: \(httpResponse.statusCode) for \(request.url?.absoluteString ?? "unknown")")
                 if let responseString = String(data: data, encoding: .utf8), !responseString.isEmpty {
-                    print("📄 Response Body: \(responseString)")
+                    self.logDebug("📄 Response Body: \(responseString)")
                 }
 
                 if httpResponse.statusCode == 401 {
