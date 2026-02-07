@@ -12,18 +12,22 @@ import SwiftUI
 class WebsiteViewModel: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     private var refreshTimer: Timer?
-    private let refreshInterval: TimeInterval = 60 // Refresh every 60 seconds
-    
+    private var realtimeSnapshotTimer: Timer?
+    private let refreshInterval: TimeInterval = 60
+    private let pageSize = 20
+    private let shouldStartBackgroundRefresh: Bool
+
     private static let starredKey = "starredWebsiteIds"
-    
-    // Published properties for UI updates
+
+    // MARK: - Core Published State
+
     @Published var websites: [WebsiteModel] = []
     @Published var isLoading = false
     @Published var isRefreshing = false
     @Published var isPerformingAction = false
     @Published var errorMessage: String?
     @Published var selectedPeriod: StatsPeriod = .day
-    
+
     // Selected website properties
     @Published var selectedWebsite: WebsiteModel?
     @Published var websiteStats: WebsiteStatsResponse?
@@ -32,14 +36,42 @@ class WebsiteViewModel: ObservableObject {
     @Published var activeUsers: ActiveUsersResponse?
     @Published var activeUsersCount: Int = 0
     @Published var hasActiveUsersData: Bool = false
-    
-    // Starred websites
+
+    // Dashboard
     @Published var starredWebsiteIds: Set<String> = []
-    
-    // Per-website stats for dashboard cards
     @Published var dashboardStats: [String: WebsiteStatsResponse] = [:]
 
-    // Computed properties for UI
+    // MARK: - Advanced Analytics State
+
+    @Published var selectedDetailTab: WebsiteDetailTab = .overview
+    @Published var tabLoading: [WebsiteDetailTab: Bool] = [:]
+    @Published var tabErrors: [WebsiteDetailTab: String] = [:]
+
+    @Published var metricsByDimension: [MetricDimension: [MetricItem]] = [:]
+    @Published var eventSeries: [TimeSeriesData] = []
+    @Published var eventsPage: PaginatedResponse<AnalyticsRecord>?
+    @Published var sessionsPage: PaginatedResponse<AnalyticsRecord>?
+    @Published var sessionStats: [String: MetricValue] = [:]
+    @Published var sessionsWeekly: [WeeklySessionPoint] = []
+    @Published var selectedSessionRecord: AnalyticsRecord?
+    @Published var selectedSessionActivity: [AnalyticsRecord] = []
+    @Published var selectedSessionProperties: [String: JSONValue] = [:]
+    @Published var realtimeSnapshot: RealtimeData?
+    @Published var eventDataState = EventDataState()
+
+    @Published var eventsSearchQuery = ""
+    @Published var sessionsSearchQuery = ""
+    @Published var hasMoreEvents = false
+    @Published var isLoadingMoreEvents = false
+    @Published var hasMoreSessions = false
+    @Published var isLoadingMoreSessions = false
+
+    private var loadedTabs: Set<WebsiteDetailTab> = []
+    private var nextEventsPage = 1
+    private var nextSessionsPage = 1
+
+    // MARK: - Computed properties for UI
+
     var hasWebsites: Bool {
         !websites.isEmpty
     }
@@ -65,11 +97,11 @@ class WebsiteViewModel: ObservableObject {
 
         if seconds < 60 {
             return String(format: "%.0fs", seconds)
-        } else {
-            let minutes = Int(seconds / 60)
-            let remainingSeconds = Int(seconds.truncatingRemainder(dividingBy: 60))
-            return String(format: "%dm %ds", minutes, remainingSeconds)
         }
+
+        let minutes = Int(seconds / 60)
+        let remainingSeconds = Int(seconds.truncatingRemainder(dividingBy: 60))
+        return String(format: "%dm %ds", minutes, remainingSeconds)
     }
 
     // Dashboard websites: starred first, fallback to first 3
@@ -108,11 +140,14 @@ class WebsiteViewModel: ObservableObject {
     }
 
     // MARK: - Initialization
-    
-    init() {
+
+    init(shouldStartBackgroundRefresh: Bool = true) {
+        self.shouldStartBackgroundRefresh = shouldStartBackgroundRefresh
         loadStarredIds()
         loadCachedWebsites()
-        startBackgroundRefresh()
+        if shouldStartBackgroundRefresh {
+            startBackgroundRefresh()
+        }
     }
 
     // MARK: - Data Loading
@@ -134,23 +169,21 @@ class WebsiteViewModel: ObservableObject {
                             self?.errorMessage = error.localizedDescription
                         }
 
-                        // Load from cache if network request fails
                         self?.loadCachedWebsites()
                     }
                 },
                 receiveValue: { [weak self] websites in
-                    self?.websites = websites
-                    self?.loadDashboardStats()
+                    guard let self = self else { return }
 
-                    // If we have a selected website, refresh its data
-                    if let selectedId = self?.selectedWebsite?.id,
+                    self.websites = websites
+                    self.loadDashboardStats()
+
+                    if let selectedId = self.selectedWebsite?.id,
                        let website = websites.first(where: { $0.id == selectedId }) {
-                        self?.selectedWebsite = website
-                        self?.loadWebsiteData(website: website)
-                    }
-                    // Otherwise select the first website if available
-                    else if let firstWebsite = websites.first, self?.selectedWebsite == nil {
-                        self?.selectWebsite(firstWebsite)
+                        self.selectedWebsite = website
+                        self.loadTabIfNeeded(self.selectedDetailTab, force: true)
+                    } else if let firstWebsite = websites.first, self.selectedWebsite == nil {
+                        self.selectWebsite(firstWebsite)
                     }
                 }
             )
@@ -160,27 +193,26 @@ class WebsiteViewModel: ObservableObject {
     func loadCachedWebsites() {
         let cachedWebsites = WebsiteService.shared.fetchCachedWebsites()
 
-        if !cachedWebsites.isEmpty {
-            // Convert CoreData objects to model objects
-            let modelWebsites = cachedWebsites.map { cdWebsite -> WebsiteModel in
-                return WebsiteModel(
-                    id: cdWebsite.id ?? "",
-                    name: cdWebsite.name ?? "Unknown",
-                    domain: cdWebsite.domain ?? "",
-                    shareId: nil,
-                    userId: nil,
-                    teamId: nil,
-                    createdAt: ISO8601DateFormatter().string(from: cdWebsite.lastUpdated ?? Date())
-                )
-            }
+        guard !cachedWebsites.isEmpty else {
+            return
+        }
 
-            DispatchQueue.main.async {
-                self.websites = modelWebsites
+        let modelWebsites = cachedWebsites.map { cdWebsite -> WebsiteModel in
+            WebsiteModel(
+                id: cdWebsite.id ?? "",
+                name: cdWebsite.name ?? "Unknown",
+                domain: cdWebsite.domain ?? "",
+                shareId: nil,
+                userId: nil,
+                teamId: nil,
+                createdAt: ISO8601DateFormatter().string(from: cdWebsite.lastUpdated ?? Date())
+            )
+        }
 
-                // Select first website if none is selected
-                if self.selectedWebsite == nil, let firstWebsite = modelWebsites.first {
-                    self.selectWebsite(firstWebsite)
-                }
+        DispatchQueue.main.async {
+            self.websites = modelWebsites
+            if self.selectedWebsite == nil, let firstWebsite = modelWebsites.first {
+                self.selectWebsite(firstWebsite)
             }
         }
     }
@@ -190,12 +222,11 @@ class WebsiteViewModel: ObservableObject {
             var stats = WebsiteStatsResponse(
                 pageviews: Int(cachedStats.pageviews),
                 visitors: Int(cachedStats.visitors),
-                visits: 0,  // Not needed for cached display
-                bounces: 0, // Not needed for cached display (bounceRate is stored instead)
-                totaltime: 0, // Not needed for cached display (avgDuration is stored instead)
+                visits: 0,
+                bounces: 0,
+                totaltime: 0,
                 comparison: nil
             )
-            // Set cached bounce rate and avg duration
             stats.cachedBounceRate = cachedStats.bounceRate
             stats.cachedAvgDuration = cachedStats.avgDuration
             DispatchQueue.main.async {
@@ -205,8 +236,62 @@ class WebsiteViewModel: ObservableObject {
     }
 
     func selectWebsite(_ website: WebsiteModel) {
+        stopRealtimeSnapshotPolling()
+        stopRealtimeUpdates()
+
         selectedWebsite = website
-        loadWebsiteData(website: website)
+        loadedTabs.removeAll()
+        tabErrors.removeAll()
+
+        metricsByDimension.removeAll()
+        websiteMetrics = nil
+        eventSeries = []
+        eventsPage = nil
+        sessionsPage = nil
+        sessionStats = [:]
+        sessionsWeekly = []
+        selectedSessionRecord = nil
+        selectedSessionActivity = []
+        selectedSessionProperties = [:]
+        realtimeSnapshot = nil
+        eventDataState = EventDataState()
+
+        hasMoreEvents = false
+        hasMoreSessions = false
+        isLoadingMoreEvents = false
+        isLoadingMoreSessions = false
+        nextEventsPage = 1
+        nextSessionsPage = 1
+
+        WebsiteService.shared.invalidateAnalyticsCache(for: website.id)
+        loadTabIfNeeded(.overview, force: true)
+    }
+
+    func selectDetailTab(_ tab: WebsiteDetailTab) {
+        let previousTab = selectedDetailTab
+        selectedDetailTab = tab
+
+        if previousTab == .realtime && tab != .realtime {
+            stopRealtimeSnapshotPolling()
+        }
+
+        loadTabIfNeeded(tab)
+    }
+
+    func refreshCurrentTab() {
+        guard let websiteId = selectedWebsite?.id else { return }
+        WebsiteService.shared.invalidateAnalyticsCache(for: websiteId)
+        loadedTabs.remove(selectedDetailTab)
+        loadTabIfNeeded(selectedDetailTab, force: true)
+    }
+
+    func loadWebsiteData(website: WebsiteModel) {
+        if selectedWebsite?.id != website.id {
+            selectWebsite(website)
+            return
+        }
+
+        refreshCurrentTab()
     }
 
     func createWebsite(name: String, domain: String, shareId: String?, teamId: String?, completion: @escaping (Result<WebsiteModel, Error>) -> Void) {
@@ -271,7 +356,7 @@ class WebsiteViewModel: ObservableObject {
 
                     if self.selectedWebsite?.id == updatedWebsite.id {
                         self.selectedWebsite = updatedWebsite
-                        self.loadWebsiteData(website: updatedWebsite)
+                        self.loadTabIfNeeded(self.selectedDetailTab, force: true)
                     }
 
                     completion(.success(updatedWebsite))
@@ -308,7 +393,9 @@ class WebsiteViewModel: ObservableObject {
                     self.websites.removeAll { $0.id == website.id }
 
                     if self.selectedWebsite?.id == website.id {
+                        self.stopRealtimeSnapshotPolling()
                         self.stopRealtimeUpdates()
+
                         self.selectedWebsite = nil
                         self.websiteStats = nil
                         self.websiteMetrics = nil
@@ -316,6 +403,17 @@ class WebsiteViewModel: ObservableObject {
                         self.activeUsers = nil
                         self.activeUsersCount = 0
                         self.hasActiveUsersData = false
+                        self.metricsByDimension.removeAll()
+                        self.eventSeries = []
+                        self.eventsPage = nil
+                        self.sessionsPage = nil
+                        self.sessionStats = [:]
+                        self.sessionsWeekly = []
+                        self.selectedSessionRecord = nil
+                        self.selectedSessionActivity = []
+                        self.selectedSessionProperties = [:]
+                        self.realtimeSnapshot = nil
+                        self.eventDataState = EventDataState()
 
                         if let nextWebsite = self.websites.first {
                             self.selectWebsite(nextWebsite)
@@ -326,27 +424,17 @@ class WebsiteViewModel: ObservableObject {
             .store(in: &cancellables)
     }
 
-    func loadWebsiteData(website: WebsiteModel) {
-        hasActiveUsersData = false
-        activeUsersCount = 0
-
-        loadWebsiteStats(websiteId: website.id)
-        loadWebsiteMetrics(websiteId: website.id)
-        loadPageviewsData(websiteId: website.id)
-        loadActiveUsers(websiteId: website.id)
-        startRealtimeUpdates(websiteId: website.id)
-    }
-
     func changePeriod(_ period: StatsPeriod) {
         selectedPeriod = period
         loadDashboardStats()
 
-        if let website = selectedWebsite {
-            loadWebsiteStats(websiteId: website.id)
-            loadWebsiteMetrics(websiteId: website.id)
-            loadPageviewsData(websiteId: website.id)
-            loadActiveUsers(websiteId: website.id)
+        guard let website = selectedWebsite else {
+            return
         }
+
+        WebsiteService.shared.invalidateAnalyticsCache(for: website.id)
+        loadedTabs.removeAll()
+        loadTabIfNeeded(selectedDetailTab, force: true)
     }
 
     // MARK: - Dashboard Stats
@@ -365,15 +453,169 @@ class WebsiteViewModel: ObservableObject {
         }
     }
 
-    // MARK: - Stats and Metrics
+    // MARK: - Detail Tabs
 
-    private func loadWebsiteStats(websiteId: String) {
-        // Load cached data first
+    private func loadTabIfNeeded(_ tab: WebsiteDetailTab, force: Bool = false) {
+        guard let website = selectedWebsite else { return }
+        if !force && loadedTabs.contains(tab) {
+            if tab == .realtime {
+                startRealtimeSnapshotPolling(websiteId: website.id)
+            }
+            return
+        }
+
+        setTabLoading(tab, true)
+        tabErrors[tab] = nil
+
+        switch tab {
+        case .overview:
+            loadOverviewTab(websiteId: website.id)
+        case .audience:
+            loadAudienceTab(websiteId: website.id)
+        case .events:
+            loadEventsTab(websiteId: website.id)
+        case .sessions:
+            loadSessionsTab(websiteId: website.id)
+        case .realtime:
+            loadRealtimeTab(websiteId: website.id)
+        }
+
+        loadedTabs.insert(tab)
+    }
+
+    private func loadOverviewTab(websiteId: String) {
+        loadWebsiteStats(websiteId: websiteId, captureErrorOn: .overview)
+        loadMetricDimension(.url, websiteId: websiteId, captureErrorOn: .overview)
+        loadPageviewsData(websiteId: websiteId, captureErrorOn: .overview)
+        loadActiveUsers(websiteId: websiteId, captureErrorOn: .overview)
+        startRealtimeUpdates(websiteId: websiteId)
+        setTabLoading(.overview, false)
+    }
+
+    private func loadAudienceTab(websiteId: String) {
+        let dimensions: [MetricDimension] = [.url, .referrer, .browser, .device, .country, .event, .channel]
+        for dimension in dimensions {
+            loadMetricDimension(dimension, websiteId: websiteId, captureErrorOn: .audience)
+        }
+        setTabLoading(.audience, false)
+    }
+
+    private func loadEventsTab(websiteId: String) {
+        loadMetricDimension(.event, websiteId: websiteId, captureErrorOn: .events)
+
+        WebsiteService.shared.fetchWebsiteEventSeries(id: websiteId, period: selectedPeriod)
+            .receive(on: DispatchQueue.main)
+            .sink(
+                receiveCompletion: { [weak self] completion in
+                    if case .failure(let error) = completion {
+                        self?.setTabError(.events, error: error)
+                    }
+                },
+                receiveValue: { [weak self] series in
+                    self?.eventSeries = series
+                }
+            )
+            .store(in: &cancellables)
+
+        nextEventsPage = 1
+        hasMoreEvents = true
+        loadEventsPage(reset: true)
+
+        loadEventDataInspector(websiteId: websiteId)
+        setTabLoading(.events, false)
+    }
+
+    private func loadSessionsTab(websiteId: String) {
+        WebsiteService.shared.fetchWebsiteSessionStats(id: websiteId, period: selectedPeriod)
+            .receive(on: DispatchQueue.main)
+            .sink(
+                receiveCompletion: { [weak self] completion in
+                    if case .failure(let error) = completion {
+                        self?.setTabError(.sessions, error: error)
+                    }
+                },
+                receiveValue: { [weak self] stats in
+                    self?.sessionStats = stats
+                }
+            )
+            .store(in: &cancellables)
+
+        WebsiteService.shared.fetchWebsiteSessionsWeekly(id: websiteId, period: selectedPeriod)
+            .receive(on: DispatchQueue.main)
+            .sink(
+                receiveCompletion: { [weak self] completion in
+                    if case .failure(let error) = completion {
+                        self?.setTabError(.sessions, error: error)
+                    }
+                },
+                receiveValue: { [weak self] weekly in
+                    self?.sessionsWeekly = weekly
+                }
+            )
+            .store(in: &cancellables)
+
+        nextSessionsPage = 1
+        hasMoreSessions = true
+        loadSessionsPage(reset: true)
+        setTabLoading(.sessions, false)
+    }
+
+    private func loadRealtimeTab(websiteId: String) {
+        loadRealtimeSnapshot(websiteId: websiteId)
+        startRealtimeSnapshotPolling(websiteId: websiteId)
+        setTabLoading(.realtime, false)
+    }
+
+    // MARK: - Tab Data Actions
+
+    func loadMoreEvents() {
+        guard hasMoreEvents,
+              !isLoadingMoreEvents,
+              selectedWebsite != nil else {
+            return
+        }
+        loadEventsPage(reset: false)
+    }
+
+    func loadMoreSessions() {
+        guard hasMoreSessions,
+              !isLoadingMoreSessions,
+              selectedWebsite != nil else {
+            return
+        }
+        loadSessionsPage(reset: false)
+    }
+
+    func applyEventsSearch(_ search: String) {
+        eventsSearchQuery = search
+        nextEventsPage = 1
+        hasMoreEvents = true
+        loadEventsPage(reset: true)
+    }
+
+    func applySessionsSearch(_ search: String) {
+        sessionsSearchQuery = search
+        nextSessionsPage = 1
+        hasMoreSessions = true
+        loadSessionsPage(reset: true)
+    }
+
+    func selectEventDataEvent(_ eventName: String?) {
+        eventDataState.selectedEvent = eventName
+        reloadEventDataValues()
+    }
+
+    func selectEventDataProperty(_ propertyName: String?) {
+        eventDataState.selectedProperty = propertyName
+        reloadEventDataValues()
+    }
+
+    // MARK: - Existing Core Loaders (Overview)
+
+    private func loadWebsiteStats(websiteId: String, captureErrorOn tab: WebsiteDetailTab? = nil) {
         loadCachedStats(websiteId: websiteId)
 
-        // Check if we have cached data to determine loading state
         let hasCachedData = WebsiteService.shared.fetchCachedStats(for: websiteId, period: selectedPeriod) != nil
-
         if hasCachedData {
             isRefreshing = true
         } else {
@@ -388,10 +630,10 @@ class WebsiteViewModel: ObservableObject {
                     self?.isRefreshing = false
 
                     if case .failure(let error) = completion {
-                        if let apiError = error as? APIError {
-                            self?.errorMessage = apiError.message
+                        if let tab {
+                            self?.setTabError(tab, error: error)
                         } else {
-                            self?.errorMessage = error.localizedDescription
+                            self?.setRootError(error)
                         }
                     }
                 },
@@ -402,34 +644,52 @@ class WebsiteViewModel: ObservableObject {
             .store(in: &cancellables)
     }
 
-    private func loadWebsiteMetrics(websiteId: String) {
-        WebsiteService.shared.fetchWebsiteMetrics(id: websiteId, period: selectedPeriod, type: "path")
+    private func loadMetricDimension(_ dimension: MetricDimension, websiteId: String, captureErrorOn tab: WebsiteDetailTab? = nil) {
+        let primaryType = dimension == .url ? "url" : dimension.rawValue
+
+        let publisher: AnyPublisher<WebsiteMetricsResponse, Error>
+        if dimension == .url {
+            publisher = WebsiteService.shared
+                .fetchWebsiteMetrics(id: websiteId, period: selectedPeriod, type: primaryType)
+                .catch { _ in
+                    WebsiteService.shared.fetchWebsiteMetrics(id: websiteId, period: self.selectedPeriod, type: "path")
+                }
+                .eraseToAnyPublisher()
+        } else {
+            publisher = WebsiteService.shared
+                .fetchWebsiteMetrics(id: websiteId, period: selectedPeriod, type: primaryType)
+                .eraseToAnyPublisher()
+        }
+
+        publisher
             .receive(on: DispatchQueue.main)
             .sink(
                 receiveCompletion: { [weak self] completion in
                     if case .failure(let error) = completion {
-                        if let apiError = error as? APIError {
-                            self?.errorMessage = apiError.message
-                        } else {
-                            self?.errorMessage = error.localizedDescription
+                        if let tab {
+                            self?.setTabError(tab, error: error)
                         }
                     }
                 },
                 receiveValue: { [weak self] response in
-                    self?.websiteMetrics = response
+                    self?.metricsByDimension[dimension] = response
+                    if dimension == .url {
+                        self?.websiteMetrics = response
+                    }
                 }
             )
             .store(in: &cancellables)
     }
 
-    private func loadPageviewsData(websiteId: String) {
+    private func loadPageviewsData(websiteId: String, captureErrorOn tab: WebsiteDetailTab? = nil) {
         WebsiteService.shared.fetchWebsitePageviews(id: websiteId, period: selectedPeriod)
             .receive(on: DispatchQueue.main)
             .sink(
                 receiveCompletion: { [weak self] completion in
-                    _ = self // Suppress unused variable warning
                     if case .failure(let error) = completion {
-                        print("Failed to load pageviews: \(error.localizedDescription)")
+                        if let tab {
+                            self?.setTabError(tab, error: error)
+                        }
                     }
                 },
                 receiveValue: { [weak self] response in
@@ -439,14 +699,13 @@ class WebsiteViewModel: ObservableObject {
             .store(in: &cancellables)
     }
 
-    private func loadActiveUsers(websiteId: String) {
+    private func loadActiveUsers(websiteId: String, captureErrorOn tab: WebsiteDetailTab? = nil) {
         WebsiteService.shared.fetchActiveUsers(id: websiteId)
             .receive(on: DispatchQueue.main)
             .sink(
                 receiveCompletion: { [weak self] completion in
-                    _ = self // Suppress unused variable warning
-                    if case .failure(let error) = completion {
-                        print("Failed to load active users: \(error.localizedDescription)")
+                    if case .failure(let error) = completion, let tab {
+                        self?.setTabError(tab, error: error)
                     }
                 },
                 receiveValue: { [weak self] response in
@@ -458,7 +717,260 @@ class WebsiteViewModel: ObservableObject {
             .store(in: &cancellables)
     }
 
-    // MARK: - Realtime Updates
+    // MARK: - Events Tab
+
+    private func loadEventsPage(reset: Bool) {
+        guard let websiteId = selectedWebsite?.id else { return }
+
+        let page = reset ? 1 : nextEventsPage
+        isLoadingMoreEvents = !reset
+
+        WebsiteService.shared.fetchWebsiteEvents(
+            id: websiteId,
+            period: selectedPeriod,
+            page: page,
+            pageSize: pageSize,
+            search: eventsSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : eventsSearchQuery
+        )
+        .receive(on: DispatchQueue.main)
+        .sink(
+            receiveCompletion: { [weak self] completion in
+                self?.isLoadingMoreEvents = false
+                if case .failure(let error) = completion {
+                    self?.setTabError(.events, error: error)
+                }
+            },
+            receiveValue: { [weak self] response in
+                guard let self = self else { return }
+
+                if reset || self.eventsPage == nil {
+                    self.eventsPage = response
+                } else if let current = self.eventsPage {
+                    self.eventsPage = PaginatedResponse(
+                        data: current.data + response.data,
+                        count: max(current.count, response.count),
+                        page: response.page,
+                        pageSize: response.pageSize
+                    )
+                }
+
+                let totalLoaded = self.eventsPage?.data.count ?? 0
+                self.hasMoreEvents = totalLoaded < (self.eventsPage?.count ?? totalLoaded)
+                self.nextEventsPage = page + 1
+            }
+        )
+        .store(in: &cancellables)
+    }
+
+    private func loadEventDataInspector(websiteId: String) {
+        eventDataState.isLoading = true
+
+        WebsiteService.shared.fetchEventDataFields(id: websiteId, period: selectedPeriod)
+            .receive(on: DispatchQueue.main)
+            .sink(
+                receiveCompletion: { _ in },
+                receiveValue: { [weak self] fields in
+                    self?.eventDataState.availableFields = fields
+                }
+            )
+            .store(in: &cancellables)
+
+        WebsiteService.shared.fetchEventDataProperties(id: websiteId, period: selectedPeriod)
+            .receive(on: DispatchQueue.main)
+            .sink(
+                receiveCompletion: { _ in },
+                receiveValue: { [weak self] properties in
+                    self?.eventDataState.availableProperties = properties
+                }
+            )
+            .store(in: &cancellables)
+
+        WebsiteService.shared.fetchEventDataEvents(id: websiteId, period: selectedPeriod)
+            .receive(on: DispatchQueue.main)
+            .sink(
+                receiveCompletion: { [weak self] completion in
+                    if case .failure(let error) = completion {
+                        self?.setTabError(.events, error: error)
+                    }
+                    self?.eventDataState.isLoading = false
+                },
+                receiveValue: { [weak self] events in
+                    self?.eventDataState.availableEvents = events
+                }
+            )
+            .store(in: &cancellables)
+
+        WebsiteService.shared.fetchEventDataStats(id: websiteId, period: selectedPeriod)
+            .receive(on: DispatchQueue.main)
+            .sink(
+                receiveCompletion: { _ in },
+                receiveValue: { [weak self] stats in
+                    self?.eventDataState.stats = stats
+                }
+            )
+            .store(in: &cancellables)
+
+        reloadEventDataValues()
+    }
+
+    private func reloadEventDataValues() {
+        guard let websiteId = selectedWebsite?.id else { return }
+
+        WebsiteService.shared.fetchEventDataValues(
+            id: websiteId,
+            period: selectedPeriod,
+            eventName: eventDataState.selectedEvent,
+            propertyName: eventDataState.selectedProperty
+        )
+        .receive(on: DispatchQueue.main)
+        .sink(
+            receiveCompletion: { [weak self] completion in
+                if case .failure(let error) = completion {
+                    self?.setTabError(.events, error: error)
+                }
+            },
+            receiveValue: { [weak self] values in
+                self?.eventDataState.availableValues = values
+            }
+        )
+        .store(in: &cancellables)
+    }
+
+    // MARK: - Sessions Tab
+
+    private func loadSessionsPage(reset: Bool) {
+        guard let websiteId = selectedWebsite?.id else { return }
+
+        let page = reset ? 1 : nextSessionsPage
+        isLoadingMoreSessions = !reset
+
+        WebsiteService.shared.fetchWebsiteSessions(
+            id: websiteId,
+            period: selectedPeriod,
+            page: page,
+            pageSize: pageSize,
+            search: sessionsSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : sessionsSearchQuery
+        )
+        .receive(on: DispatchQueue.main)
+        .sink(
+            receiveCompletion: { [weak self] completion in
+                self?.isLoadingMoreSessions = false
+                if case .failure(let error) = completion {
+                    self?.setTabError(.sessions, error: error)
+                }
+            },
+            receiveValue: { [weak self] response in
+                guard let self = self else { return }
+
+                if reset || self.sessionsPage == nil {
+                    self.sessionsPage = response
+                } else if let current = self.sessionsPage {
+                    self.sessionsPage = PaginatedResponse(
+                        data: current.data + response.data,
+                        count: max(current.count, response.count),
+                        page: response.page,
+                        pageSize: response.pageSize
+                    )
+                }
+
+                let totalLoaded = self.sessionsPage?.data.count ?? 0
+                self.hasMoreSessions = totalLoaded < (self.sessionsPage?.count ?? totalLoaded)
+                self.nextSessionsPage = page + 1
+            }
+        )
+        .store(in: &cancellables)
+    }
+
+    func loadSessionDetail(sessionId: String) {
+        guard let websiteId = selectedWebsite?.id else { return }
+
+        WebsiteService.shared.fetchWebsiteSession(id: websiteId, sessionId: sessionId)
+            .receive(on: DispatchQueue.main)
+            .sink(
+                receiveCompletion: { [weak self] completion in
+                    if case .failure(let error) = completion {
+                        self?.setTabError(.sessions, error: error)
+                    }
+                },
+                receiveValue: { [weak self] session in
+                    self?.selectedSessionRecord = session
+                }
+            )
+            .store(in: &cancellables)
+    }
+
+    func loadSessionActivity(sessionId: String) {
+        guard let websiteId = selectedWebsite?.id else { return }
+
+        WebsiteService.shared.fetchWebsiteSessionActivity(id: websiteId, sessionId: sessionId, period: selectedPeriod)
+            .receive(on: DispatchQueue.main)
+            .sink(
+                receiveCompletion: { [weak self] completion in
+                    if case .failure(let error) = completion {
+                        self?.setTabError(.sessions, error: error)
+                    }
+                },
+                receiveValue: { [weak self] activity in
+                    self?.selectedSessionActivity = activity
+                }
+            )
+            .store(in: &cancellables)
+    }
+
+    func loadSessionProperties(sessionId: String) {
+        guard let websiteId = selectedWebsite?.id else { return }
+
+        WebsiteService.shared.fetchWebsiteSessionProperties(id: websiteId, sessionId: sessionId)
+            .receive(on: DispatchQueue.main)
+            .sink(
+                receiveCompletion: { [weak self] completion in
+                    if case .failure(let error) = completion {
+                        self?.setTabError(.sessions, error: error)
+                    }
+                },
+                receiveValue: { [weak self] properties in
+                    self?.selectedSessionProperties = properties
+                }
+            )
+            .store(in: &cancellables)
+    }
+
+    // MARK: - Realtime
+
+    private func loadRealtimeSnapshot(websiteId: String) {
+        WebsiteService.shared.fetchRealtimeSnapshot(websiteId: websiteId)
+            .receive(on: DispatchQueue.main)
+            .sink(
+                receiveCompletion: { [weak self] completion in
+                    if case .failure(let error) = completion {
+                        self?.setTabError(.realtime, error: error)
+                    }
+                },
+                receiveValue: { [weak self] snapshot in
+                    self?.realtimeSnapshot = snapshot
+                    self?.activeUsersCount = snapshot.sessions
+                    self?.hasActiveUsersData = true
+                }
+            )
+            .store(in: &cancellables)
+    }
+
+    private func startRealtimeSnapshotPolling(websiteId: String) {
+        stopRealtimeSnapshotPolling()
+
+        loadRealtimeSnapshot(websiteId: websiteId)
+
+        realtimeSnapshotTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+            self?.loadRealtimeSnapshot(websiteId: websiteId)
+        }
+    }
+
+    private func stopRealtimeSnapshotPolling() {
+        realtimeSnapshotTimer?.invalidate()
+        realtimeSnapshotTimer = nil
+    }
+
+    // MARK: - Active Users Polling (existing behavior)
 
     private func startRealtimeUpdates(websiteId: String) {
         WebsiteService.shared.startRealtimeUpdates(for: websiteId) { [weak self] count in
@@ -475,6 +987,11 @@ class WebsiteViewModel: ObservableObject {
         }
     }
 
+    func handleDetailDisappear() {
+        stopRealtimeSnapshotPolling()
+        stopRealtimeUpdates()
+    }
+
     // MARK: - Helper Methods
 
     private func formatNumber(_ number: Int) -> String {
@@ -484,48 +1001,68 @@ class WebsiteViewModel: ObservableObject {
         if number >= 1_000_000 {
             formatter.maximumFractionDigits = 1
             return (formatter.string(from: NSNumber(value: Double(number) / 1_000_000)) ?? "0") + "M"
-        } else if number >= 1_000 {
+        }
+
+        if number >= 1_000 {
             formatter.maximumFractionDigits = 1
             return (formatter.string(from: NSNumber(value: Double(number) / 1_000)) ?? "0") + "K"
+        }
+
+        return formatter.string(from: NSNumber(value: number)) ?? "0"
+    }
+
+    private func setRootError(_ error: Error) {
+        if let apiError = error as? APIError {
+            errorMessage = apiError.message
         } else {
-            return formatter.string(from: NSNumber(value: number)) ?? "0"
+            errorMessage = error.localizedDescription
         }
     }
 
+    private func setTabError(_ tab: WebsiteDetailTab, error: Error) {
+        if let apiError = error as? APIError {
+            tabErrors[tab] = apiError.message
+        } else {
+            tabErrors[tab] = error.localizedDescription
+        }
+    }
+
+    private func setTabLoading(_ tab: WebsiteDetailTab, _ loading: Bool) {
+        tabLoading[tab] = loading
+    }
+
     // MARK: - Background Refresh
-    
+
     private func startBackgroundRefresh() {
-        // Invalidate any existing timer
         stopBackgroundRefresh()
-        
-        // Create new timer for periodic refresh
+
         refreshTimer = Timer.scheduledTimer(withTimeInterval: refreshInterval, repeats: true) { [weak self] _ in
             self?.refreshDataInBackground()
         }
     }
-    
+
     private func stopBackgroundRefresh() {
         refreshTimer?.invalidate()
         refreshTimer = nil
     }
-    
+
     private func refreshDataInBackground() {
-        // Refresh dashboard stats in background
         loadDashboardStats()
-        
-        // Refresh selected website data if available
-        if let website = selectedWebsite {
-            loadWebsiteStats(websiteId: website.id)
-            loadWebsiteMetrics(websiteId: website.id)
-            loadPageviewsData(websiteId: website.id)
-            loadActiveUsers(websiteId: website.id)
+
+        guard selectedWebsite != nil else {
+            return
         }
+
+        loadTabIfNeeded(selectedDetailTab, force: true)
     }
-    
+
     // MARK: - Cleanup
-    
+
     deinit {
+        stopRealtimeSnapshotPolling()
         stopRealtimeUpdates()
-        stopBackgroundRefresh()
+        if shouldStartBackgroundRefresh {
+            stopBackgroundRefresh()
+        }
     }
 }
