@@ -7,6 +7,20 @@
 
 import SwiftUI
 
+struct WebsiteDetailContainerView: View {
+    @StateObject private var viewModel: WebsiteViewModel
+
+    init(website: WebsiteModel) {
+        let viewModel = WebsiteViewModel(shouldStartBackgroundRefresh: false)
+        let _ = viewModel.selectWebsite(website)
+        _viewModel = StateObject(wrappedValue: viewModel)
+    }
+
+    var body: some View {
+        WebsiteDetailView(viewModel: viewModel)
+    }
+}
+
 struct WebsiteDetailView: View {
     @ObservedObject var viewModel: WebsiteViewModel
 
