@@ -106,9 +106,9 @@ class APIClient {
                     throw APIError.unknown
                 }
 
-                logDebug("📡 Response Status: \(httpResponse.statusCode) for \(request.url?.absoluteString ?? "unknown")")
+                self.logDebug("📡 Response Status: \(httpResponse.statusCode) for \(request.url?.absoluteString ?? "unknown")")
                 if let responseString = String(data: data, encoding: .utf8) {
-                    logDebug("📄 Response Body: \(responseString)")
+                    self.logDebug("📄 Response Body: \(responseString)")
                 }
 
                 if httpResponse.statusCode == 401 {
