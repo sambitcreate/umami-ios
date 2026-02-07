@@ -806,12 +806,14 @@ class WebsiteViewModel: ObservableObject {
             .sink(
                 receiveCompletion: { [weak self] completion in
                     if case .failure(let error) = completion {
-                        self?.setTabError(.events, error: error)
+                        self?.eventDataState.availableEvents = []
+                        self?.eventDataState.errorMessage = error.localizedDescription
                     }
                     self?.eventDataState.isLoading = false
                 },
                 receiveValue: { [weak self] events in
                     self?.eventDataState.availableEvents = events
+                    self?.eventDataState.errorMessage = nil
                 }
             )
             .store(in: &cancellableBag.cancellables)
@@ -848,11 +850,13 @@ class WebsiteViewModel: ObservableObject {
         .sink(
             receiveCompletion: { [weak self] completion in
                 if case .failure(let error) = completion {
-                    self?.setTabError(.events, error: error)
+                    self?.eventDataState.availableValues = []
+                    self?.eventDataState.errorMessage = error.localizedDescription
                 }
             },
             receiveValue: { [weak self] values in
                 self?.eventDataState.availableValues = values
+                self?.eventDataState.errorMessage = nil
             }
         )
         .store(in: &cancellableBag.cancellables)
