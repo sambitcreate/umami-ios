@@ -10,8 +10,15 @@ import Combine
 import SwiftUI
 
 class WebsiteViewModel: ObservableObject {
+    private final class CancellableBag {
+        var cancellables = Set<AnyCancellable>()
+    }
+
+    private static var retainedBags: [CancellableBag] = []
+    private static let retainedBagsLock = NSLock()
+
     private let service: WebsiteServicing
-    private var cancellables = Set<AnyCancellable>()
+    private let cancellableBag = CancellableBag()
     private var refreshTimer: Timer?
     private var realtimeSnapshotTimer: Timer?
     private let refreshInterval: TimeInterval
@@ -197,7 +204,7 @@ class WebsiteViewModel: ObservableObject {
                     }
                 }
             )
-            .store(in: &cancellables)
+            .store(in: &cancellableBag.cancellables)
     }
 
     func loadCachedWebsites() {
@@ -335,7 +342,7 @@ class WebsiteViewModel: ObservableObject {
                     completion(.success(website))
                 }
             )
-            .store(in: &cancellables)
+            .store(in: &cancellableBag.cancellables)
     }
 
     func updateWebsite(_ website: WebsiteModel, name: String, domain: String, shareId: String?, completion: @escaping (Result<WebsiteModel, Error>) -> Void) {
@@ -372,7 +379,7 @@ class WebsiteViewModel: ObservableObject {
                     completion(.success(updatedWebsite))
                 }
             )
-            .store(in: &cancellables)
+            .store(in: &cancellableBag.cancellables)
     }
 
     func deleteWebsite(_ website: WebsiteModel, completion: @escaping (Result<Void, Error>) -> Void) {
@@ -431,7 +438,7 @@ class WebsiteViewModel: ObservableObject {
                     }
                 }
             )
-            .store(in: &cancellables)
+            .store(in: &cancellableBag.cancellables)
     }
 
     func changePeriod(_ period: StatsPeriod) {
@@ -459,7 +466,7 @@ class WebsiteViewModel: ObservableObject {
                         self?.dashboardStats[website.id] = response
                     }
                 )
-                .store(in: &cancellables)
+                .store(in: &cancellableBag.cancellables)
         }
     }
 
@@ -525,7 +532,7 @@ class WebsiteViewModel: ObservableObject {
                     self?.eventSeries = series
                 }
             )
-            .store(in: &cancellables)
+            .store(in: &cancellableBag.cancellables)
 
         nextEventsPage = 1
         hasMoreEvents = true
@@ -548,7 +555,7 @@ class WebsiteViewModel: ObservableObject {
                     self?.sessionStats = stats
                 }
             )
-            .store(in: &cancellables)
+            .store(in: &cancellableBag.cancellables)
 
         service.fetchWebsiteSessionsWeekly(id: websiteId, period: selectedPeriod)
             .receive(on: DispatchQueue.main)
@@ -562,7 +569,7 @@ class WebsiteViewModel: ObservableObject {
                     self?.sessionsWeekly = weekly
                 }
             )
-            .store(in: &cancellables)
+            .store(in: &cancellableBag.cancellables)
 
         nextSessionsPage = 1
         hasMoreSessions = true
@@ -650,7 +657,7 @@ class WebsiteViewModel: ObservableObject {
                     self?.websiteStats = response
                 }
             )
-            .store(in: &cancellables)
+            .store(in: &cancellableBag.cancellables)
     }
 
     private func loadMetricDimension(_ dimension: MetricDimension, websiteId: String, captureErrorOn tab: WebsiteDetailTab? = nil) {
@@ -687,7 +694,7 @@ class WebsiteViewModel: ObservableObject {
                     }
                 }
             )
-            .store(in: &cancellables)
+            .store(in: &cancellableBag.cancellables)
     }
 
     private func loadPageviewsData(websiteId: String, captureErrorOn tab: WebsiteDetailTab? = nil) {
@@ -705,7 +712,7 @@ class WebsiteViewModel: ObservableObject {
                     self?.pageviewsData = response
                 }
             )
-            .store(in: &cancellables)
+            .store(in: &cancellableBag.cancellables)
     }
 
     private func loadActiveUsers(websiteId: String, captureErrorOn tab: WebsiteDetailTab? = nil) {
@@ -723,7 +730,7 @@ class WebsiteViewModel: ObservableObject {
                     self?.hasActiveUsersData = true
                 }
             )
-            .store(in: &cancellables)
+            .store(in: &cancellableBag.cancellables)
     }
 
     // MARK: - Events Tab
@@ -768,7 +775,7 @@ class WebsiteViewModel: ObservableObject {
                 self.nextEventsPage = page + 1
             }
         )
-        .store(in: &cancellables)
+        .store(in: &cancellableBag.cancellables)
     }
 
     private func loadEventDataInspector(websiteId: String) {
@@ -782,7 +789,7 @@ class WebsiteViewModel: ObservableObject {
                     self?.eventDataState.availableFields = fields
                 }
             )
-            .store(in: &cancellables)
+            .store(in: &cancellableBag.cancellables)
 
         service.fetchEventDataProperties(id: websiteId, period: selectedPeriod, propertyName: nil)
             .receive(on: DispatchQueue.main)
@@ -792,7 +799,7 @@ class WebsiteViewModel: ObservableObject {
                     self?.eventDataState.availableProperties = properties
                 }
             )
-            .store(in: &cancellables)
+            .store(in: &cancellableBag.cancellables)
 
         service.fetchEventDataEvents(id: websiteId, period: selectedPeriod, event: nil)
             .receive(on: DispatchQueue.main)
@@ -807,7 +814,7 @@ class WebsiteViewModel: ObservableObject {
                     self?.eventDataState.availableEvents = events
                 }
             )
-            .store(in: &cancellables)
+            .store(in: &cancellableBag.cancellables)
 
         service.fetchEventDataStats(id: websiteId, period: selectedPeriod)
             .receive(on: DispatchQueue.main)
@@ -817,7 +824,7 @@ class WebsiteViewModel: ObservableObject {
                     self?.eventDataState.stats = stats
                 }
             )
-            .store(in: &cancellables)
+            .store(in: &cancellableBag.cancellables)
 
         reloadEventDataValues()
     }
@@ -842,7 +849,7 @@ class WebsiteViewModel: ObservableObject {
                 self?.eventDataState.availableValues = values
             }
         )
-        .store(in: &cancellables)
+        .store(in: &cancellableBag.cancellables)
     }
 
     // MARK: - Sessions Tab
@@ -887,7 +894,7 @@ class WebsiteViewModel: ObservableObject {
                 self.nextSessionsPage = page + 1
             }
         )
-        .store(in: &cancellables)
+        .store(in: &cancellableBag.cancellables)
     }
 
     func loadSessionDetail(sessionId: String) {
@@ -905,7 +912,7 @@ class WebsiteViewModel: ObservableObject {
                     self?.selectedSessionRecord = session
                 }
             )
-            .store(in: &cancellables)
+            .store(in: &cancellableBag.cancellables)
     }
 
     func loadSessionActivity(sessionId: String) {
@@ -923,7 +930,7 @@ class WebsiteViewModel: ObservableObject {
                     self?.selectedSessionActivity = activity
                 }
             )
-            .store(in: &cancellables)
+            .store(in: &cancellableBag.cancellables)
     }
 
     func loadSessionProperties(sessionId: String) {
@@ -941,7 +948,7 @@ class WebsiteViewModel: ObservableObject {
                     self?.selectedSessionProperties = properties
                 }
             )
-            .store(in: &cancellables)
+            .store(in: &cancellableBag.cancellables)
     }
 
     // MARK: - Realtime
@@ -961,7 +968,7 @@ class WebsiteViewModel: ObservableObject {
                     self?.hasActiveUsersData = true
                 }
             )
-            .store(in: &cancellables)
+            .store(in: &cancellableBag.cancellables)
     }
 
     private func startRealtimeSnapshotPolling(websiteId: String) {
@@ -1072,6 +1079,17 @@ class WebsiteViewModel: ObservableObject {
         stopRealtimeUpdates()
         if shouldStartBackgroundRefresh {
             stopBackgroundRefresh()
+        }
+
+        let bag = cancellableBag
+        Self.retainedBagsLock.lock()
+        Self.retainedBags.append(bag)
+        Self.retainedBagsLock.unlock()
+
+        DispatchQueue.global().async {
+            Self.retainedBagsLock.lock()
+            Self.retainedBags.removeAll { $0 === bag }
+            Self.retainedBagsLock.unlock()
         }
     }
 }
