@@ -10,30 +10,78 @@ import XCTest
 final class Umami_AnalyticsUITests: XCTestCase {
 
     override func setUpWithError() throws {
-        // Put setup code here. This method is called before the invocation of each test method in the class.
-
-        // In UI tests it is usually best to stop immediately when a failure occurs.
         continueAfterFailure = false
-
-        // In UI tests it’s important to set the initial state - such as interface orientation - required for your tests before they run. The setUp method is a good place to do this.
     }
 
     override func tearDownWithError() throws {
-        // Put teardown code here. This method is called after the invocation of each test method in the class.
     }
 
     @MainActor
-    func testExample() throws {
-        // UI tests must launch the application that they test.
+    func testAppLaunchesAndShowsPrimarySurface() throws {
         let app = XCUIApplication()
         app.launch()
 
-        // Use XCTAssert and related functions to verify your tests produce the correct results.
+        let dashboardTab = app.tabBars.buttons["Dashboard"]
+        let loginLabel = app.staticTexts["Umami Analytics"]
+
+        XCTAssertTrue(dashboardTab.waitForExistence(timeout: 5) || loginLabel.waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    func testWebsiteDetailTabSmokeWhenDataAvailable() throws {
+        let app = XCUIApplication()
+        app.launch()
+
+        let websitesTab = app.tabBars.buttons["Websites"]
+        guard websitesTab.waitForExistence(timeout: 5) else {
+            throw XCTSkip("Websites tab not available in current launch state.")
+        }
+        websitesTab.tap()
+
+        let websiteCell = app.cells.firstMatch
+        guard websiteCell.waitForExistence(timeout: 5) else {
+            throw XCTSkip("No website list item available for detail smoke test.")
+        }
+        websiteCell.tap()
+
+        let tabs = ["Overview", "Audience", "Events", "Sessions", "Realtime"]
+        for tab in tabs {
+            let button = app.buttons[tab]
+            if button.waitForExistence(timeout: 5) {
+                button.tap()
+            } else {
+                XCTFail("Missing detail tab button: \(tab)")
+            }
+        }
+    }
+
+    @MainActor
+    func testDetailRefreshSmokeWhenDetailAccessible() throws {
+        let app = XCUIApplication()
+        app.launch()
+
+        let websitesTab = app.tabBars.buttons["Websites"]
+        guard websitesTab.waitForExistence(timeout: 5) else {
+            throw XCTSkip("Websites tab not available in current launch state.")
+        }
+        websitesTab.tap()
+
+        let websiteCell = app.cells.firstMatch
+        guard websiteCell.waitForExistence(timeout: 5) else {
+            throw XCTSkip("No website list item available for detail refresh smoke test.")
+        }
+        websiteCell.tap()
+
+        let firstElement = app.scrollViews.firstMatch
+        guard firstElement.waitForExistence(timeout: 5) else {
+            throw XCTSkip("Detail scroll view is not available.")
+        }
+
+        firstElement.swipeDown()
     }
 
     @MainActor
     func testLaunchPerformance() throws {
-        // This measures how long it takes to launch your application.
         measure(metrics: [XCTApplicationLaunchMetric()]) {
             XCUIApplication().launch()
         }

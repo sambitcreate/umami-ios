@@ -9,97 +9,70 @@ import SwiftUI
 
 struct WebsiteDetailView: View {
     @ObservedObject var viewModel: WebsiteViewModel
-    @State private var showingPeriodPicker = false
 
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
-                // Header with website info
                 websiteHeader
-
-                // Period selector
                 periodSelector
+                tabPicker
 
-                // Stats cards
-                statsCards
-
-                // Chart
-                if let pageviewsData = viewModel.pageviewsData {
-                    AnalyticsChartView(
-                        pageviews: pageviewsData.pageviews,
-                        visitors: pageviewsData.sessions,
-                        period: viewModel.selectedPeriod
-                    )
-                    .padding(.horizontal)
-                } else {
-                    AnalyticsChartView(
-                        pageviews: [],
-                        visitors: [],
-                        period: viewModel.selectedPeriod
-                    )
-                    .padding(.horizontal)
-                }
-
-                // Top pages
-                if let metrics = viewModel.websiteMetrics, !metrics.isEmpty {
-                    topPagesSection(metrics.map { PageMetric(url: $0.x, title: nil, value: $0.y) })
-                }
-
-                // Note: The following sections would need separate API calls for each metric type
-                // For now, commenting out until proper metric fetching is implemented
-                
-                /*
-                // Top referrers
-                if let referrers = viewModel.websiteReferrers, !referrers.isEmpty {
-                    topReferrersSection(referrers.map { ReferrerMetric(referrer: $0.x, value: $0.y) })
-                }
-
-                // Browsers and devices
-                if let browsers = viewModel.websiteBrowsers, let devices = viewModel.websiteDevices, (!browsers.isEmpty || !devices.isEmpty) {
-                    browsersAndDevicesSection(
-                        browsers: browsers.map { BrowserMetric(name: $0.x, value: $0.y) },
-                        devices: devices.map { DeviceMetric(name: $0.x, value: $0.y) }
-                    )
-                }
-
-                // Countries
-                if let countries = viewModel.websiteCountries, !countries.isEmpty {
-                    countriesSection(countries.map { CountryMetric(code: $0.x, name: $0.x, value: $0.y) })
-                }
-                */
-
-                // Active visitors
-                if viewModel.hasActiveUsersData {
-                    activeUsersSection(viewModel.activeUsersCount)
-                }
+                currentTabView
 
                 Spacer(minLength: 40)
             }
+            .padding(.bottom)
         }
         .navigationTitle(viewModel.selectedWebsite?.name ?? "Website Details")
+        .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                if viewModel.isRefreshing {
+                if viewModel.tabLoading[viewModel.selectedDetailTab] == true || viewModel.isRefreshing {
                     ProgressView()
                         .scaleEffect(0.8)
                 }
             }
         }
         .refreshable {
+            viewModel.refreshCurrentTab()
+        }
+        .alert(
+            "Error",
+            isPresented: Binding<Bool>(
+                get: { viewModel.errorMessage != nil },
+                set: { if !$0 { viewModel.errorMessage = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(viewModel.errorMessage ?? "Unknown error")
+        }
+        .onAppear {
             if let website = viewModel.selectedWebsite {
                 viewModel.loadWebsiteData(website: website)
             }
+            viewModel.selectDetailTab(viewModel.selectedDetailTab)
         }
-        .alert(isPresented: Binding<Bool>(get: { viewModel.errorMessage != nil }, set: { if !$0 { viewModel.errorMessage = nil } })) {
-            Alert(
-                title: Text("Error"),
-                message: Text(viewModel.errorMessage ?? "Unknown error"),
-                dismissButton: .default(Text("OK"))
-            )
+        .onDisappear {
+            viewModel.handleDetailDisappear()
         }
     }
 
-    // MARK: - UI Components
+    @ViewBuilder
+    private var currentTabView: some View {
+        switch viewModel.selectedDetailTab {
+        case .overview:
+            WebsiteOverviewTabView(viewModel: viewModel)
+        case .audience:
+            WebsiteAudienceTabView(viewModel: viewModel)
+        case .events:
+            WebsiteEventsTabView(viewModel: viewModel)
+        case .sessions:
+            WebsiteSessionsTabView(viewModel: viewModel)
+        case .realtime:
+            WebsiteRealtimeTabView(viewModel: viewModel)
+        }
+    }
 
     private var websiteHeader: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -144,245 +117,33 @@ struct WebsiteDetailView: View {
         .padding(.horizontal)
     }
 
-    private var statsCards: some View {
-        VStack(spacing: 16) {
-            HStack(spacing: 16) {
-                StatCard(
-                    title: "Visitors",
-                    value: viewModel.formattedVisitors,
-                    icon: "person.fill"
-                )
-
-                StatCard(
-                    title: "Pageviews",
-                    value: viewModel.formattedPageviews,
-                    icon: "doc.text.fill"
-                )
-            }
-
-            HStack(spacing: 16) {
-                StatCard(
-                    title: "Bounce Rate",
-                    value: viewModel.formattedBounceRate,
-                    icon: "arrow.up.arrow.down"
-                )
-
-                StatCard(
-                    title: "Avg. Duration",
-                    value: viewModel.formattedDuration,
-                    icon: "clock.fill"
-                )
-            }
-        }
-        .padding(.horizontal)
-    }
-
-    private func topPagesSection(_ pages: [PageMetric]) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Top Pages")
-                .font(.headline)
-                .padding(.horizontal)
-
-            VStack(spacing: 0) {
-                ForEach(pages.prefix(5)) { page in
-                    HStack {
-                        Text(page.title ?? page.url)
+    private var tabPicker: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(WebsiteDetailTab.allCases) { tab in
+                    Button {
+                        viewModel.selectDetailTab(tab)
+                    } label: {
+                        Text(tab.title)
                             .font(.subheadline)
-                            .lineLimit(1)
-
-                        Spacer()
-
-                        Text("\(page.value)")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                    }
-                    .padding()
-                    .background(Color(UIColor.systemBackground))
-
-                    if page.id != pages.prefix(5).last?.id {
-                        Divider()
+                            .fontWeight(.medium)
+                            .foregroundColor(viewModel.selectedDetailTab == tab ? .white : .primary)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 8)
+                            .background(
+                                Capsule()
+                                    .fill(viewModel.selectedDetailTab == tab ? Color.accentColor : Color(UIColor.secondarySystemBackground))
+                            )
                     }
                 }
             }
-            .background(Color(UIColor.secondarySystemBackground))
-            .cornerRadius(10)
             .padding(.horizontal)
         }
-    }
-
-    private func topReferrersSection(_ referrers: [ReferrerMetric]) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Top Referrers")
-                .font(.headline)
-                .padding(.horizontal)
-
-            VStack(spacing: 0) {
-                ForEach(referrers.prefix(5)) { referrer in
-                    HStack {
-                        Text(referrer.referrer.isEmpty ? "Direct / None" : referrer.referrer)
-                            .font(.subheadline)
-                            .lineLimit(1)
-
-                        Spacer()
-
-                        Text("\(referrer.value)")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                    }
-                    .padding()
-                    .background(Color(UIColor.systemBackground))
-
-                    if referrer.id != referrers.prefix(5).last?.id {
-                        Divider()
-                    }
-                }
-            }
-            .background(Color(UIColor.secondarySystemBackground))
-            .cornerRadius(10)
-            .padding(.horizontal)
-        }
-    }
-
-    private func browsersAndDevicesSection(browsers: [BrowserMetric], devices: [DeviceMetric]) -> some View {
-        VStack(spacing: 20) {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Browsers")
-                    .font(.headline)
-                    .padding(.horizontal)
-
-                VStack(spacing: 0) {
-                    ForEach(browsers.prefix(3)) { browser in
-                        HStack {
-                            Text(browser.name)
-                                .font(.subheadline)
-
-                            Spacer()
-
-                            Text("\(browser.value)")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                        }
-                        .padding()
-                        .background(Color(UIColor.systemBackground))
-
-                        if browser.id != browsers.prefix(3).last?.id {
-                            Divider()
-                        }
-                    }
-                }
-                .background(Color(UIColor.secondarySystemBackground))
-                .cornerRadius(10)
-                .padding(.horizontal)
-            }
-
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Devices")
-                    .font(.headline)
-                    .padding(.horizontal)
-
-                VStack(spacing: 0) {
-                    ForEach(devices.prefix(3)) { device in
-                        HStack {
-                            Text(device.device)
-                                .font(.subheadline)
-
-                            Spacer()
-
-                            Text("\(device.value)")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                        }
-                        .padding()
-                        .background(Color(UIColor.systemBackground))
-
-                        if device.id != devices.prefix(3).last?.id {
-                            Divider()
-                        }
-                    }
-                }
-                .background(Color(UIColor.secondarySystemBackground))
-                .cornerRadius(10)
-                .padding(.horizontal)
-            }
-        }
-    }
-
-    private func countriesSection(_ countries: [CountryMetric]) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Countries")
-                .font(.headline)
-                .padding(.horizontal)
-
-            VStack(spacing: 0) {
-                ForEach(countries.prefix(5)) { country in
-                    HStack {
-                        Text(country.name)
-                            .font(.subheadline)
-
-                        Spacer()
-
-                        Text("\(country.value)")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                    }
-                    .padding()
-                    .background(Color(UIColor.systemBackground))
-
-                    if country.id != countries.prefix(5).last?.id {
-                        Divider()
-                    }
-                }
-            }
-            .background(Color(UIColor.secondarySystemBackground))
-            .cornerRadius(10)
-            .padding(.horizontal)
-        }
-    }
-
-    private func activeUsersSection(_ activeCount: Int) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 12) {
-                Text("Active Visitors")
-                    .font(.headline)
-
-                Spacer()
-
-                Label {
-                    Text(activeCount > 0 ? "\(activeCount) online now" : "No active visitors")
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                } icon: {
-                    Circle()
-                        .fill(activeCount > 0 ? Color.green : Color.gray)
-                        .frame(width: 10, height: 10)
-                        .overlay(Circle().stroke(Color.white, lineWidth: 1))
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background((activeCount > 0 ? Color.green : Color.gray).opacity(0.1))
-                .clipShape(Capsule())
-            }
-            .padding(.horizontal)
-
-            Text(activeCount > 0 ? "These visitors are browsing your site right now." : "We'll update this section as soon as someone arrives on your site.")
-                .font(.caption)
-                .foregroundColor(.secondary)
-                .padding(.horizontal)
-        }
-    }
-
-    // MARK: - Helper Methods
-    
-    private func formatTimestamp(_ timestamp: Int64) -> String {
-        let date = Date(timeIntervalSince1970: Double(timestamp) / 1000)
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .abbreviated
-        return formatter.localizedString(for: date, relativeTo: Date())
     }
 }
 
 #Preview {
     NavigationView {
-        WebsiteDetailView(viewModel: WebsiteViewModel())
+        WebsiteDetailView(viewModel: WebsiteViewModel(shouldStartBackgroundRefresh: false))
     }
 }

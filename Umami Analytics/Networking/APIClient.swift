@@ -50,6 +50,12 @@ class APIClient {
 
     // MARK: - Helper Methods
 
+    private func logDebug(_ message: @autoclosure () -> String) {
+#if DEBUG
+        print(message())
+#endif
+    }
+
     private func createRequest(path: String, method: String, body: Encodable? = nil) -> URLRequest {
         let normalizedPath = normalize(path: path)
         // Handle URLs with query parameters correctly
@@ -81,7 +87,7 @@ class APIClient {
             do {
                 request.httpBody = try jsonEncoder.encode(body)
             } catch {
-                print("Error encoding request body: \(error)")
+                logDebug("Error encoding request body: \(error)")
             }
         }
 
@@ -89,10 +95,9 @@ class APIClient {
     }
 
     private func performRequest<T: Decodable>(request: URLRequest) -> AnyPublisher<T, Error> {
-        // Debug: Print request details
-        print("🌐 API Request: \(request.httpMethod ?? "GET") \(request.url?.absoluteString ?? "unknown")")
+        logDebug("🌐 API Request: \(request.httpMethod ?? "GET") \(request.url?.absoluteString ?? "unknown")")
         if let headers = request.allHTTPHeaderFields {
-            print("🔑 Headers: \(headers)")
+            logDebug("🔑 Headers: \(headers)")
         }
 
         return URLSession.shared.dataTaskPublisher(for: request)
@@ -101,10 +106,9 @@ class APIClient {
                     throw APIError.unknown
                 }
 
-                // Debug: Print response details
-                print("📡 Response Status: \(httpResponse.statusCode) for \(request.url?.absoluteString ?? "unknown")")
+                self.logDebug("📡 Response Status: \(httpResponse.statusCode) for \(request.url?.absoluteString ?? "unknown")")
                 if let responseString = String(data: data, encoding: .utf8) {
-                    print("📄 Response Body: \(responseString)")
+                    self.logDebug("📄 Response Body: \(responseString)")
                 }
 
                 if httpResponse.statusCode == 401 {
@@ -136,7 +140,7 @@ class APIClient {
                         if let apiError = error as? APIError {
                             return apiError
                         } else if error is DecodingError {
-                            print("Decoding error: \(error)")
+                            self.logDebug("Decoding error: \(error)")
                             return APIError.decodingError
                         } else {
                             return APIError.networkError(error)
@@ -148,7 +152,7 @@ class APIClient {
                 if let apiError = error as? APIError {
                     return apiError
                 } else if error is DecodingError {
-                    print("Decoding error: \(error)")
+                    self.logDebug("Decoding error: \(error)")
                     return APIError.decodingError
                 } else {
                     return APIError.networkError(error)
@@ -158,9 +162,9 @@ class APIClient {
     }
 
     private func performVoidRequest(request: URLRequest) -> AnyPublisher<Void, Error> {
-        print("🌐 API Request: \(request.httpMethod ?? "GET") \(request.url?.absoluteString ?? "unknown")")
+        logDebug("🌐 API Request: \(request.httpMethod ?? "GET") \(request.url?.absoluteString ?? "unknown")")
         if let headers = request.allHTTPHeaderFields {
-            print("🔑 Headers: \(headers)")
+            logDebug("🔑 Headers: \(headers)")
         }
 
         return URLSession.shared.dataTaskPublisher(for: request)
@@ -169,9 +173,9 @@ class APIClient {
                     throw APIError.unknown
                 }
 
-                print("📡 Response Status: \(httpResponse.statusCode) for \(request.url?.absoluteString ?? "unknown")")
+                self.logDebug("📡 Response Status: \(httpResponse.statusCode) for \(request.url?.absoluteString ?? "unknown")")
                 if let responseString = String(data: data, encoding: .utf8), !responseString.isEmpty {
-                    print("📄 Response Body: \(responseString)")
+                    self.logDebug("📄 Response Body: \(responseString)")
                 }
 
                 if httpResponse.statusCode == 401 {
@@ -215,6 +219,35 @@ class APIClient {
         }
 
         return path
+    }
+
+    private func buildPath(path: String, queryItems: [URLQueryItem]) -> String? {
+        var components = URLComponents(string: path)
+        let filtered = queryItems.filter { item in
+            if let value = item.value {
+                return !value.isEmpty
+            }
+            return false
+        }
+        components?.queryItems = filtered.isEmpty ? nil : filtered
+        return components?.string
+    }
+
+    private func dateRangeQueryItems(_ dateRange: DateRange, includeUnit: Bool = false) -> [URLQueryItem] {
+        var items = [
+            URLQueryItem(name: "startAt", value: "\(dateRange.startAt)"),
+            URLQueryItem(name: "endAt", value: "\(dateRange.endAt)")
+        ]
+
+        if includeUnit {
+            items.append(URLQueryItem(name: "unit", value: dateRange.unit))
+        }
+
+        if let timezone = dateRange.timezone {
+            items.append(URLQueryItem(name: "timezone", value: timezone))
+        }
+
+        return items
     }
 
     // MARK: - Authentication
@@ -323,17 +356,7 @@ class APIClient {
     }
 
     func getWebsiteStats(id: String, dateRange: DateRange) -> AnyPublisher<WebsiteStatsResponse, Error> {
-        var components = URLComponents(string: "/api/websites/\(id)/stats")
-        components?.queryItems = [
-            URLQueryItem(name: "startAt", value: "\(dateRange.startAt)"),
-            URLQueryItem(name: "endAt", value: "\(dateRange.endAt)")
-        ]
-
-        if let timezone = dateRange.timezone {
-            components?.queryItems?.append(URLQueryItem(name: "timezone", value: timezone))
-        }
-
-        guard let path = components?.string else {
+        guard let path = buildPath(path: "/api/websites/\(id)/stats", queryItems: dateRangeQueryItems(dateRange)) else {
             return Fail(error: APIError.invalidURL).eraseToAnyPublisher()
         }
 
@@ -342,18 +365,18 @@ class APIClient {
     }
 
     func getWebsiteMetrics(id: String, dateRange: DateRange, type: String = "path") -> AnyPublisher<WebsiteMetricsResponse, Error> {
-        var components = URLComponents(string: "/api/websites/\(id)/metrics")
-        components?.queryItems = [
+        let queryItems = [
             URLQueryItem(name: "startAt", value: "\(dateRange.startAt)"),
             URLQueryItem(name: "endAt", value: "\(dateRange.endAt)"),
             URLQueryItem(name: "type", value: type)
         ]
 
+        var items = queryItems
         if let timezone = dateRange.timezone {
-            components?.queryItems?.append(URLQueryItem(name: "timezone", value: timezone))
+            items.append(URLQueryItem(name: "timezone", value: timezone))
         }
 
-        guard let path = components?.string else {
+        guard let path = buildPath(path: "/api/websites/\(id)/metrics", queryItems: items) else {
             return Fail(error: APIError.invalidURL).eraseToAnyPublisher()
         }
 
@@ -362,18 +385,10 @@ class APIClient {
     }
 
     func getWebsitePageviews(id: String, dateRange: DateRange) -> AnyPublisher<PageviewsResponse, Error> {
-        var components = URLComponents(string: "/api/websites/\(id)/pageviews")
-        components?.queryItems = [
-            URLQueryItem(name: "startAt", value: "\(dateRange.startAt)"),
-            URLQueryItem(name: "endAt", value: "\(dateRange.endAt)"),
-            URLQueryItem(name: "unit", value: dateRange.unit)
-        ]
-
-        if let timezone = dateRange.timezone {
-            components?.queryItems?.append(URLQueryItem(name: "timezone", value: timezone))
-        }
-
-        guard let path = components?.string else {
+        guard let path = buildPath(
+            path: "/api/websites/\(id)/pageviews",
+            queryItems: dateRangeQueryItems(dateRange, includeUnit: true)
+        ) else {
             return Fail(error: APIError.invalidURL).eraseToAnyPublisher()
         }
 
@@ -385,6 +400,236 @@ class APIClient {
 
     func getActiveUsers(websiteId: String) -> AnyPublisher<ActiveUsersResponse, Error> {
         let request = createRequest(path: "/api/websites/\(websiteId)/active", method: "GET")
+        return performRequest(request: request)
+    }
+
+    func getRealtime(websiteId: String, timezone: String?) -> AnyPublisher<RealtimeData, Error> {
+        let items = [URLQueryItem(name: "timezone", value: timezone)]
+        guard let path = buildPath(path: "/api/realtime/\(websiteId)", queryItems: items) else {
+            return Fail(error: APIError.invalidURL).eraseToAnyPublisher()
+        }
+
+        let request = createRequest(path: path, method: "GET")
+        return performRequest(request: request)
+    }
+
+    func getWebsiteEvents(
+        id: String,
+        dateRange: DateRange,
+        page: Int,
+        pageSize: Int,
+        search: String?
+    ) -> AnyPublisher<PaginatedResponse<AnalyticsRecord>, Error> {
+        var queryItems = dateRangeQueryItems(dateRange)
+        queryItems.append(contentsOf: [
+            URLQueryItem(name: "page", value: "\(page)"),
+            URLQueryItem(name: "pageSize", value: "\(pageSize)"),
+            URLQueryItem(name: "search", value: search)
+        ])
+
+        guard let path = buildPath(path: "/api/websites/\(id)/events", queryItems: queryItems) else {
+            return Fail(error: APIError.invalidURL).eraseToAnyPublisher()
+        }
+
+        let request = createRequest(path: path, method: "GET")
+        return performRequest(request: request)
+    }
+
+    func getWebsiteEventSeries(
+        id: String,
+        dateRange: DateRange,
+        eventName: String?
+    ) -> AnyPublisher<[TimeSeriesData], Error> {
+        var queryItems = dateRangeQueryItems(dateRange, includeUnit: true)
+        queryItems.append(URLQueryItem(name: "eventName", value: eventName))
+        guard let path = buildPath(path: "/api/websites/\(id)/events/series", queryItems: queryItems) else {
+            return Fail(error: APIError.invalidURL).eraseToAnyPublisher()
+        }
+
+        let request = createRequest(path: path, method: "GET")
+        return performRequest(request: request)
+    }
+
+    func getWebsiteValues(
+        id: String,
+        type: String,
+        dateRange: DateRange,
+        search: String?
+    ) -> AnyPublisher<[FilterValue], Error> {
+        var queryItems = dateRangeQueryItems(dateRange)
+        queryItems.append(contentsOf: [
+            URLQueryItem(name: "type", value: type),
+            URLQueryItem(name: "search", value: search)
+        ])
+
+        guard let path = buildPath(path: "/api/websites/\(id)/values", queryItems: queryItems) else {
+            return Fail(error: APIError.invalidURL).eraseToAnyPublisher()
+        }
+        let request = createRequest(path: path, method: "GET")
+        return performRequest(request: request)
+    }
+
+    func getEventDataEvents(
+        id: String,
+        dateRange: DateRange,
+        event: String?
+    ) -> AnyPublisher<[FilterValue], Error> {
+        var queryItems = dateRangeQueryItems(dateRange)
+        queryItems.append(URLQueryItem(name: "event", value: event))
+        guard let path = buildPath(path: "/api/websites/\(id)/event-data/events", queryItems: queryItems) else {
+            return Fail(error: APIError.invalidURL).eraseToAnyPublisher()
+        }
+        let request = createRequest(path: path, method: "GET")
+        return performRequest(request: request)
+    }
+
+    func getEventDataFields(id: String, dateRange: DateRange) -> AnyPublisher<[FilterValue], Error> {
+        guard let path = buildPath(path: "/api/websites/\(id)/event-data/fields", queryItems: dateRangeQueryItems(dateRange)) else {
+            return Fail(error: APIError.invalidURL).eraseToAnyPublisher()
+        }
+        let request = createRequest(path: path, method: "GET")
+        return performRequest(request: request)
+    }
+
+    func getEventDataProperties(
+        id: String,
+        dateRange: DateRange,
+        propertyName: String?
+    ) -> AnyPublisher<[FilterValue], Error> {
+        var queryItems = dateRangeQueryItems(dateRange)
+        queryItems.append(URLQueryItem(name: "propertyName", value: propertyName))
+        guard let path = buildPath(path: "/api/websites/\(id)/event-data/properties", queryItems: queryItems) else {
+            return Fail(error: APIError.invalidURL).eraseToAnyPublisher()
+        }
+        let request = createRequest(path: path, method: "GET")
+        return performRequest(request: request)
+    }
+
+    func getEventDataStats(
+        id: String,
+        dateRange: DateRange
+    ) -> AnyPublisher<[String: MetricValue], Error> {
+        guard let path = buildPath(path: "/api/websites/\(id)/event-data/stats", queryItems: dateRangeQueryItems(dateRange)) else {
+            return Fail(error: APIError.invalidURL).eraseToAnyPublisher()
+        }
+        let request = createRequest(path: path, method: "GET")
+        return performRequest(request: request)
+    }
+
+    func getEventDataValues(
+        id: String,
+        dateRange: DateRange,
+        eventName: String?,
+        propertyName: String?
+    ) -> AnyPublisher<[FilterValue], Error> {
+        var queryItems = dateRangeQueryItems(dateRange)
+        queryItems.append(contentsOf: [
+            URLQueryItem(name: "eventName", value: eventName),
+            URLQueryItem(name: "propertyName", value: propertyName)
+        ])
+        guard let path = buildPath(path: "/api/websites/\(id)/event-data/values", queryItems: queryItems) else {
+            return Fail(error: APIError.invalidURL).eraseToAnyPublisher()
+        }
+        let request = createRequest(path: path, method: "GET")
+        return performRequest(request: request)
+    }
+
+    func getSessionDataProperties(
+        id: String,
+        dateRange: DateRange,
+        propertyName: String?
+    ) -> AnyPublisher<[FilterValue], Error> {
+        var queryItems = dateRangeQueryItems(dateRange)
+        queryItems.append(URLQueryItem(name: "propertyName", value: propertyName))
+        guard let path = buildPath(path: "/api/websites/\(id)/session-data/properties", queryItems: queryItems) else {
+            return Fail(error: APIError.invalidURL).eraseToAnyPublisher()
+        }
+        let request = createRequest(path: path, method: "GET")
+        return performRequest(request: request)
+    }
+
+    func getSessionDataValues(
+        id: String,
+        dateRange: DateRange,
+        propertyName: String?
+    ) -> AnyPublisher<[FilterValue], Error> {
+        var queryItems = dateRangeQueryItems(dateRange)
+        queryItems.append(URLQueryItem(name: "propertyName", value: propertyName))
+        guard let path = buildPath(path: "/api/websites/\(id)/session-data/values", queryItems: queryItems) else {
+            return Fail(error: APIError.invalidURL).eraseToAnyPublisher()
+        }
+        let request = createRequest(path: path, method: "GET")
+        return performRequest(request: request)
+    }
+
+    func getWebsiteSessions(
+        id: String,
+        dateRange: DateRange,
+        page: Int,
+        pageSize: Int,
+        search: String?
+    ) -> AnyPublisher<PaginatedResponse<AnalyticsRecord>, Error> {
+        var queryItems = dateRangeQueryItems(dateRange)
+        queryItems.append(contentsOf: [
+            URLQueryItem(name: "page", value: "\(page)"),
+            URLQueryItem(name: "pageSize", value: "\(pageSize)"),
+            URLQueryItem(name: "search", value: search)
+        ])
+
+        guard let path = buildPath(path: "/api/websites/\(id)/sessions", queryItems: queryItems) else {
+            return Fail(error: APIError.invalidURL).eraseToAnyPublisher()
+        }
+        let request = createRequest(path: path, method: "GET")
+        return performRequest(request: request)
+    }
+
+    func getWebsiteSessionStats(
+        id: String,
+        dateRange: DateRange
+    ) -> AnyPublisher<[String: MetricValue], Error> {
+        guard let path = buildPath(path: "/api/websites/\(id)/sessions/stats", queryItems: dateRangeQueryItems(dateRange)) else {
+            return Fail(error: APIError.invalidURL).eraseToAnyPublisher()
+        }
+        let request = createRequest(path: path, method: "GET")
+        return performRequest(request: request)
+    }
+
+    func getWebsiteSessionsWeekly(
+        id: String,
+        dateRange: DateRange
+    ) -> AnyPublisher<[WeeklySessionPoint], Error> {
+        guard let path = buildPath(path: "/api/websites/\(id)/sessions/weekly", queryItems: dateRangeQueryItems(dateRange)) else {
+            return Fail(error: APIError.invalidURL).eraseToAnyPublisher()
+        }
+        let request = createRequest(path: path, method: "GET")
+        return performRequest(request: request)
+    }
+
+    func getWebsiteSession(id: String, sessionId: String) -> AnyPublisher<AnalyticsRecord, Error> {
+        let request = createRequest(path: "/api/websites/\(id)/sessions/\(sessionId)", method: "GET")
+        return performRequest(request: request)
+    }
+
+    func getWebsiteSessionActivity(
+        id: String,
+        sessionId: String,
+        dateRange: DateRange
+    ) -> AnyPublisher<[AnalyticsRecord], Error> {
+        guard let path = buildPath(
+            path: "/api/websites/\(id)/sessions/\(sessionId)/activity",
+            queryItems: dateRangeQueryItems(dateRange)
+        ) else {
+            return Fail(error: APIError.invalidURL).eraseToAnyPublisher()
+        }
+        let request = createRequest(path: path, method: "GET")
+        return performRequest(request: request)
+    }
+
+    func getWebsiteSessionProperties(
+        id: String,
+        sessionId: String
+    ) -> AnyPublisher<[String: JSONValue], Error> {
+        let request = createRequest(path: "/api/websites/\(id)/sessions/\(sessionId)/properties", method: "GET")
         return performRequest(request: request)
     }
 }

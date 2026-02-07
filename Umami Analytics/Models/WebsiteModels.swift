@@ -120,7 +120,7 @@ struct WebsiteListResponse: Codable {
     let pageSize: Int?
 }
 
-// Matches Umami v3 API: stats returns flat integers + comparison object
+// Supports both flat numeric and nested {value, prev} stat payloads.
 struct WebsiteStatsResponse: Codable {
     let pageviews: Int
     let visitors: Int
@@ -135,6 +135,49 @@ struct WebsiteStatsResponse: Codable {
 
     enum CodingKeys: String, CodingKey {
         case pageviews, visitors, visits, bounces, totaltime, comparison
+    }
+
+    init(
+        pageviews: Int,
+        visitors: Int,
+        visits: Int,
+        bounces: Int,
+        totaltime: Int,
+        comparison: StatsComparison? = nil
+    ) {
+        self.pageviews = pageviews
+        self.visitors = visitors
+        self.visits = visits
+        self.bounces = bounces
+        self.totaltime = totaltime
+        self.comparison = comparison
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+
+        func decodeMetric(_ key: CodingKeys) -> Int {
+            if let value = try? container.decode(Int.self, forKey: key) {
+                return value
+            }
+
+            if let doubleValue = try? container.decode(Double.self, forKey: key) {
+                return Int(doubleValue.rounded())
+            }
+
+            if let metricValue = try? container.decode(MetricValue.self, forKey: key) {
+                return metricValue.value
+            }
+
+            return 0
+        }
+
+        pageviews = decodeMetric(.pageviews)
+        visitors = decodeMetric(.visitors)
+        visits = decodeMetric(.visits)
+        bounces = decodeMetric(.bounces)
+        totaltime = decodeMetric(.totaltime)
+        comparison = try? container.decode(StatsComparison.self, forKey: .comparison)
     }
 
     var bounceRate: Double {
@@ -254,13 +297,59 @@ struct ActiveUsersResponse: Codable {
 
 // MARK: - Real-time Data Models
 
-struct RealtimeData: Codable {
-    let websiteId: String
-    let timestamp: Int64
+struct RealtimeData: Decodable {
+    let websiteId: String?
+    let timestamp: Int64?
     let pageviews: [RealtimePageview]
     let sessions: Int
     let events: [RealtimeEvent]
     let countries: [String: Int]
+
+    enum CodingKeys: String, CodingKey {
+        case websiteId
+        case timestamp
+        case pageviews
+        case sessions
+        case events
+        case countries
+        case visitors
+        case activeVisitors
+    }
+
+    init(
+        websiteId: String? = nil,
+        timestamp: Int64? = nil,
+        pageviews: [RealtimePageview] = [],
+        sessions: Int = 0,
+        events: [RealtimeEvent] = [],
+        countries: [String: Int] = [:]
+    ) {
+        self.websiteId = websiteId
+        self.timestamp = timestamp
+        self.pageviews = pageviews
+        self.sessions = sessions
+        self.events = events
+        self.countries = countries
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        websiteId = try? container.decode(String.self, forKey: .websiteId)
+        timestamp = try? container.decode(Int64.self, forKey: .timestamp)
+        pageviews = (try? container.decode([RealtimePageview].self, forKey: .pageviews)) ?? []
+        events = (try? container.decode([RealtimeEvent].self, forKey: .events)) ?? []
+        countries = (try? container.decode([String: Int].self, forKey: .countries)) ?? [:]
+
+        if let sessionCount = try? container.decode(Int.self, forKey: .sessions) {
+            sessions = sessionCount
+        } else if let visitors = try? container.decode(Int.self, forKey: .visitors) {
+            sessions = visitors
+        } else if let visitors = try? container.decode(Int.self, forKey: .activeVisitors) {
+            sessions = visitors
+        } else {
+            sessions = 0
+        }
+    }
 }
 
 struct RealtimePageview: Codable, Identifiable {
@@ -271,7 +360,7 @@ struct RealtimePageview: Codable, Identifiable {
 }
 
 struct RealtimeEvent: Codable, Identifiable {
-    var id: UUID { UUID() } // Events don't have a natural ID, so we generate one
+    var id: String { "\(name)-\(timestamp)" }
     let name: String
     let timestamp: Int64
     let data: [String: String]?
