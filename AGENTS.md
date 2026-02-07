@@ -6,7 +6,7 @@ This file provides guidance for AI assistants working on the Umami Analytics iOS
 
 ## Project Overview
 
-Umami Analytics is a native iOS client for the [Umami](https://umami.is) web analytics platform. It supports both **self-hosted** Umami instances (username/password auth with Bearer tokens) and **Umami Cloud** (API key auth via `x-umami-api-key` header). The app displays website analytics dashboards including pageviews, visitors, bounce rates, session durations, and top pages.
+Umami Analytics is a native iOS client for the [Umami](https://umami.is) web analytics platform. It supports both **self-hosted** Umami instances (username/password auth with Bearer tokens) and **Umami Cloud** (API key auth via `x-umami-api-key` header). The app now includes a tabbed per-website analytics experience with overview, audience dimensions, events, sessions (summary), and realtime data.
 
 ## Build & Run
 
@@ -30,7 +30,7 @@ xcodebuild clean build -project "Umami Analytics.xcodeproj" -scheme "Umami Analy
 xcodebuild test -project "Umami Analytics.xcodeproj" -scheme "Umami Analytics" -destination 'platform=iOS Simulator,name=iPhone 15'
 ```
 
-Test coverage is minimal — only boilerplate scaffolding exists in both `Umami AnalyticsTests/` (Swift Testing framework) and `Umami AnalyticsUITests/` (XCTest).
+The project now includes model decoding tests (Swift Testing) and smoke UI tests (XCTest), but API integration coverage remains lightweight.
 
 ## Architecture
 
@@ -53,12 +53,12 @@ Umami_AnalyticsApp (entry point)
 
 | Layer | Key files | Role |
 |-------|-----------|------|
-| **Views** | `ContentView.swift`, `LoginView.swift`, `WebsiteDetailView.swift`, `WebsiteManagementViews.swift`, `AnalyticsChartView.swift` | SwiftUI declarative UI |
+| **Views** | `ContentView.swift`, `LoginView.swift`, `WebsiteDetailView.swift`, `WebsiteOverviewTabView.swift`, `WebsiteAudienceTabView.swift`, `WebsiteEventsTabView.swift`, `WebsiteSessionsTabView.swift`, `WebsiteRealtimeTabView.swift`, `WebsiteManagementViews.swift`, `AnalyticsChartView.swift` | SwiftUI declarative UI |
 | **ViewModels** | `WebsiteViewModel.swift` | Orchestrates data flow, holds `@Published` state, formats display values |
 | **Services** | `WebsiteService.swift` | Business logic layer, wraps APIClient calls, manages CoreData caching, realtime polling |
 | **Networking** | `APIClient.swift` | URLSession-based HTTP client returning `AnyPublisher<T, Error>` |
 | **Auth** | `AuthManager.swift` | Singleton managing login/logout, token storage, session restoration |
-| **Models** | `AuthModels.swift`, `WebsiteModels.swift` | Codable DTOs matching Umami API contracts |
+| **Models** | `AuthModels.swift`, `WebsiteModels.swift`, `AdvancedAnalyticsModels.swift` | Codable DTOs matching Umami API contracts, tolerant decoding, tab and analytics support types |
 | **Persistence** | `Persistence.swift`, `Umami_Analytics.xcdatamodeld` | CoreData stack for offline caching |
 
 ## Directory Structure
@@ -72,7 +72,8 @@ umami-ios/
 │   │   └── AuthManager.swift         # Singleton auth orchestration, Keychain storage
 │   ├── Models/
 │   │   ├── AuthModels.swift          # User, AuthResponse, ServerType, AuthError
-│   │   └── WebsiteModels.swift       # WebsiteModel, stats/metrics response types, DateRange
+│   │   ├── WebsiteModels.swift       # WebsiteModel, stats/metrics response types, DateRange
+│   │   └── AdvancedAnalyticsModels.swift  # Dynamic analytics response models and tab enums
 │   ├── Networking/
 │   │   └── APIClient.swift           # HTTP client, APIError, endpoint methods
 │   ├── Services/
@@ -81,15 +82,20 @@ umami-ios/
 │   │   └── WebsiteViewModel.swift    # Main view model, @Published state
 │   ├── Views/
 │   │   ├── LoginView.swift           # Auth UI (self-hosted + cloud)
-│   │   ├── WebsiteDetailView.swift   # Per-website analytics detail
+│   │   ├── WebsiteDetailView.swift   # Tabbed per-website analytics container
+│   │   ├── WebsiteOverviewTabView.swift   # Overview analytics tab
+│   │   ├── WebsiteAudienceTabView.swift   # Audience dimensions tab
+│   │   ├── WebsiteEventsTabView.swift     # Events tab
+│   │   ├── WebsiteSessionsTabView.swift   # Sessions summary tab
+│   │   ├── WebsiteRealtimeTabView.swift   # Realtime tab
 │   │   ├── WebsiteManagementViews.swift  # WebsiteFormView, TrackingScriptView
 │   │   └── Charts/
 │   │       └── AnalyticsChartView.swift  # Swift Charts (AreaMark + LineMark)
 │   ├── Persistence.swift             # PersistenceController (CoreData stack)
 │   ├── Umami_Analytics.xcdatamodeld/ # CoreData schema
 │   └── Assets.xcassets/              # Images, colors, app icon
-├── Umami AnalyticsTests/             # Unit tests (Swift Testing, scaffold only)
-├── Umami AnalyticsUITests/           # UI tests (XCTest, scaffold only)
+├── Umami AnalyticsTests/             # Unit tests (Swift Testing)
+├── Umami AnalyticsUITests/           # UI smoke tests (XCTest)
 ├── Umami Analytics.xcodeproj/        # Xcode project
 ├── umami-icons.icon/                 # App icon source
 ├── api.md                            # Comprehensive Umami API reference
@@ -191,6 +197,23 @@ Code generation is set to `class` (auto-generated NSManagedObject subclasses).
 | GET | `/api/websites/{id}/pageviews?startAt=&endAt=&unit=` | Get pageview time series |
 | GET | `/api/websites/{id}/metrics?startAt=&endAt=&type=` | Get metrics (path, referrer, etc.) |
 | GET | `/api/websites/{id}/active` | Get active visitor count |
+| GET | `/api/realtime/{websiteId}` | Get realtime snapshot |
+| GET | `/api/websites/{id}/events` | Get paged event list |
+| GET | `/api/websites/{id}/events/series` | Get event time series |
+| GET | `/api/websites/{id}/values` | Get filter values by type |
+| GET | `/api/websites/{id}/event-data/events` | Get event-data event values |
+| GET | `/api/websites/{id}/event-data/fields` | Get event-data field list |
+| GET | `/api/websites/{id}/event-data/properties` | Get event-data property list |
+| GET | `/api/websites/{id}/event-data/stats` | Get event-data stats map |
+| GET | `/api/websites/{id}/event-data/values` | Get event-data values |
+| GET | `/api/websites/{id}/session-data/properties` | Get session-data property list |
+| GET | `/api/websites/{id}/session-data/values` | Get session-data values |
+| GET | `/api/websites/{id}/sessions` | Get paged sessions list |
+| GET | `/api/websites/{id}/sessions/stats` | Get session stats map |
+| GET | `/api/websites/{id}/sessions/weekly` | Get weekly sessions series |
+| GET | `/api/websites/{id}/sessions/{sessionId}` | Get session detail |
+| GET | `/api/websites/{id}/sessions/{sessionId}/activity` | Get session activity |
+| GET | `/api/websites/{id}/sessions/{sessionId}/properties` | Get session properties |
 
 Cloud endpoints use `/v1/` prefix instead of `/api/`.
 
@@ -200,8 +223,9 @@ Cloud endpoints use `/v1/` prefix instead of `/api/`.
 - **Debug logging**: `APIClient` prints request/response details to console (including headers and response bodies). These should be removed or guarded before release.
 - **No linting/formatting**: No SwiftLint, SwiftFormat, or `.editorconfig` is configured. Follow the existing code style.
 - **No CI/CD**: No GitHub Actions, Fastlane, or other automation is set up.
-- **Incomplete features**: Referrer, browser, device, and country metric sections exist in `WebsiteDetailView` but are commented out pending separate API calls per metric type.
-- **Realtime polling**: Active users are polled every 5 seconds per website via Timer. Background refresh of dashboard stats runs every 60 seconds.
+- **Tabbed detail architecture**: `WebsiteDetailView` is now a tab container; tab content lives in dedicated files under `Views/`.
+- **Realtime polling**: Active users are polled every 5 seconds via `/active`; realtime tab polling fetches `/realtime/{websiteId}` every 5 seconds while active.
+- **Advanced analytics cache**: New analytics datasets are cached in-memory in `WebsiteService` (TTL 60 seconds). CoreData schema remains unchanged.
 - **`StatsPeriod` enum** is defined in `WebsiteService.swift`, not in the models directory.
 
 ## Common Tasks
