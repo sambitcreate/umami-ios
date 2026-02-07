@@ -831,12 +831,18 @@ class WebsiteViewModel: ObservableObject {
 
     private func reloadEventDataValues() {
         guard let websiteId = selectedWebsite?.id else { return }
+        let selectedProperty = eventDataState.selectedProperty?.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard let propertyName = selectedProperty, !propertyName.isEmpty else {
+            eventDataState.availableValues = []
+            return
+        }
 
         service.fetchEventDataValues(
             id: websiteId,
             period: selectedPeriod,
             eventName: eventDataState.selectedEvent,
-            propertyName: eventDataState.selectedProperty
+            propertyName: propertyName
         )
         .receive(on: DispatchQueue.main)
         .sink(

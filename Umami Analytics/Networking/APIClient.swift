@@ -621,6 +621,10 @@ class APIClient {
         }
         let request = createRequest(path: path, method: "GET")
         return performRequest(request: request)
+            .map { (response: WeeklySessionsResponse) in
+                response.data
+            }
+            .eraseToAnyPublisher()
     }
 
     func getWebsiteSession(id: String, sessionId: String) -> AnyPublisher<AnalyticsRecord, Error> {

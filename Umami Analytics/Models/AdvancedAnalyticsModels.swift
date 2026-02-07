@@ -72,6 +72,12 @@ struct MetricValue: Decodable, Equatable {
 
     init(from decoder: Decoder) throws {
         if let singleValue = try? decoder.singleValueContainer() {
+            if singleValue.decodeNil() {
+                self.value = 0
+                self.prev = nil
+                return
+            }
+
             if let intValue = try? singleValue.decode(Int.self) {
                 self.value = intValue
                 self.prev = nil
@@ -382,6 +388,31 @@ struct WeeklySessionPoint: Decodable, Identifiable, Equatable {
     }
 
     init(from decoder: Decoder) throws {
+        if var unkeyed = try? decoder.unkeyedContainer() {
+            let firstNumber = try? unkeyed.decode(Double.self)
+            let firstString = firstNumber == nil ? (try? unkeyed.decode(String.self)) : nil
+
+            if let firstNumber {
+                date = Self.dateFromEpochValue(firstNumber)
+            } else if let firstString, let parsedDate = Self.parseDateString(firstString) {
+                date = parsedDate
+            } else {
+                date = Date(timeIntervalSince1970: 0)
+            }
+
+            if let secondInt = try? unkeyed.decode(Int.self) {
+                value = secondInt
+            } else if let secondDouble = try? unkeyed.decode(Double.self) {
+                value = Int(secondDouble.rounded())
+            } else if let secondString = try? unkeyed.decode(String.self),
+                      let intValue = Int(secondString) {
+                value = intValue
+            } else {
+                value = 0
+            }
+            return
+        }
+
         let container = try decoder.container(keyedBy: CodingKeys.self)
 
         if let y = try? container.decode(Int.self, forKey: .y) {
@@ -397,18 +428,86 @@ struct WeeklySessionPoint: Decodable, Identifiable, Equatable {
         }
 
         if let millis = try? container.decode(Int64.self, forKey: .x) {
-            date = Date(timeIntervalSince1970: TimeInterval(millis) / 1000)
+            date = Self.dateFromEpochValue(Double(millis))
+        } else if let xString = try? container.decode(String.self, forKey: .x),
+                  let parsedDate = Self.parseDateString(xString) {
+            date = parsedDate
         } else if let day = try? container.decode(String.self, forKey: .day) {
-            let formatter = DateFormatter()
-            formatter.dateFormat = "yyyy-MM-dd"
-            date = formatter.date(from: day) ?? Date()
+            date = Self.parseDateString(day) ?? Date(timeIntervalSince1970: 0)
         } else if let dateString = try? container.decode(String.self, forKey: .date) {
-            let isoFormatter = ISO8601DateFormatter()
-            date = isoFormatter.date(from: dateString) ?? Date()
+            date = Self.parseDateString(dateString) ?? Date(timeIntervalSince1970: 0)
         } else if let millis = try? container.decode(Double.self, forKey: .date) {
-            date = Date(timeIntervalSince1970: millis / 1000)
+            date = Self.dateFromEpochValue(millis)
         } else {
-            date = Date()
+            date = Date(timeIntervalSince1970: 0)
+        }
+    }
+
+    private static func dateFromEpochValue(_ value: Double) -> Date {
+        let seconds = abs(value) > 9_999_999_999 ? value / 1000 : value
+        return Date(timeIntervalSince1970: seconds)
+    }
+
+    private static func parseDateString(_ value: String) -> Date? {
+        if let number = Double(value) {
+            return dateFromEpochValue(number)
+        }
+
+        let isoFormatter = ISO8601DateFormatter()
+        isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = isoFormatter.date(from: value) {
+            return date
+        }
+
+        isoFormatter.formatOptions = [.withInternetDateTime]
+        if let date = isoFormatter.date(from: value) {
+            return date
+        }
+
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone.current
+
+        for format in ["yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd'T'HH:mm:ss", "yyyy-MM-dd"] {
+            formatter.dateFormat = format
+            if let date = formatter.date(from: value) {
+                return date
+            }
+        }
+
+        return nil
+    }
+}
+
+struct WeeklySessionsResponse: Decodable {
+    let data: [WeeklySessionPoint]
+
+    private enum CodingKeys: String, CodingKey {
+        case data
+        case items
+        case results
+        case records
+    }
+
+    init(from decoder: Decoder) throws {
+        if let singleValue = try? decoder.singleValueContainer(),
+           let array = try? singleValue.decode([WeeklySessionPoint].self) {
+            data = array
+            return
+        }
+
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+
+        if let direct = try? container.decode([WeeklySessionPoint].self, forKey: .data) {
+            data = direct
+        } else if let items = try? container.decode([WeeklySessionPoint].self, forKey: .items) {
+            data = items
+        } else if let results = try? container.decode([WeeklySessionPoint].self, forKey: .results) {
+            data = results
+        } else if let records = try? container.decode([WeeklySessionPoint].self, forKey: .records) {
+            data = records
+        } else {
+            data = []
         }
     }
 }

@@ -54,14 +54,18 @@ struct Umami_AnalyticsTests {
     @Test func metricValueDecodesNumberAndObject() throws {
         let intJSON = "42".data(using: .utf8)!
         let objectJSON = "{\"value\": 50, \"prev\": 30}".data(using: .utf8)!
+        let nullJSON = "null".data(using: .utf8)!
 
         let intMetric = try JSONDecoder().decode(MetricValue.self, from: intJSON)
         let objectMetric = try JSONDecoder().decode(MetricValue.self, from: objectJSON)
+        let nullMetric = try JSONDecoder().decode(MetricValue.self, from: nullJSON)
 
         #expect(intMetric.value == 42)
         #expect(intMetric.prev == nil)
         #expect(objectMetric.value == 50)
         #expect(objectMetric.prev == 30)
+        #expect(nullMetric.value == 0)
+        #expect(nullMetric.prev == nil)
     }
 
     @Test func filterValueDecodesStringAndObject() throws {
@@ -121,14 +125,40 @@ struct Umami_AnalyticsTests {
         let xyJSON = "{\"x\": 1730400000000, \"y\": 12}".data(using: .utf8)!
         let dayJSON = "{\"day\": \"2024-11-01\", \"value\": 8}".data(using: .utf8)!
         let dateJSON = "{\"date\": \"2024-11-02T00:00:00Z\", \"sessions\": 9}".data(using: .utf8)!
+        let tupleJSON = "[1730400000000, 11]".data(using: .utf8)!
 
         let xy = try JSONDecoder().decode(WeeklySessionPoint.self, from: xyJSON)
         let day = try JSONDecoder().decode(WeeklySessionPoint.self, from: dayJSON)
         let date = try JSONDecoder().decode(WeeklySessionPoint.self, from: dateJSON)
+        let tuple = try JSONDecoder().decode(WeeklySessionPoint.self, from: tupleJSON)
 
         #expect(xy.value == 12)
         #expect(day.value == 8)
         #expect(date.value == 9)
+        #expect(tuple.value == 11)
+    }
+
+    @Test func weeklySessionsResponseDecodesArrayAndWrappedRecords() throws {
+        let arrayJSON = """
+        [
+          { "x": 1730400000000, "y": 4 },
+          { "x": 1730403600000, "y": 6 }
+        ]
+        """.data(using: .utf8)!
+
+        let wrappedJSON = """
+        {
+          "records": [
+            { "x": 1730400000000, "y": 5 }
+          ]
+        }
+        """.data(using: .utf8)!
+
+        let arrayResponse = try JSONDecoder().decode(WeeklySessionsResponse.self, from: arrayJSON)
+        let wrappedResponse = try JSONDecoder().decode(WeeklySessionsResponse.self, from: wrappedJSON)
+
+        #expect(arrayResponse.data.count == 2)
+        #expect(wrappedResponse.data.count == 1)
     }
 
     @Test func analyticsRecordUsesDeterministicDisplayFields() throws {
