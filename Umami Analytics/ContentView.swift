@@ -155,7 +155,7 @@ struct DashboardView: View {
 
                             ForEach(viewModel.dashboardWebsites) { website in
                                 NavigationLink {
-                                    let detailViewModel = WebsiteViewModel()
+                                    let detailViewModel = WebsiteViewModel(shouldStartBackgroundRefresh: false)
                                     let _ = detailViewModel.selectWebsite(website)
                                     WebsiteDetailView(viewModel: detailViewModel)
                                 } label: {
@@ -370,7 +370,7 @@ struct WebsitesView: View {
                         ForEach(viewModel.websites) { website in
                             NavigationLink {
                                 // Create a new view model instance with the selected website
-                                let detailViewModel = WebsiteViewModel()
+                                let detailViewModel = WebsiteViewModel(shouldStartBackgroundRefresh: false)
                                 let _ = detailViewModel.selectWebsite(website)
                                 WebsiteDetailView(viewModel: detailViewModel)
                             } label: {
