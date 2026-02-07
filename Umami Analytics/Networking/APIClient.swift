@@ -116,9 +116,7 @@ class APIClient {
                 }
 
                 guard (200...299).contains(httpResponse.statusCode) else {
-                    // Try to parse error message from response
-                    if let errorResponse = try? JSONDecoder().decode([String: String].self, from: data),
-                       let errorMessage = errorResponse["error"] ?? errorResponse["message"] {
+                    if let errorMessage = self.parseErrorMessage(from: data) {
                         throw APIError.serverError(errorMessage)
                     } else {
                         throw APIError.serverError("Status code: \(httpResponse.statusCode)")
@@ -183,8 +181,7 @@ class APIClient {
                 }
 
                 guard (200...299).contains(httpResponse.statusCode) else {
-                    if let errorResponse = try? JSONDecoder().decode([String: String].self, from: data),
-                       let errorMessage = errorResponse["error"] ?? errorResponse["message"] {
+                    if let errorMessage = self.parseErrorMessage(from: data) {
                         throw APIError.serverError(errorMessage)
                     }
 
@@ -248,6 +245,32 @@ class APIClient {
         }
 
         return items
+    }
+
+    private func parseErrorMessage(from data: Data) -> String? {
+        guard let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+
+        if let message = payload["message"] as? String, !message.isEmpty {
+            return message
+        }
+
+        if let error = payload["error"] as? String, !error.isEmpty {
+            return error
+        }
+
+        if let errorObject = payload["error"] as? [String: Any] {
+            if let message = errorObject["message"] as? String, !message.isEmpty {
+                return message
+            }
+
+            if let code = errorObject["code"] as? String, !code.isEmpty {
+                return code
+            }
+        }
+
+        return nil
     }
 
     // MARK: - Authentication
@@ -371,12 +394,7 @@ class APIClient {
             URLQueryItem(name: "type", value: type)
         ]
 
-        var items = queryItems
-        if let timezone = dateRange.timezone {
-            items.append(URLQueryItem(name: "timezone", value: timezone))
-        }
-
-        guard let path = buildPath(path: "/api/websites/\(id)/metrics", queryItems: items) else {
+        guard let path = buildPath(path: "/api/websites/\(id)/metrics", queryItems: queryItems) else {
             return Fail(error: APIError.invalidURL).eraseToAnyPublisher()
         }
 

@@ -100,17 +100,21 @@ struct Umami_AnalyticsTests {
         #expect(arrayPage.count == 1)
     }
 
-    @Test func timeSeriesDataDecodesNumericAndIsoTimestamps() throws {
+    @Test func timeSeriesDataDecodesNumericIsoAndSqlTimestamps() throws {
         let numericJSON = "{\"x\": 1730400000000, \"y\": 4}".data(using: .utf8)!
         let isoJSON = "{\"x\": \"2024-11-01T00:00:00Z\", \"y\": 6}".data(using: .utf8)!
+        let sqlJSON = "{\"x\": \"2026-02-06 06:00:00\", \"y\": 8}".data(using: .utf8)!
 
         let numeric = try JSONDecoder().decode(TimeSeriesData.self, from: numericJSON)
         let iso = try JSONDecoder().decode(TimeSeriesData.self, from: isoJSON)
+        let sql = try JSONDecoder().decode(TimeSeriesData.self, from: sqlJSON)
 
         #expect(numeric.value == 4)
         #expect(iso.value == 6)
+        #expect(sql.value == 8)
         #expect(numeric.date.timeIntervalSince1970 > 0)
         #expect(iso.date.timeIntervalSince1970 > 0)
+        #expect(sql.date.timeIntervalSince1970 > 0)
     }
 
     @Test func weeklySessionPointDecodesMultipleShapes() throws {

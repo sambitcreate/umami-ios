@@ -661,14 +661,14 @@ class WebsiteViewModel: ObservableObject {
     }
 
     private func loadMetricDimension(_ dimension: MetricDimension, websiteId: String, captureErrorOn tab: WebsiteDetailTab? = nil) {
-        let primaryType = dimension == .url ? "url" : dimension.rawValue
+        let primaryType = dimension == .url ? "path" : dimension.rawValue
 
         let publisher: AnyPublisher<WebsiteMetricsResponse, Error>
         if dimension == .url {
             publisher = service
                 .fetchWebsiteMetrics(id: websiteId, period: selectedPeriod, type: primaryType)
                 .catch { _ in
-                    self.service.fetchWebsiteMetrics(id: websiteId, period: self.selectedPeriod, type: "path")
+                    self.service.fetchWebsiteMetrics(id: websiteId, period: self.selectedPeriod, type: "url")
                 }
                 .eraseToAnyPublisher()
         } else {

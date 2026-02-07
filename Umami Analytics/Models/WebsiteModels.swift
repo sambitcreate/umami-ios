@@ -250,24 +250,19 @@ struct TimeSeriesData: Codable, Identifiable, Equatable {
             )
         }
 
-        if let milliseconds = try? container.decode(Int64.self, forKey: .x) {
-            self.date = Date(timeIntervalSince1970: TimeInterval(milliseconds) / 1000)
-        } else if let doubleMilliseconds = try? container.decode(Double.self, forKey: .x) {
-            self.date = Date(timeIntervalSince1970: doubleMilliseconds / 1000)
+        if let epochValue = try? container.decode(Int64.self, forKey: .x) {
+            self.date = Self.dateFromEpochValue(Double(epochValue))
+        } else if let epochValue = try? container.decode(Double.self, forKey: .x) {
+            self.date = Self.dateFromEpochValue(epochValue)
         } else if let stringValue = try? container.decode(String.self, forKey: .x) {
-            if let numericValue = Int64(stringValue) {
-                self.date = Date(timeIntervalSince1970: TimeInterval(numericValue) / 1000)
+            if let parsedDate = Self.parseDateString(stringValue) {
+                self.date = parsedDate
             } else {
-                let isoFormatter = ISO8601DateFormatter()
-                if let parsedDate = isoFormatter.date(from: stringValue) {
-                    self.date = parsedDate
-                } else {
-                    throw DecodingError.dataCorruptedError(
-                        forKey: .x,
-                        in: container,
-                        debugDescription: "Unrecognised timestamp format: \(stringValue)"
-                    )
-                }
+                throw DecodingError.dataCorruptedError(
+                    forKey: .x,
+                    in: container,
+                    debugDescription: "Unrecognised timestamp format: \(stringValue)"
+                )
             }
         } else {
             throw DecodingError.dataCorruptedError(
@@ -287,6 +282,41 @@ struct TimeSeriesData: Codable, Identifiable, Equatable {
 
     static func == (lhs: TimeSeriesData, rhs: TimeSeriesData) -> Bool {
         lhs.date == rhs.date && lhs.value == rhs.value
+    }
+
+    private static func dateFromEpochValue(_ value: Double) -> Date {
+        let seconds = abs(value) > 9_999_999_999 ? value / 1000 : value
+        return Date(timeIntervalSince1970: seconds)
+    }
+
+    private static func parseDateString(_ value: String) -> Date? {
+        if let numeric = Double(value) {
+            return dateFromEpochValue(numeric)
+        }
+
+        let isoFormatter = ISO8601DateFormatter()
+        isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = isoFormatter.date(from: value) {
+            return date
+        }
+
+        isoFormatter.formatOptions = [.withInternetDateTime]
+        if let date = isoFormatter.date(from: value) {
+            return date
+        }
+
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone.current
+
+        for format in ["yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd'T'HH:mm:ss", "yyyy-MM-dd"] {
+            formatter.dateFormat = format
+            if let date = formatter.date(from: value) {
+                return date
+            }
+        }
+
+        return nil
     }
 }
 
