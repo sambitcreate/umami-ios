@@ -10,11 +10,13 @@ import Combine
 import SwiftUI
 
 class WebsiteViewModel: ObservableObject {
+    private let service: WebsiteServicing
     private var cancellables = Set<AnyCancellable>()
     private var refreshTimer: Timer?
     private var realtimeSnapshotTimer: Timer?
-    private let refreshInterval: TimeInterval = 60
-    private let pageSize = 20
+    private let refreshInterval: TimeInterval
+    private let pageSize: Int
+    private let realtimePollInterval: TimeInterval
     private let shouldStartBackgroundRefresh: Bool
 
     private static let starredKey = "starredWebsiteIds"
@@ -141,8 +143,16 @@ class WebsiteViewModel: ObservableObject {
 
     // MARK: - Initialization
 
-    init(shouldStartBackgroundRefresh: Bool = true) {
+    init(
+        service: WebsiteServicing = WebsiteService.shared,
+        shouldStartBackgroundRefresh: Bool = true,
+        config: AnalyticsRuntimeConfig = .default
+    ) {
+        self.service = service
         self.shouldStartBackgroundRefresh = shouldStartBackgroundRefresh
+        self.refreshInterval = config.dashboardRefreshInterval
+        self.pageSize = config.eventsSessionsPageSize
+        self.realtimePollInterval = config.realtimePollInterval
         loadStarredIds()
         loadCachedWebsites()
         if shouldStartBackgroundRefresh {
@@ -156,7 +166,7 @@ class WebsiteViewModel: ObservableObject {
         isLoading = true
         errorMessage = nil
 
-        WebsiteService.shared.fetchWebsites()
+        service.fetchWebsites()
             .receive(on: DispatchQueue.main)
             .sink(
                 receiveCompletion: { [weak self] completion in
@@ -191,7 +201,7 @@ class WebsiteViewModel: ObservableObject {
     }
 
     func loadCachedWebsites() {
-        let cachedWebsites = WebsiteService.shared.fetchCachedWebsites()
+        let cachedWebsites = service.fetchCachedWebsites()
 
         guard !cachedWebsites.isEmpty else {
             return
@@ -218,7 +228,7 @@ class WebsiteViewModel: ObservableObject {
     }
 
     private func loadCachedStats(websiteId: String) {
-        if let cachedStats = WebsiteService.shared.fetchCachedStats(for: websiteId, period: selectedPeriod) {
+        if let cachedStats = service.fetchCachedStats(for: websiteId, period: selectedPeriod) {
             var stats = WebsiteStatsResponse(
                 pageviews: Int(cachedStats.pageviews),
                 visitors: Int(cachedStats.visitors),
@@ -263,7 +273,7 @@ class WebsiteViewModel: ObservableObject {
         nextEventsPage = 1
         nextSessionsPage = 1
 
-        WebsiteService.shared.invalidateAnalyticsCache(for: website.id)
+        service.invalidateAnalyticsCache(for: website.id)
         loadTabIfNeeded(.overview, force: true)
     }
 
@@ -280,7 +290,7 @@ class WebsiteViewModel: ObservableObject {
 
     func refreshCurrentTab() {
         guard let websiteId = selectedWebsite?.id else { return }
-        WebsiteService.shared.invalidateAnalyticsCache(for: websiteId)
+        service.invalidateAnalyticsCache(for: websiteId)
         loadedTabs.remove(selectedDetailTab)
         loadTabIfNeeded(selectedDetailTab, force: true)
     }
@@ -297,7 +307,7 @@ class WebsiteViewModel: ObservableObject {
     func createWebsite(name: String, domain: String, shareId: String?, teamId: String?, completion: @escaping (Result<WebsiteModel, Error>) -> Void) {
         isPerformingAction = true
 
-        WebsiteService.shared.createWebsite(name: name, domain: domain, shareId: shareId, teamId: teamId)
+        service.createWebsite(name: name, domain: domain, shareId: shareId, teamId: teamId, id: nil)
             .receive(on: DispatchQueue.main)
             .sink(
                 receiveCompletion: { [weak self] result in
@@ -331,7 +341,7 @@ class WebsiteViewModel: ObservableObject {
     func updateWebsite(_ website: WebsiteModel, name: String, domain: String, shareId: String?, completion: @escaping (Result<WebsiteModel, Error>) -> Void) {
         isPerformingAction = true
 
-        WebsiteService.shared.updateWebsite(id: website.id, name: name, domain: domain, shareId: shareId)
+        service.updateWebsite(id: website.id, name: name, domain: domain, shareId: shareId)
             .receive(on: DispatchQueue.main)
             .sink(
                 receiveCompletion: { [weak self] result in
@@ -368,7 +378,7 @@ class WebsiteViewModel: ObservableObject {
     func deleteWebsite(_ website: WebsiteModel, completion: @escaping (Result<Void, Error>) -> Void) {
         isPerformingAction = true
 
-        WebsiteService.shared.deleteWebsite(id: website.id)
+        service.deleteWebsite(id: website.id)
             .receive(on: DispatchQueue.main)
             .sink(
                 receiveCompletion: { [weak self] result in
@@ -432,7 +442,7 @@ class WebsiteViewModel: ObservableObject {
             return
         }
 
-        WebsiteService.shared.invalidateAnalyticsCache(for: website.id)
+        service.invalidateAnalyticsCache(for: website.id)
         loadedTabs.removeAll()
         loadTabIfNeeded(selectedDetailTab, force: true)
     }
@@ -441,7 +451,7 @@ class WebsiteViewModel: ObservableObject {
 
     func loadDashboardStats() {
         for website in dashboardWebsites {
-            WebsiteService.shared.fetchWebsiteStats(id: website.id, period: selectedPeriod)
+            service.fetchWebsiteStats(id: website.id, period: selectedPeriod)
                 .receive(on: DispatchQueue.main)
                 .sink(
                     receiveCompletion: { _ in },
@@ -503,7 +513,7 @@ class WebsiteViewModel: ObservableObject {
     private func loadEventsTab(websiteId: String) {
         loadMetricDimension(.event, websiteId: websiteId, captureErrorOn: .events)
 
-        WebsiteService.shared.fetchWebsiteEventSeries(id: websiteId, period: selectedPeriod)
+        service.fetchWebsiteEventSeries(id: websiteId, period: selectedPeriod, eventName: nil)
             .receive(on: DispatchQueue.main)
             .sink(
                 receiveCompletion: { [weak self] completion in
@@ -526,7 +536,7 @@ class WebsiteViewModel: ObservableObject {
     }
 
     private func loadSessionsTab(websiteId: String) {
-        WebsiteService.shared.fetchWebsiteSessionStats(id: websiteId, period: selectedPeriod)
+        service.fetchWebsiteSessionStats(id: websiteId, period: selectedPeriod)
             .receive(on: DispatchQueue.main)
             .sink(
                 receiveCompletion: { [weak self] completion in
@@ -540,7 +550,7 @@ class WebsiteViewModel: ObservableObject {
             )
             .store(in: &cancellables)
 
-        WebsiteService.shared.fetchWebsiteSessionsWeekly(id: websiteId, period: selectedPeriod)
+        service.fetchWebsiteSessionsWeekly(id: websiteId, period: selectedPeriod)
             .receive(on: DispatchQueue.main)
             .sink(
                 receiveCompletion: { [weak self] completion in
@@ -561,7 +571,6 @@ class WebsiteViewModel: ObservableObject {
     }
 
     private func loadRealtimeTab(websiteId: String) {
-        loadRealtimeSnapshot(websiteId: websiteId)
         startRealtimeSnapshotPolling(websiteId: websiteId)
         setTabLoading(.realtime, false)
     }
@@ -615,14 +624,14 @@ class WebsiteViewModel: ObservableObject {
     private func loadWebsiteStats(websiteId: String, captureErrorOn tab: WebsiteDetailTab? = nil) {
         loadCachedStats(websiteId: websiteId)
 
-        let hasCachedData = WebsiteService.shared.fetchCachedStats(for: websiteId, period: selectedPeriod) != nil
+        let hasCachedData = service.fetchCachedStats(for: websiteId, period: selectedPeriod) != nil
         if hasCachedData {
             isRefreshing = true
         } else {
             isLoading = true
         }
 
-        WebsiteService.shared.fetchWebsiteStats(id: websiteId, period: selectedPeriod)
+        service.fetchWebsiteStats(id: websiteId, period: selectedPeriod)
             .receive(on: DispatchQueue.main)
             .sink(
                 receiveCompletion: { [weak self] completion in
@@ -649,14 +658,14 @@ class WebsiteViewModel: ObservableObject {
 
         let publisher: AnyPublisher<WebsiteMetricsResponse, Error>
         if dimension == .url {
-            publisher = WebsiteService.shared
+            publisher = service
                 .fetchWebsiteMetrics(id: websiteId, period: selectedPeriod, type: primaryType)
                 .catch { _ in
-                    WebsiteService.shared.fetchWebsiteMetrics(id: websiteId, period: self.selectedPeriod, type: "path")
+                    self.service.fetchWebsiteMetrics(id: websiteId, period: self.selectedPeriod, type: "path")
                 }
                 .eraseToAnyPublisher()
         } else {
-            publisher = WebsiteService.shared
+            publisher = service
                 .fetchWebsiteMetrics(id: websiteId, period: selectedPeriod, type: primaryType)
                 .eraseToAnyPublisher()
         }
@@ -682,7 +691,7 @@ class WebsiteViewModel: ObservableObject {
     }
 
     private func loadPageviewsData(websiteId: String, captureErrorOn tab: WebsiteDetailTab? = nil) {
-        WebsiteService.shared.fetchWebsitePageviews(id: websiteId, period: selectedPeriod)
+        service.fetchWebsitePageviews(id: websiteId, period: selectedPeriod)
             .receive(on: DispatchQueue.main)
             .sink(
                 receiveCompletion: { [weak self] completion in
@@ -700,7 +709,7 @@ class WebsiteViewModel: ObservableObject {
     }
 
     private func loadActiveUsers(websiteId: String, captureErrorOn tab: WebsiteDetailTab? = nil) {
-        WebsiteService.shared.fetchActiveUsers(id: websiteId)
+        service.fetchActiveUsers(id: websiteId)
             .receive(on: DispatchQueue.main)
             .sink(
                 receiveCompletion: { [weak self] completion in
@@ -725,7 +734,7 @@ class WebsiteViewModel: ObservableObject {
         let page = reset ? 1 : nextEventsPage
         isLoadingMoreEvents = !reset
 
-        WebsiteService.shared.fetchWebsiteEvents(
+        service.fetchWebsiteEvents(
             id: websiteId,
             period: selectedPeriod,
             page: page,
@@ -765,7 +774,7 @@ class WebsiteViewModel: ObservableObject {
     private func loadEventDataInspector(websiteId: String) {
         eventDataState.isLoading = true
 
-        WebsiteService.shared.fetchEventDataFields(id: websiteId, period: selectedPeriod)
+        service.fetchEventDataFields(id: websiteId, period: selectedPeriod)
             .receive(on: DispatchQueue.main)
             .sink(
                 receiveCompletion: { _ in },
@@ -775,7 +784,7 @@ class WebsiteViewModel: ObservableObject {
             )
             .store(in: &cancellables)
 
-        WebsiteService.shared.fetchEventDataProperties(id: websiteId, period: selectedPeriod)
+        service.fetchEventDataProperties(id: websiteId, period: selectedPeriod, propertyName: nil)
             .receive(on: DispatchQueue.main)
             .sink(
                 receiveCompletion: { _ in },
@@ -785,7 +794,7 @@ class WebsiteViewModel: ObservableObject {
             )
             .store(in: &cancellables)
 
-        WebsiteService.shared.fetchEventDataEvents(id: websiteId, period: selectedPeriod)
+        service.fetchEventDataEvents(id: websiteId, period: selectedPeriod, event: nil)
             .receive(on: DispatchQueue.main)
             .sink(
                 receiveCompletion: { [weak self] completion in
@@ -800,7 +809,7 @@ class WebsiteViewModel: ObservableObject {
             )
             .store(in: &cancellables)
 
-        WebsiteService.shared.fetchEventDataStats(id: websiteId, period: selectedPeriod)
+        service.fetchEventDataStats(id: websiteId, period: selectedPeriod)
             .receive(on: DispatchQueue.main)
             .sink(
                 receiveCompletion: { _ in },
@@ -816,7 +825,7 @@ class WebsiteViewModel: ObservableObject {
     private func reloadEventDataValues() {
         guard let websiteId = selectedWebsite?.id else { return }
 
-        WebsiteService.shared.fetchEventDataValues(
+        service.fetchEventDataValues(
             id: websiteId,
             period: selectedPeriod,
             eventName: eventDataState.selectedEvent,
@@ -844,7 +853,7 @@ class WebsiteViewModel: ObservableObject {
         let page = reset ? 1 : nextSessionsPage
         isLoadingMoreSessions = !reset
 
-        WebsiteService.shared.fetchWebsiteSessions(
+        service.fetchWebsiteSessions(
             id: websiteId,
             period: selectedPeriod,
             page: page,
@@ -884,7 +893,7 @@ class WebsiteViewModel: ObservableObject {
     func loadSessionDetail(sessionId: String) {
         guard let websiteId = selectedWebsite?.id else { return }
 
-        WebsiteService.shared.fetchWebsiteSession(id: websiteId, sessionId: sessionId)
+        service.fetchWebsiteSession(id: websiteId, sessionId: sessionId)
             .receive(on: DispatchQueue.main)
             .sink(
                 receiveCompletion: { [weak self] completion in
@@ -902,7 +911,7 @@ class WebsiteViewModel: ObservableObject {
     func loadSessionActivity(sessionId: String) {
         guard let websiteId = selectedWebsite?.id else { return }
 
-        WebsiteService.shared.fetchWebsiteSessionActivity(id: websiteId, sessionId: sessionId, period: selectedPeriod)
+        service.fetchWebsiteSessionActivity(id: websiteId, sessionId: sessionId, period: selectedPeriod)
             .receive(on: DispatchQueue.main)
             .sink(
                 receiveCompletion: { [weak self] completion in
@@ -920,7 +929,7 @@ class WebsiteViewModel: ObservableObject {
     func loadSessionProperties(sessionId: String) {
         guard let websiteId = selectedWebsite?.id else { return }
 
-        WebsiteService.shared.fetchWebsiteSessionProperties(id: websiteId, sessionId: sessionId)
+        service.fetchWebsiteSessionProperties(id: websiteId, sessionId: sessionId)
             .receive(on: DispatchQueue.main)
             .sink(
                 receiveCompletion: { [weak self] completion in
@@ -938,7 +947,7 @@ class WebsiteViewModel: ObservableObject {
     // MARK: - Realtime
 
     private func loadRealtimeSnapshot(websiteId: String) {
-        WebsiteService.shared.fetchRealtimeSnapshot(websiteId: websiteId)
+        service.fetchRealtimeSnapshot(websiteId: websiteId)
             .receive(on: DispatchQueue.main)
             .sink(
                 receiveCompletion: { [weak self] completion in
@@ -960,7 +969,7 @@ class WebsiteViewModel: ObservableObject {
 
         loadRealtimeSnapshot(websiteId: websiteId)
 
-        realtimeSnapshotTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+        realtimeSnapshotTimer = Timer.scheduledTimer(withTimeInterval: realtimePollInterval, repeats: true) { [weak self] _ in
             self?.loadRealtimeSnapshot(websiteId: websiteId)
         }
     }
@@ -973,7 +982,7 @@ class WebsiteViewModel: ObservableObject {
     // MARK: - Active Users Polling (existing behavior)
 
     private func startRealtimeUpdates(websiteId: String) {
-        WebsiteService.shared.startRealtimeUpdates(for: websiteId) { [weak self] count in
+        service.startRealtimeUpdates(for: websiteId, interval: realtimePollInterval) { [weak self] count in
             DispatchQueue.main.async {
                 self?.activeUsersCount = count
                 self?.hasActiveUsersData = true
@@ -983,7 +992,7 @@ class WebsiteViewModel: ObservableObject {
 
     func stopRealtimeUpdates() {
         if let websiteId = selectedWebsite?.id {
-            WebsiteService.shared.stopRealtimeUpdates(for: websiteId)
+            service.stopRealtimeUpdates(for: websiteId)
         }
     }
 

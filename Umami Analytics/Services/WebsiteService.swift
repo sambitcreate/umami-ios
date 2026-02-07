@@ -9,12 +9,47 @@ import Foundation
 import Combine
 import CoreData
 
-class WebsiteService {
+protocol WebsiteServicing {
+    func createWebsite(name: String, domain: String, shareId: String?, teamId: String?, id: String?) -> AnyPublisher<WebsiteModel, Error>
+    func updateWebsite(id: String, name: String?, domain: String?, shareId: String?) -> AnyPublisher<WebsiteModel, Error>
+    func deleteWebsite(id: String) -> AnyPublisher<Void, Error>
+
+    func fetchWebsites() -> AnyPublisher<[WebsiteModel], Error>
+    func fetchWebsiteStats(id: String, period: StatsPeriod) -> AnyPublisher<WebsiteStatsResponse, Error>
+    func fetchWebsiteMetrics(id: String, period: StatsPeriod, type: String) -> AnyPublisher<WebsiteMetricsResponse, Error>
+    func fetchWebsitePageviews(id: String, period: StatsPeriod) -> AnyPublisher<PageviewsResponse, Error>
+    func fetchActiveUsers(id: String) -> AnyPublisher<ActiveUsersResponse, Error>
+    func fetchRealtimeSnapshot(websiteId: String) -> AnyPublisher<RealtimeData, Error>
+    func fetchWebsiteEventSeries(id: String, period: StatsPeriod, eventName: String?) -> AnyPublisher<[TimeSeriesData], Error>
+    func fetchWebsiteEvents(id: String, period: StatsPeriod, page: Int, pageSize: Int, search: String?) -> AnyPublisher<PaginatedResponse<AnalyticsRecord>, Error>
+    func fetchEventDataFields(id: String, period: StatsPeriod) -> AnyPublisher<[FilterValue], Error>
+    func fetchEventDataProperties(id: String, period: StatsPeriod, propertyName: String?) -> AnyPublisher<[FilterValue], Error>
+    func fetchEventDataEvents(id: String, period: StatsPeriod, event: String?) -> AnyPublisher<[FilterValue], Error>
+    func fetchEventDataStats(id: String, period: StatsPeriod) -> AnyPublisher<[String: MetricValue], Error>
+    func fetchEventDataValues(id: String, period: StatsPeriod, eventName: String?, propertyName: String?) -> AnyPublisher<[FilterValue], Error>
+    func fetchWebsiteSessionStats(id: String, period: StatsPeriod) -> AnyPublisher<[String: MetricValue], Error>
+    func fetchWebsiteSessionsWeekly(id: String, period: StatsPeriod) -> AnyPublisher<[WeeklySessionPoint], Error>
+    func fetchWebsiteSessions(id: String, period: StatsPeriod, page: Int, pageSize: Int, search: String?) -> AnyPublisher<PaginatedResponse<AnalyticsRecord>, Error>
+    func fetchWebsiteSession(id: String, sessionId: String) -> AnyPublisher<AnalyticsRecord, Error>
+    func fetchWebsiteSessionActivity(id: String, sessionId: String, period: StatsPeriod) -> AnyPublisher<[AnalyticsRecord], Error>
+    func fetchWebsiteSessionProperties(id: String, sessionId: String) -> AnyPublisher<[String: JSONValue], Error>
+
+    func invalidateAnalyticsCache(for websiteId: String?)
+    func startRealtimeUpdates(for websiteId: String, interval: TimeInterval, completion: @escaping (Int) -> Void)
+    func stopRealtimeUpdates(for websiteId: String)
+
+    func fetchCachedWebsites() -> [UmamiWebsite]
+    func fetchCachedStats(for websiteId: String, period: StatsPeriod) -> UmamiWebsiteStats?
+}
+
+class WebsiteService: WebsiteServicing {
     static let shared = WebsiteService()
 
     private var cancellables = Set<AnyCancellable>()
     private var realtimeTimers: [String: Timer] = [:]
-    private let analyticsCacheTTL: TimeInterval = 60
+    private let apiClientProvider: () -> APIClient?
+    private let nowProvider: () -> Date
+    private let analyticsCacheTTL: TimeInterval
 
     private struct CacheEntry {
         let expiryDate: Date
@@ -24,10 +59,20 @@ class WebsiteService {
     private var analyticsCache: [String: CacheEntry] = [:]
     private var realtimeSnapshots: [String: RealtimeData] = [:]
 
+    init(
+        apiClientProvider: @escaping () -> APIClient? = { AuthManager.shared.apiClient },
+        nowProvider: @escaping () -> Date = Date.init,
+        analyticsCacheTTL: TimeInterval = AnalyticsRuntimeConfig.default.analyticsCacheTTL
+    ) {
+        self.apiClientProvider = apiClientProvider
+        self.nowProvider = nowProvider
+        self.analyticsCacheTTL = analyticsCacheTTL
+    }
+
     // MARK: - Website Management
 
     func createWebsite(name: String, domain: String, shareId: String?, teamId: String?, id: String? = nil) -> AnyPublisher<WebsiteModel, Error> {
-        guard let apiClient = AuthManager.shared.apiClient else {
+        guard let apiClient = apiClientProvider() else {
             return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
         }
 
@@ -41,7 +86,7 @@ class WebsiteService {
     }
 
     func updateWebsite(id: String, name: String?, domain: String?, shareId: String?) -> AnyPublisher<WebsiteModel, Error> {
-        guard let apiClient = AuthManager.shared.apiClient else {
+        guard let apiClient = apiClientProvider() else {
             return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
         }
 
@@ -55,7 +100,7 @@ class WebsiteService {
     }
 
     func deleteWebsite(id: String) -> AnyPublisher<Void, Error> {
-        guard let apiClient = AuthManager.shared.apiClient else {
+        guard let apiClient = apiClientProvider() else {
             return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
         }
 
@@ -72,7 +117,7 @@ class WebsiteService {
     // MARK: - Website List
 
     func fetchWebsites() -> AnyPublisher<[WebsiteModel], Error> {
-        guard let apiClient = AuthManager.shared.apiClient else {
+        guard let apiClient = apiClientProvider() else {
             return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
         }
 
@@ -86,7 +131,7 @@ class WebsiteService {
     // MARK: - Website Details
 
     func fetchWebsiteDetails(id: String) -> AnyPublisher<WebsiteModel, Error> {
-        guard let apiClient = AuthManager.shared.apiClient else {
+        guard let apiClient = apiClientProvider() else {
             return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
         }
 
@@ -97,7 +142,7 @@ class WebsiteService {
     // MARK: - Website Stats
 
     func fetchWebsiteStats(id: String, period: StatsPeriod = .day) -> AnyPublisher<WebsiteStatsResponse, Error> {
-        guard let apiClient = AuthManager.shared.apiClient else {
+        guard let apiClient = apiClientProvider() else {
             return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
         }
 
@@ -113,7 +158,7 @@ class WebsiteService {
     // MARK: - Website Metrics
 
     func fetchWebsiteMetrics(id: String, period: StatsPeriod = .day, type: String = "path") -> AnyPublisher<WebsiteMetricsResponse, Error> {
-        guard let apiClient = AuthManager.shared.apiClient else {
+        guard let apiClient = apiClientProvider() else {
             return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
         }
 
@@ -137,7 +182,7 @@ class WebsiteService {
     // MARK: - Website Pageviews
 
     func fetchWebsitePageviews(id: String, period: StatsPeriod = .day) -> AnyPublisher<PageviewsResponse, Error> {
-        guard let apiClient = AuthManager.shared.apiClient else {
+        guard let apiClient = apiClientProvider() else {
             return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
         }
 
@@ -150,7 +195,7 @@ class WebsiteService {
     // MARK: - Active Users
 
     func fetchActiveUsers(id: String) -> AnyPublisher<ActiveUsersResponse, Error> {
-        guard let apiClient = AuthManager.shared.apiClient else {
+        guard let apiClient = apiClientProvider() else {
             return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
         }
 
@@ -159,7 +204,7 @@ class WebsiteService {
     }
 
     func fetchRealtimeSnapshot(websiteId: String) -> AnyPublisher<RealtimeData, Error> {
-        guard let apiClient = AuthManager.shared.apiClient else {
+        guard let apiClient = apiClientProvider() else {
             return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
         }
 
@@ -178,10 +223,10 @@ class WebsiteService {
         id: String,
         period: StatsPeriod = .day,
         page: Int = 1,
-        pageSize: Int = 20,
+        pageSize: Int = AnalyticsRuntimeConfig.default.eventsSessionsPageSize,
         search: String? = nil
     ) -> AnyPublisher<PaginatedResponse<AnalyticsRecord>, Error> {
-        guard let apiClient = AuthManager.shared.apiClient else {
+        guard let apiClient = apiClientProvider() else {
             return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
         }
 
@@ -208,7 +253,7 @@ class WebsiteService {
         period: StatsPeriod = .day,
         eventName: String? = nil
     ) -> AnyPublisher<[TimeSeriesData], Error> {
-        guard let apiClient = AuthManager.shared.apiClient else {
+        guard let apiClient = apiClientProvider() else {
             return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
         }
 
@@ -231,7 +276,7 @@ class WebsiteService {
         period: StatsPeriod = .day,
         search: String? = nil
     ) -> AnyPublisher<[FilterValue], Error> {
-        guard let apiClient = AuthManager.shared.apiClient else {
+        guard let apiClient = apiClientProvider() else {
             return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
         }
 
@@ -253,7 +298,7 @@ class WebsiteService {
         period: StatsPeriod = .day,
         event: String? = nil
     ) -> AnyPublisher<[FilterValue], Error> {
-        guard let apiClient = AuthManager.shared.apiClient else {
+        guard let apiClient = apiClientProvider() else {
             return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
         }
 
@@ -271,7 +316,7 @@ class WebsiteService {
     }
 
     func fetchEventDataFields(id: String, period: StatsPeriod = .day) -> AnyPublisher<[FilterValue], Error> {
-        guard let apiClient = AuthManager.shared.apiClient else {
+        guard let apiClient = apiClientProvider() else {
             return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
         }
 
@@ -293,7 +338,7 @@ class WebsiteService {
         period: StatsPeriod = .day,
         propertyName: String? = nil
     ) -> AnyPublisher<[FilterValue], Error> {
-        guard let apiClient = AuthManager.shared.apiClient else {
+        guard let apiClient = apiClientProvider() else {
             return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
         }
 
@@ -314,7 +359,7 @@ class WebsiteService {
         id: String,
         period: StatsPeriod = .day
     ) -> AnyPublisher<[String: MetricValue], Error> {
-        guard let apiClient = AuthManager.shared.apiClient else {
+        guard let apiClient = apiClientProvider() else {
             return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
         }
 
@@ -337,7 +382,7 @@ class WebsiteService {
         eventName: String? = nil,
         propertyName: String? = nil
     ) -> AnyPublisher<[FilterValue], Error> {
-        guard let apiClient = AuthManager.shared.apiClient else {
+        guard let apiClient = apiClientProvider() else {
             return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
         }
 
@@ -364,7 +409,7 @@ class WebsiteService {
         period: StatsPeriod = .day,
         propertyName: String? = nil
     ) -> AnyPublisher<[FilterValue], Error> {
-        guard let apiClient = AuthManager.shared.apiClient else {
+        guard let apiClient = apiClientProvider() else {
             return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
         }
 
@@ -386,7 +431,7 @@ class WebsiteService {
         period: StatsPeriod = .day,
         propertyName: String? = nil
     ) -> AnyPublisher<[FilterValue], Error> {
-        guard let apiClient = AuthManager.shared.apiClient else {
+        guard let apiClient = apiClientProvider() else {
             return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
         }
 
@@ -407,10 +452,10 @@ class WebsiteService {
         id: String,
         period: StatsPeriod = .day,
         page: Int = 1,
-        pageSize: Int = 20,
+        pageSize: Int = AnalyticsRuntimeConfig.default.eventsSessionsPageSize,
         search: String? = nil
     ) -> AnyPublisher<PaginatedResponse<AnalyticsRecord>, Error> {
-        guard let apiClient = AuthManager.shared.apiClient else {
+        guard let apiClient = apiClientProvider() else {
             return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
         }
 
@@ -436,7 +481,7 @@ class WebsiteService {
         id: String,
         period: StatsPeriod = .day
     ) -> AnyPublisher<[String: MetricValue], Error> {
-        guard let apiClient = AuthManager.shared.apiClient else {
+        guard let apiClient = apiClientProvider() else {
             return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
         }
 
@@ -457,7 +502,7 @@ class WebsiteService {
         id: String,
         period: StatsPeriod = .day
     ) -> AnyPublisher<[WeeklySessionPoint], Error> {
-        guard let apiClient = AuthManager.shared.apiClient else {
+        guard let apiClient = apiClientProvider() else {
             return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
         }
 
@@ -475,7 +520,7 @@ class WebsiteService {
     }
 
     func fetchWebsiteSession(id: String, sessionId: String) -> AnyPublisher<AnalyticsRecord, Error> {
-        guard let apiClient = AuthManager.shared.apiClient else {
+        guard let apiClient = apiClientProvider() else {
             return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
         }
 
@@ -488,7 +533,7 @@ class WebsiteService {
         sessionId: String,
         period: StatsPeriod = .day
     ) -> AnyPublisher<[AnalyticsRecord], Error> {
-        guard let apiClient = AuthManager.shared.apiClient else {
+        guard let apiClient = apiClientProvider() else {
             return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
         }
 
@@ -498,7 +543,7 @@ class WebsiteService {
     }
 
     func fetchWebsiteSessionProperties(id: String, sessionId: String) -> AnyPublisher<[String: JSONValue], Error> {
-        guard let apiClient = AuthManager.shared.apiClient else {
+        guard let apiClient = apiClientProvider() else {
             return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
         }
 
@@ -521,7 +566,11 @@ class WebsiteService {
 
     // MARK: - Realtime Data
 
-    func startRealtimeUpdates(for websiteId: String, interval: TimeInterval = 5.0, completion: @escaping (Int) -> Void) {
+    func startRealtimeUpdates(
+        for websiteId: String,
+        interval: TimeInterval = AnalyticsRuntimeConfig.default.realtimePollInterval,
+        completion: @escaping (Int) -> Void
+    ) {
         stopRealtimeUpdates(for: websiteId)
 
         // Fetch initial data
@@ -556,7 +605,7 @@ class WebsiteService {
     }
 
     private func fetchActiveUsers(for websiteId: String) -> AnyPublisher<Int, Error> {
-        guard let apiClient = AuthManager.shared.apiClient else {
+        guard let apiClient = apiClientProvider() else {
             return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
         }
 
@@ -600,14 +649,14 @@ class WebsiteService {
                             // Update existing website
                             existingWebsite.name = website.name
                             existingWebsite.domain = website.domain
-                            existingWebsite.lastUpdated = Date()
+                            existingWebsite.lastUpdated = self.nowProvider()
                         } else {
                             // Create new website
                             let newWebsite = UmamiWebsite(context: context)
                             newWebsite.id = website.id
                             newWebsite.name = website.name
                             newWebsite.domain = website.domain
-                            newWebsite.lastUpdated = Date()
+                            newWebsite.lastUpdated = self.nowProvider()
                             newWebsite.server = server
                         }
                     }
@@ -666,7 +715,7 @@ class WebsiteService {
                         existingStats.visitors = Int64(stats.visitors)
                         existingStats.bounceRate = stats.bounceRate
                         existingStats.avgDuration = stats.avgDuration
-                        existingStats.date = Date()
+                        existingStats.date = self.nowProvider()
                     } else {
                         // Create new stats
                         let newStats = UmamiWebsiteStats(context: context)
@@ -675,7 +724,7 @@ class WebsiteService {
                         newStats.visitors = Int64(stats.visitors)
                         newStats.bounceRate = stats.bounceRate
                         newStats.avgDuration = stats.avgDuration
-                        newStats.date = Date()
+                        newStats.date = self.nowProvider()
                         newStats.period = period.rawValue
                     }
 
@@ -705,7 +754,7 @@ class WebsiteService {
             return nil
         }
 
-        if entry.expiryDate < Date() {
+        if entry.expiryDate < nowProvider() {
             analyticsCache.removeValue(forKey: key)
             return nil
         }
@@ -714,12 +763,12 @@ class WebsiteService {
     }
 
     private func setCachedValue<T>(_ value: T, for key: String, ttl: TimeInterval? = nil) {
-        let expiry = Date().addingTimeInterval(ttl ?? analyticsCacheTTL)
+        let expiry = nowProvider().addingTimeInterval(ttl ?? analyticsCacheTTL)
         analyticsCache[key] = CacheEntry(expiryDate: expiry, value: value)
     }
 
     private func createDateRange(for period: StatsPeriod) -> DateRange {
-        let now = Date()
+        let now = nowProvider()
         let calendar = Calendar.current
 
         var startDate: Date
@@ -807,4 +856,3 @@ enum StatsPeriod: String {
         }
     }
 }
-
