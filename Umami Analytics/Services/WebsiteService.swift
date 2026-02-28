@@ -9,6 +9,7 @@ import Foundation
 import Combine
 import CoreData
 
+@MainActor
 protocol WebsiteServicing {
     func createWebsite(name: String, domain: String, shareId: String?, teamId: String?, id: String?) -> AnyPublisher<WebsiteModel, Error>
     func updateWebsite(id: String, name: String?, domain: String?, shareId: String?) -> AnyPublisher<WebsiteModel, Error>
@@ -40,14 +41,40 @@ protocol WebsiteServicing {
 
     func fetchCachedWebsites() -> [UmamiWebsite]
     func fetchCachedStats(for websiteId: String, period: StatsPeriod) -> UmamiWebsiteStats?
+
+    // MARK: - Async/Await Methods
+
+    func fetchWebsitesAsync() async throws -> [WebsiteModel]
+    func fetchWebsiteStatsAsync(id: String, period: StatsPeriod) async throws -> WebsiteStatsResponse
+    func fetchWebsiteMetricsAsync(id: String, period: StatsPeriod, type: String) async throws -> WebsiteMetricsResponse
+    func fetchWebsitePageviewsAsync(id: String, period: StatsPeriod) async throws -> PageviewsResponse
+    func fetchActiveUsersAsync(id: String) async throws -> ActiveUsersResponse
+    func fetchRealtimeSnapshotAsync(websiteId: String) async throws -> RealtimeData
+    func fetchWebsiteEventSeriesAsync(id: String, period: StatsPeriod, eventName: String?) async throws -> [TimeSeriesData]
+    func fetchWebsiteEventsAsync(id: String, period: StatsPeriod, page: Int, pageSize: Int, search: String?) async throws -> PaginatedResponse<AnalyticsRecord>
+    func fetchEventDataFieldsAsync(id: String, period: StatsPeriod) async throws -> [FilterValue]
+    func fetchEventDataPropertiesAsync(id: String, period: StatsPeriod, propertyName: String?) async throws -> [FilterValue]
+    func fetchEventDataEventsAsync(id: String, period: StatsPeriod, event: String?) async throws -> [FilterValue]
+    func fetchEventDataStatsAsync(id: String, period: StatsPeriod) async throws -> [String: MetricValue]
+    func fetchEventDataValuesAsync(id: String, period: StatsPeriod, eventName: String?, propertyName: String?) async throws -> [FilterValue]
+    func fetchWebsiteSessionStatsAsync(id: String, period: StatsPeriod) async throws -> [String: MetricValue]
+    func fetchWebsiteSessionsWeeklyAsync(id: String, period: StatsPeriod) async throws -> [WeeklySessionPoint]
+    func fetchWebsiteSessionsAsync(id: String, period: StatsPeriod, page: Int, pageSize: Int, search: String?) async throws -> PaginatedResponse<AnalyticsRecord>
+    func fetchWebsiteSessionAsync(id: String, sessionId: String) async throws -> AnalyticsRecord
+    func fetchWebsiteSessionActivityAsync(id: String, sessionId: String, period: StatsPeriod) async throws -> [AnalyticsRecord]
+    func fetchWebsiteSessionPropertiesAsync(id: String, sessionId: String) async throws -> [String: JSONValue]
+    func createWebsiteAsync(name: String, domain: String, shareId: String?, teamId: String?, id: String?) async throws -> WebsiteModel
+    func updateWebsiteAsync(id: String, name: String?, domain: String?, shareId: String?) async throws -> WebsiteModel
+    func deleteWebsiteAsync(id: String) async throws
+    func startRealtimeUpdatesAsync(for websiteId: String, interval: TimeInterval) -> AsyncStream<Int>
 }
 
-class WebsiteService: WebsiteServicing {
+@MainActor
+final class WebsiteService: WebsiteServicing {
     static let shared = WebsiteService()
 
-    private var cancellables = Set<AnyCancellable>()
-    private var realtimeTimers: [String: Timer] = [:]
-    private let apiClientProvider: () -> APIClient?
+    private var realtimeTasks: [String: Task<Void, Never>] = [:]
+    private let apiClientProvider: @MainActor () -> APIClient?
     private let nowProvider: () -> Date
     private let analyticsCacheTTL: TimeInterval
 
@@ -60,7 +87,7 @@ class WebsiteService: WebsiteServicing {
     private var realtimeSnapshots: [String: RealtimeData] = [:]
 
     init(
-        apiClientProvider: @escaping () -> APIClient? = { AuthManager.shared.apiClient },
+        apiClientProvider: @escaping @MainActor () -> APIClient? = { AuthManager.shared.apiClient },
         nowProvider: @escaping () -> Date = Date.init,
         analyticsCacheTTL: TimeInterval = AnalyticsRuntimeConfig.default.analyticsCacheTTL
     ) {
@@ -573,56 +600,39 @@ class WebsiteService: WebsiteServicing {
     ) {
         stopRealtimeUpdates(for: websiteId)
 
-        // Fetch initial data
-        fetchActiveUsers(for: websiteId)
-            .sink(
-                receiveCompletion: { _ in },
-                receiveValue: { data in
-                    completion(data)
+        realtimeTasks[websiteId] = Task { @MainActor [weak self] in
+            guard let self else { return }
+
+            while !Task.isCancelled {
+                do {
+                    let response = try await self.fetchActiveUsersAsync(id: websiteId)
+                    completion(response.visitors)
+                } catch {
+                    // Keep polling through transient network failures.
                 }
-            )
-            .store(in: &cancellables)
 
-        // Set up timer for periodic updates
-        let timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
-            guard let self = self else { return }
-            self.fetchActiveUsers(for: websiteId)
-                .sink(
-                    receiveCompletion: { _ in },
-                    receiveValue: { data in
-                        completion(data)
-                    }
-                )
-                .store(in: &self.cancellables)
+                guard !Task.isCancelled else { break }
+                try? await Task.sleep(nanoseconds: UInt64(max(interval, 0.05) * 1_000_000_000))
+            }
         }
-
-        realtimeTimers[websiteId] = timer
     }
 
     func stopRealtimeUpdates(for websiteId: String) {
-        realtimeTimers[websiteId]?.invalidate()
-        realtimeTimers.removeValue(forKey: websiteId)
-    }
-
-    private func fetchActiveUsers(for websiteId: String) -> AnyPublisher<Int, Error> {
-        guard let apiClient = apiClientProvider() else {
-            return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
-        }
-
-        return apiClient.getActiveUsers(websiteId: websiteId)
-            .map { response in response.visitors }
-            .eraseToAnyPublisher()
+        realtimeTasks[websiteId]?.cancel()
+        realtimeTasks.removeValue(forKey: websiteId)
     }
 
     // MARK: - CoreData Operations
 
     private func saveWebsitesToCoreData(_ websites: [WebsiteModel]) {
         let context = PersistenceController.shared.container.viewContext
+        let serverURL = AuthManager.shared.serverURL
+        let updatedAt = nowProvider()
 
         context.perform {
             // Fetch existing server
             let serverFetchRequest: NSFetchRequest<UmamiServer> = UmamiServer.fetchRequest()
-            if let serverURL = AuthManager.shared.serverURL {
+            if let serverURL {
                 serverFetchRequest.predicate = NSPredicate(format: "url == %@", serverURL)
 
                 do {
@@ -649,14 +659,14 @@ class WebsiteService: WebsiteServicing {
                             // Update existing website
                             existingWebsite.name = website.name
                             existingWebsite.domain = website.domain
-                            existingWebsite.lastUpdated = self.nowProvider()
+                            existingWebsite.lastUpdated = updatedAt
                         } else {
                             // Create new website
                             let newWebsite = UmamiWebsite(context: context)
                             newWebsite.id = website.id
                             newWebsite.name = website.name
                             newWebsite.domain = website.domain
-                            newWebsite.lastUpdated = self.nowProvider()
+                            newWebsite.lastUpdated = updatedAt
                             newWebsite.server = server
                         }
                     }
@@ -693,6 +703,7 @@ class WebsiteService: WebsiteServicing {
 
     private func saveStatsToCache(websiteId: String, stats: WebsiteStatsResponse, period: StatsPeriod) {
         let context = PersistenceController.shared.container.viewContext
+        let updatedAt = nowProvider()
 
         context.perform {
             // Fetch the website
@@ -715,7 +726,7 @@ class WebsiteService: WebsiteServicing {
                         existingStats.visitors = Int64(stats.visitors)
                         existingStats.bounceRate = stats.bounceRate
                         existingStats.avgDuration = stats.avgDuration
-                        existingStats.date = self.nowProvider()
+                        existingStats.date = updatedAt
                     } else {
                         // Create new stats
                         let newStats = UmamiWebsiteStats(context: context)
@@ -724,7 +735,7 @@ class WebsiteService: WebsiteServicing {
                         newStats.visitors = Int64(stats.visitors)
                         newStats.bounceRate = stats.bounceRate
                         newStats.avgDuration = stats.avgDuration
-                        newStats.date = self.nowProvider()
+                        newStats.date = updatedAt
                         newStats.period = period.rawValue
                     }
 
@@ -839,9 +850,233 @@ class WebsiteService: WebsiteServicing {
     }
 }
 
+// MARK: - Async/Await Implementations
+
+extension WebsiteService {
+    func fetchWebsitesAsync() async throws -> [WebsiteModel] {
+        guard let apiClient = apiClientProvider() else { throw APIError.unauthorized }
+        let websites = try await apiClient.getAllWebsitesAsync()
+        saveWebsitesToCoreData(websites)
+        return websites
+    }
+
+    func fetchWebsiteStatsAsync(id: String, period: StatsPeriod) async throws -> WebsiteStatsResponse {
+        guard let apiClient = apiClientProvider() else { throw APIError.unauthorized }
+        let dateRange = createDateRange(for: period)
+        let response = try await apiClient.getWebsiteStatsAsync(id: id, dateRange: dateRange)
+        saveStatsToCache(websiteId: id, stats: response, period: period)
+        return response
+    }
+
+    func fetchWebsiteMetricsAsync(id: String, period: StatsPeriod, type: String) async throws -> WebsiteMetricsResponse {
+        guard let apiClient = apiClientProvider() else { throw APIError.unauthorized }
+        let cacheKey = makeCacheKey(prefix: "metrics", websiteId: id, period: period, extras: [type])
+        if let cached: WebsiteMetricsResponse = cachedValue(for: cacheKey) { return cached }
+        let dateRange = createDateRange(for: period)
+        let response = try await apiClient.getWebsiteMetricsAsync(id: id, dateRange: dateRange, type: type)
+        saveMetricsToCache(websiteId: id, metrics: response, period: period)
+        setCachedValue(response, for: cacheKey)
+        return response
+    }
+
+    func fetchWebsitePageviewsAsync(id: String, period: StatsPeriod) async throws -> PageviewsResponse {
+        guard let apiClient = apiClientProvider() else { throw APIError.unauthorized }
+        let dateRange = createDateRange(for: period)
+        return try await apiClient.getWebsitePageviewsAsync(id: id, dateRange: dateRange)
+    }
+
+    func fetchActiveUsersAsync(id: String) async throws -> ActiveUsersResponse {
+        guard let apiClient = apiClientProvider() else { throw APIError.unauthorized }
+        return try await apiClient.getActiveUsersAsync(websiteId: id)
+    }
+
+    func fetchRealtimeSnapshotAsync(websiteId: String) async throws -> RealtimeData {
+        guard let apiClient = apiClientProvider() else { throw APIError.unauthorized }
+        let snapshot = try await apiClient.getRealtimeAsync(websiteId: websiteId, timezone: TimeZone.current.identifier)
+        realtimeSnapshots[websiteId] = snapshot
+        return snapshot
+    }
+
+    func fetchWebsiteEventSeriesAsync(id: String, period: StatsPeriod, eventName: String?) async throws -> [TimeSeriesData] {
+        guard let apiClient = apiClientProvider() else { throw APIError.unauthorized }
+        let cacheKey = makeCacheKey(prefix: "eventSeries", websiteId: id, period: period, extras: [eventName ?? ""])
+        if let cached: [TimeSeriesData] = cachedValue(for: cacheKey) { return cached }
+        let dateRange = createDateRange(for: period)
+        let response = try await apiClient.getWebsiteEventSeriesAsync(id: id, dateRange: dateRange, eventName: eventName)
+        setCachedValue(response, for: cacheKey)
+        return response
+    }
+
+    func fetchWebsiteEventsAsync(id: String, period: StatsPeriod, page: Int, pageSize: Int, search: String?) async throws -> PaginatedResponse<AnalyticsRecord> {
+        guard let apiClient = apiClientProvider() else { throw APIError.unauthorized }
+        let cacheKey = makeCacheKey(prefix: "events", websiteId: id, period: period, extras: ["\(page)", "\(pageSize)", search ?? ""])
+        if let cached: PaginatedResponse<AnalyticsRecord> = cachedValue(for: cacheKey) { return cached }
+        let dateRange = createDateRange(for: period)
+        let response = try await apiClient.getWebsiteEventsAsync(id: id, dateRange: dateRange, page: page, pageSize: pageSize, search: search)
+        setCachedValue(response, for: cacheKey)
+        return response
+    }
+
+    func fetchEventDataFieldsAsync(id: String, period: StatsPeriod) async throws -> [FilterValue] {
+        guard let apiClient = apiClientProvider() else { throw APIError.unauthorized }
+        let cacheKey = makeCacheKey(prefix: "eventDataFields", websiteId: id, period: period)
+        if let cached: [FilterValue] = cachedValue(for: cacheKey) { return cached }
+        let dateRange = createDateRange(for: period)
+        let response = try await apiClient.getEventDataFieldsAsync(id: id, dateRange: dateRange)
+        setCachedValue(response, for: cacheKey)
+        return response
+    }
+
+    func fetchEventDataPropertiesAsync(id: String, period: StatsPeriod, propertyName: String?) async throws -> [FilterValue] {
+        guard let apiClient = apiClientProvider() else { throw APIError.unauthorized }
+        let cacheKey = makeCacheKey(prefix: "eventDataProperties", websiteId: id, period: period, extras: [propertyName ?? ""])
+        if let cached: [FilterValue] = cachedValue(for: cacheKey) { return cached }
+        let dateRange = createDateRange(for: period)
+        let response = try await apiClient.getEventDataPropertiesAsync(id: id, dateRange: dateRange, propertyName: propertyName)
+        setCachedValue(response, for: cacheKey)
+        return response
+    }
+
+    func fetchEventDataEventsAsync(id: String, period: StatsPeriod, event: String?) async throws -> [FilterValue] {
+        guard let apiClient = apiClientProvider() else { throw APIError.unauthorized }
+        let cacheKey = makeCacheKey(prefix: "eventDataEvents", websiteId: id, period: period, extras: [event ?? ""])
+        if let cached: [FilterValue] = cachedValue(for: cacheKey) { return cached }
+        let dateRange = createDateRange(for: period)
+        let response = try await apiClient.getEventDataEventsAsync(id: id, dateRange: dateRange, event: event)
+        setCachedValue(response, for: cacheKey)
+        return response
+    }
+
+    func fetchEventDataStatsAsync(id: String, period: StatsPeriod) async throws -> [String: MetricValue] {
+        guard let apiClient = apiClientProvider() else { throw APIError.unauthorized }
+        let cacheKey = makeCacheKey(prefix: "eventDataStats", websiteId: id, period: period)
+        if let cached: [String: MetricValue] = cachedValue(for: cacheKey) { return cached }
+        let dateRange = createDateRange(for: period)
+        let response = try await apiClient.getEventDataStatsAsync(id: id, dateRange: dateRange)
+        setCachedValue(response, for: cacheKey)
+        return response
+    }
+
+    func fetchEventDataValuesAsync(id: String, period: StatsPeriod, eventName: String?, propertyName: String?) async throws -> [FilterValue] {
+        guard let apiClient = apiClientProvider() else { throw APIError.unauthorized }
+        let cacheKey = makeCacheKey(prefix: "eventDataValues", websiteId: id, period: period, extras: [eventName ?? "", propertyName ?? ""])
+        if let cached: [FilterValue] = cachedValue(for: cacheKey) { return cached }
+        let dateRange = createDateRange(for: period)
+        let response = try await apiClient.getEventDataValuesAsync(id: id, dateRange: dateRange, eventName: eventName, propertyName: propertyName)
+        setCachedValue(response, for: cacheKey)
+        return response
+    }
+
+    func fetchWebsiteSessionStatsAsync(id: String, period: StatsPeriod) async throws -> [String: MetricValue] {
+        guard let apiClient = apiClientProvider() else { throw APIError.unauthorized }
+        let cacheKey = makeCacheKey(prefix: "sessionStats", websiteId: id, period: period)
+        if let cached: [String: MetricValue] = cachedValue(for: cacheKey) { return cached }
+        let dateRange = createDateRange(for: period)
+        let response = try await apiClient.getWebsiteSessionStatsAsync(id: id, dateRange: dateRange)
+        setCachedValue(response, for: cacheKey)
+        return response
+    }
+
+    func fetchWebsiteSessionsWeeklyAsync(id: String, period: StatsPeriod) async throws -> [WeeklySessionPoint] {
+        guard let apiClient = apiClientProvider() else { throw APIError.unauthorized }
+        let cacheKey = makeCacheKey(prefix: "sessionsWeekly", websiteId: id, period: period)
+        if let cached: [WeeklySessionPoint] = cachedValue(for: cacheKey) { return cached }
+        let dateRange = createDateRange(for: period)
+        let response = try await apiClient.getWebsiteSessionsWeeklyAsync(id: id, dateRange: dateRange)
+        setCachedValue(response, for: cacheKey)
+        return response
+    }
+
+    func fetchWebsiteSessionsAsync(id: String, period: StatsPeriod, page: Int, pageSize: Int, search: String?) async throws -> PaginatedResponse<AnalyticsRecord> {
+        guard let apiClient = apiClientProvider() else { throw APIError.unauthorized }
+        let cacheKey = makeCacheKey(prefix: "sessions", websiteId: id, period: period, extras: ["\(page)", "\(pageSize)", search ?? ""])
+        if let cached: PaginatedResponse<AnalyticsRecord> = cachedValue(for: cacheKey) { return cached }
+        let dateRange = createDateRange(for: period)
+        let response = try await apiClient.getWebsiteSessionsAsync(id: id, dateRange: dateRange, page: page, pageSize: pageSize, search: search)
+        setCachedValue(response, for: cacheKey)
+        return response
+    }
+
+    func fetchWebsiteSessionAsync(id: String, sessionId: String) async throws -> AnalyticsRecord {
+        guard let apiClient = apiClientProvider() else { throw APIError.unauthorized }
+        return try await apiClient.getWebsiteSessionAsync(id: id, sessionId: sessionId)
+    }
+
+    func fetchWebsiteSessionActivityAsync(id: String, sessionId: String, period: StatsPeriod) async throws -> [AnalyticsRecord] {
+        guard let apiClient = apiClientProvider() else { throw APIError.unauthorized }
+        let dateRange = createDateRange(for: period)
+        return try await apiClient.getWebsiteSessionActivityAsync(id: id, sessionId: sessionId, dateRange: dateRange)
+    }
+
+    func fetchWebsiteSessionPropertiesAsync(id: String, sessionId: String) async throws -> [String: JSONValue] {
+        guard let apiClient = apiClientProvider() else { throw APIError.unauthorized }
+        return try await apiClient.getWebsiteSessionPropertiesAsync(id: id, sessionId: sessionId)
+    }
+
+    func createWebsiteAsync(name: String, domain: String, shareId: String?, teamId: String?, id: String?) async throws -> WebsiteModel {
+        guard let apiClient = apiClientProvider() else { throw APIError.unauthorized }
+        let payload = CreateWebsiteRequest(name: name, domain: domain, shareId: shareId, teamId: teamId, id: id)
+        let website = try await apiClient.createWebsiteAsync(body: payload)
+        saveWebsitesToCoreData([website])
+        return website
+    }
+
+    func updateWebsiteAsync(id: String, name: String?, domain: String?, shareId: String?) async throws -> WebsiteModel {
+        guard let apiClient = apiClientProvider() else { throw APIError.unauthorized }
+        let payload = UpdateWebsiteRequest(name: name, domain: domain, shareId: shareId)
+        let website = try await apiClient.updateWebsiteAsync(id: id, body: payload)
+        saveWebsitesToCoreData([website])
+        return website
+    }
+
+    func deleteWebsiteAsync(id: String) async throws {
+        guard let apiClient = apiClientProvider() else { throw APIError.unauthorized }
+        try await apiClient.deleteWebsiteAsync(id: id)
+        deleteWebsiteFromCoreData(id)
+        invalidateAnalyticsCache(for: id)
+    }
+
+    func startRealtimeUpdatesAsync(for websiteId: String, interval: TimeInterval = AnalyticsRuntimeConfig.default.realtimePollInterval) -> AsyncStream<Int> {
+        stopRealtimeUpdatesAsync(for: websiteId)
+
+        return AsyncStream { continuation in
+            let task = Task { @MainActor [weak self] in
+                while !Task.isCancelled {
+                    do {
+                        guard let self else {
+                            continuation.finish()
+                            return
+                        }
+                        let response = try await self.fetchActiveUsersAsync(id: websiteId)
+                        continuation.yield(response.visitors)
+                    } catch {
+                        // Continue polling on error
+                    }
+                    try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
+                }
+                continuation.finish()
+            }
+
+            realtimeTasks[websiteId] = task
+
+            continuation.onTermination = { _ in
+                Task { @MainActor [weak self] in
+                    task.cancel()
+                    self?.realtimeTasks.removeValue(forKey: websiteId)
+                }
+            }
+        }
+    }
+
+    func stopRealtimeUpdatesAsync(for websiteId: String) {
+        realtimeTasks[websiteId]?.cancel()
+        realtimeTasks.removeValue(forKey: websiteId)
+    }
+}
+
 // MARK: - Helper Types
 
-enum StatsPeriod: String {
+enum StatsPeriod: String, Sendable {
     case day = "day"
     case week = "week"
     case month = "month"
