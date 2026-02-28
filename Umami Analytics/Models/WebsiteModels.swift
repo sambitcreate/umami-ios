@@ -9,7 +9,7 @@ import Foundation
 
 // MARK: - Website Models
 
-struct WebsiteModel: Codable, Identifiable {
+struct WebsiteModel: Codable, Identifiable, Sendable {
     let id: String
     let name: String
     let domain: String
@@ -47,38 +47,38 @@ struct WebsiteModel: Codable, Identifiable {
 
 // MARK: - Metric Display Models
 
-struct PageMetric: Codable, Identifiable {
+struct PageMetric: Codable, Identifiable, Sendable {
     var id: String { url }
     let url: String
     let title: String?
     let value: Int
 }
 
-struct ReferrerMetric: Codable, Identifiable {
+struct ReferrerMetric: Codable, Identifiable, Sendable {
     var id: String { referrer }
     let referrer: String
     let value: Int
 }
 
-struct BrowserMetric: Codable, Identifiable {
+struct BrowserMetric: Codable, Identifiable, Sendable {
     var id: String { name }
     let name: String
     let value: Int
 }
 
-struct OSMetric: Codable, Identifiable {
+struct OSMetric: Codable, Identifiable, Sendable {
     var id: String { name }
     let name: String
     let value: Int
 }
 
-struct DeviceMetric: Codable, Identifiable {
+struct DeviceMetric: Codable, Identifiable, Sendable {
     var id: String { device }
     let device: String
     let value: Int
 }
 
-struct CountryMetric: Codable, Identifiable {
+struct CountryMetric: Codable, Identifiable, Sendable {
     var id: String { code }
     let code: String
     let name: String
@@ -87,19 +87,19 @@ struct CountryMetric: Codable, Identifiable {
 
 // MARK: - Request/Response Models
 
-struct DateRange: Codable {
+struct DateRange: Codable, Sendable {
     let startAt: Int64
     let endAt: Int64
     let unit: String
     let timezone: String?
 }
 
-struct WebsiteRequest: Codable {
+struct WebsiteRequest: Codable, Sendable {
     let dateRange: DateRange
     let filters: [String: String]?
 }
 
-struct CreateWebsiteRequest: Codable {
+struct CreateWebsiteRequest: Codable, Sendable {
     let name: String
     let domain: String
     let shareId: String?
@@ -107,13 +107,13 @@ struct CreateWebsiteRequest: Codable {
     let id: String?
 }
 
-struct UpdateWebsiteRequest: Codable {
+struct UpdateWebsiteRequest: Codable, Sendable {
     let name: String?
     let domain: String?
     let shareId: String?
 }
 
-struct WebsiteListResponse: Codable {
+struct WebsiteListResponse: Codable, Sendable {
     let data: [WebsiteModel]
     let count: Int
     let page: Int?
@@ -121,7 +121,7 @@ struct WebsiteListResponse: Codable {
 }
 
 // Supports both flat numeric and nested {value, prev} stat payloads.
-struct WebsiteStatsResponse: Codable {
+struct WebsiteStatsResponse: Codable, Sendable {
     let pageviews: Int
     let visitors: Int
     let visits: Int
@@ -197,7 +197,7 @@ struct WebsiteStatsResponse: Codable {
     }
 }
 
-struct StatsComparison: Codable {
+struct StatsComparison: Codable, Sendable {
     let pageviews: Int
     let visitors: Int
     let visits: Int
@@ -208,19 +208,19 @@ struct StatsComparison: Codable {
 // Updated to match latest Umami API - metrics endpoint returns array directly
 typealias WebsiteMetricsResponse = [MetricItem]
 
-struct MetricItem: Codable, Identifiable {
+struct MetricItem: Codable, Identifiable, Sendable {
     var id: String { x }
     let x: String  // The metric value (URL, browser, etc.)
     let y: Int     // The count
 }
 
 // Updated to match latest Umami API - pageviews endpoint response structure
-struct PageviewsResponse: Codable {
+struct PageviewsResponse: Codable, Sendable {
     let pageviews: [TimeSeriesData]
     let sessions: [TimeSeriesData]
 }
 
-struct TimeSeriesData: Codable, Identifiable, Equatable {
+struct TimeSeriesData: Codable, Identifiable, Equatable, Sendable {
     var id: Date { date }
     let date: Date
     let value: Int
@@ -321,13 +321,13 @@ struct TimeSeriesData: Codable, Identifiable, Equatable {
 }
 
 // Active users endpoint response
-struct ActiveUsersResponse: Codable {
+struct ActiveUsersResponse: Codable, Sendable {
     let visitors: Int  // Number of active users
 }
 
 // MARK: - Real-time Data Models
 
-struct RealtimeData: Decodable {
+struct RealtimeData: Decodable, Sendable {
     let websiteId: String?
     let timestamp: Int64?
     let pageviews: [RealtimePageview]
@@ -382,14 +382,14 @@ struct RealtimeData: Decodable {
     }
 }
 
-struct RealtimePageview: Codable, Identifiable {
+struct RealtimePageview: Codable, Identifiable, Sendable {
     var id: String { url }
     let url: String
     let title: String?
     let timestamp: Int64
 }
 
-struct RealtimeEvent: Codable, Identifiable {
+struct RealtimeEvent: Codable, Identifiable, Sendable {
     var id: String { "\(name)-\(timestamp)" }
     let name: String
     let timestamp: Int64
