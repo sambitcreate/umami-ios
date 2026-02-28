@@ -3,6 +3,7 @@ import Combine
 import Testing
 @testable import Umami_Analytics
 
+@MainActor
 struct WebsiteServiceTests {
 
     @Test func cacheUsesTTLAndRefetchesAfterExpiry() async throws {
