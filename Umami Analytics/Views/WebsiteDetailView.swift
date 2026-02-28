@@ -7,13 +7,17 @@
 
 import SwiftUI
 
+@MainActor
 struct WebsiteDetailContainerView: View {
     @StateObject private var viewModel: WebsiteViewModel
 
     init(website: WebsiteModel) {
-        let viewModel = WebsiteViewModel(shouldStartBackgroundRefresh: false)
-        let _ = viewModel.selectWebsite(website)
-        _viewModel = StateObject(wrappedValue: viewModel)
+        _viewModel = StateObject(
+            wrappedValue: WebsiteViewModel(
+                shouldStartBackgroundRefresh: false,
+                initialWebsite: website
+            )
+        )
     }
 
     var body: some View {
@@ -21,6 +25,7 @@ struct WebsiteDetailContainerView: View {
     }
 }
 
+@MainActor
 struct WebsiteDetailView: View {
     @ObservedObject var viewModel: WebsiteViewModel
 
@@ -61,11 +66,10 @@ struct WebsiteDetailView: View {
         } message: {
             Text(viewModel.errorMessage ?? "Unknown error")
         }
-        .onAppear {
+        .task {
             if let website = viewModel.selectedWebsite {
                 viewModel.loadWebsiteData(website: website)
             }
-            viewModel.selectDetailTab(viewModel.selectedDetailTab)
         }
         .onDisappear {
             viewModel.handleDetailDisappear()
