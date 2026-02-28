@@ -1,6 +1,6 @@
 import Foundation
 
-enum WebsiteDetailTab: String, CaseIterable, Identifiable {
+enum WebsiteDetailTab: String, CaseIterable, Identifiable, Sendable {
     case overview
     case audience
     case events
@@ -25,7 +25,7 @@ enum WebsiteDetailTab: String, CaseIterable, Identifiable {
     }
 }
 
-enum MetricDimension: String, CaseIterable, Identifiable {
+enum MetricDimension: String, CaseIterable, Identifiable, Sendable {
     case url
     case referrer
     case browser
@@ -56,7 +56,7 @@ enum MetricDimension: String, CaseIterable, Identifiable {
     }
 }
 
-struct MetricValue: Decodable, Equatable {
+struct MetricValue: Decodable, Equatable, Sendable {
     let value: Int
     let prev: Int?
 
@@ -118,7 +118,7 @@ struct MetricValue: Decodable, Equatable {
     }
 }
 
-struct FilterValue: Decodable, Identifiable, Equatable {
+struct FilterValue: Decodable, Identifiable, Equatable, Sendable {
     let value: String
     let label: String?
     let count: Int?
@@ -206,7 +206,7 @@ struct FilterValue: Decodable, Identifiable, Equatable {
     }
 }
 
-enum JSONValue: Decodable, Equatable {
+enum JSONValue: Decodable, Equatable, Sendable {
     case string(String)
     case number(Double)
     case bool(Bool)
@@ -274,7 +274,7 @@ enum JSONValue: Decodable, Equatable {
     }
 }
 
-struct AnalyticsRecord: Decodable, Identifiable, Equatable {
+struct AnalyticsRecord: Decodable, Identifiable, Equatable, Sendable {
     let fields: [String: JSONValue]
     let id: String
 
@@ -367,7 +367,7 @@ struct AnalyticsRecord: Decodable, Identifiable, Equatable {
     }
 }
 
-struct WeeklySessionPoint: Decodable, Identifiable, Equatable {
+struct WeeklySessionPoint: Decodable, Identifiable, Equatable, Sendable {
     let date: Date
     let value: Int
 
@@ -479,7 +479,7 @@ struct WeeklySessionPoint: Decodable, Identifiable, Equatable {
     }
 }
 
-struct WeeklySessionsResponse: Decodable {
+struct WeeklySessionsResponse: Decodable, Sendable {
     let data: [WeeklySessionPoint]
 
     private enum CodingKeys: String, CodingKey {
@@ -512,7 +512,7 @@ struct WeeklySessionsResponse: Decodable {
     }
 }
 
-struct PaginatedResponse<T: Decodable>: Decodable {
+struct PaginatedResponse<T: Decodable & Sendable>: Decodable, Sendable {
     let data: [T]
     let count: Int
     let page: Int?
@@ -577,7 +577,7 @@ struct PaginatedResponse<T: Decodable>: Decodable {
     }
 }
 
-struct EventDataState {
+struct EventDataState: Sendable {
     var availableFields: [FilterValue] = []
     var availableProperties: [FilterValue] = []
     var availableEvents: [FilterValue] = []
@@ -598,7 +598,7 @@ struct EventDataState {
     }
 }
 
-struct DynamicCodingKey: CodingKey {
+struct DynamicCodingKey: CodingKey, Sendable {
     var stringValue: String
     var intValue: Int?
 
