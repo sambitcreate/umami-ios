@@ -7,7 +7,7 @@
 
 import Foundation
 
-struct AnalyticsRuntimeConfig {
+struct AnalyticsRuntimeConfig: Sendable {
     let dashboardRefreshInterval: TimeInterval
     let eventsSessionsPageSize: Int
     let analyticsCacheTTL: TimeInterval
