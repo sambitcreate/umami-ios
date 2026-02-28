@@ -186,6 +186,7 @@ struct WebsiteViewModelTests {
     }
 }
 
+@MainActor
 private final class MockWebsiteService: WebsiteServicing {
     struct PageRequest: Equatable {
         let id: String
@@ -384,6 +385,64 @@ private final class MockWebsiteService: WebsiteServicing {
 
     func fetchCachedStats(for websiteId: String, period: StatsPeriod) -> UmamiWebsiteStats? {
         nil
+    }
+
+    // MARK: - Async Mock Implementations
+
+    func fetchWebsitesAsync() async throws -> [WebsiteModel] { [makeWebsite(id: "site-1")] }
+    func fetchWebsiteStatsAsync(id: String, period: StatsPeriod) async throws -> WebsiteStatsResponse {
+        WebsiteStatsResponse(pageviews: 10, visitors: 5, visits: 6, bounces: 2, totaltime: 120)
+    }
+    func fetchWebsiteMetricsAsync(id: String, period: StatsPeriod, type: String) async throws -> WebsiteMetricsResponse { [MetricItem(x: type, y: 4)] }
+    func fetchWebsitePageviewsAsync(id: String, period: StatsPeriod) async throws -> PageviewsResponse {
+        let point = TimeSeriesData(date: Date(timeIntervalSince1970: 1_700_000_000), value: 2)
+        return PageviewsResponse(pageviews: [point], sessions: [point])
+    }
+    func fetchActiveUsersAsync(id: String) async throws -> ActiveUsersResponse { ActiveUsersResponse(visitors: 2) }
+    func fetchRealtimeSnapshotAsync(websiteId: String) async throws -> RealtimeData {
+        realtimeSnapshotCalls += 1
+        return RealtimeData(websiteId: websiteId, timestamp: 1_700_000_000_000, pageviews: [], sessions: 2, events: [], countries: ["US": 2])
+    }
+    func fetchWebsiteEventSeriesAsync(id: String, period: StatsPeriod, eventName: String?) async throws -> [TimeSeriesData] {
+        [TimeSeriesData(date: Date(timeIntervalSince1970: 1_700_000_000), value: 1)]
+    }
+    func fetchWebsiteEventsAsync(id: String, period: StatsPeriod, page: Int, pageSize: Int, search: String?) async throws -> PaginatedResponse<AnalyticsRecord> {
+        eventRequests.append(PageRequest(id: id, page: page, pageSize: pageSize, search: search))
+        return eventsPageProvider(page, pageSize, search)
+    }
+    func fetchEventDataFieldsAsync(id: String, period: StatsPeriod) async throws -> [FilterValue] { [FilterValue(value: "event")] }
+    func fetchEventDataPropertiesAsync(id: String, period: StatsPeriod, propertyName: String?) async throws -> [FilterValue] { [FilterValue(value: propertyName ?? "prop")] }
+    func fetchEventDataEventsAsync(id: String, period: StatsPeriod, event: String?) async throws -> [FilterValue] { [FilterValue(value: event ?? "signup")] }
+    func fetchEventDataStatsAsync(id: String, period: StatsPeriod) async throws -> [String: MetricValue] { ["events": MetricValue(value: 3, prev: 2)] }
+    func fetchEventDataValuesAsync(id: String, period: StatsPeriod, eventName: String?, propertyName: String?) async throws -> [FilterValue] {
+        [FilterValue(value: eventName ?? propertyName ?? "value", count: 1)]
+    }
+    func fetchWebsiteSessionStatsAsync(id: String, period: StatsPeriod) async throws -> [String: MetricValue] {
+        sessionStatsCalls += 1
+        return ["sessions": MetricValue(value: 5, prev: 4)]
+    }
+    func fetchWebsiteSessionsWeeklyAsync(id: String, period: StatsPeriod) async throws -> [WeeklySessionPoint] {
+        sessionsWeeklyCalls += 1
+        return [WeeklySessionPoint(date: Date(timeIntervalSince1970: 1_700_000_000), value: 5)]
+    }
+    func fetchWebsiteSessionsAsync(id: String, period: StatsPeriod, page: Int, pageSize: Int, search: String?) async throws -> PaginatedResponse<AnalyticsRecord> {
+        sessionRequests.append(PageRequest(id: id, page: page, pageSize: pageSize, search: search))
+        return sessionsPageProvider(page, pageSize, search)
+    }
+    func fetchWebsiteSessionAsync(id: String, sessionId: String) async throws -> AnalyticsRecord { makeRecord(id: sessionId, title: "session", count: 1) }
+    func fetchWebsiteSessionActivityAsync(id: String, sessionId: String, period: StatsPeriod) async throws -> [AnalyticsRecord] {
+        [makeRecord(id: "activity-\(sessionId)", title: "activity", count: 1)]
+    }
+    func fetchWebsiteSessionPropertiesAsync(id: String, sessionId: String) async throws -> [String: JSONValue] { ["sessionId": .string(sessionId)] }
+    func createWebsiteAsync(name: String, domain: String, shareId: String?, teamId: String?, id: String?) async throws -> WebsiteModel {
+        makeWebsite(id: id ?? "created-site", name: name, domain: domain)
+    }
+    func updateWebsiteAsync(id: String, name: String?, domain: String?, shareId: String?) async throws -> WebsiteModel {
+        makeWebsite(id: id, name: name ?? "Updated", domain: domain ?? "updated.dev")
+    }
+    func deleteWebsiteAsync(id: String) async throws {}
+    func startRealtimeUpdatesAsync(for websiteId: String, interval: TimeInterval) -> AsyncStream<Int> {
+        AsyncStream { $0.yield(2); $0.finish() }
     }
 }
 
