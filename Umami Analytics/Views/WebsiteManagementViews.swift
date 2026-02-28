@@ -1,6 +1,7 @@
 import SwiftUI
 import UIKit
 
+@MainActor
 struct WebsiteFormView: View {
     enum Mode {
         case create
@@ -198,6 +199,7 @@ struct WebsiteFormView: View {
     }
 }
 
+@MainActor
 struct TrackingScriptView: View {
     let website: WebsiteModel
 
