@@ -7,6 +7,7 @@
 
 import SwiftUI
 
+@MainActor
 struct LoginView: View {
     @State private var serverType: ServerType = AuthManager.shared.serverType
     @State private var serverURL = AuthManager.shared.savedSelfHostedServerURL ?? ""
