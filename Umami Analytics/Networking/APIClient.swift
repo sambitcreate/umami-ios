@@ -141,7 +141,7 @@ class APIClient {
                             self.logDebug("Decoding error: \(error)")
                             return APIError.decodingError
                         } else {
-                            return APIError.networkError(error)
+                            return APIError.networkError(error.localizedDescription)
                         }
                     }
                     .eraseToAnyPublisher()
@@ -153,7 +153,7 @@ class APIClient {
                     self.logDebug("Decoding error: \(error)")
                     return APIError.decodingError
                 } else {
-                    return APIError.networkError(error)
+                    return APIError.networkError(error.localizedDescription)
                 }
             }
             .eraseToAnyPublisher()
@@ -194,7 +194,7 @@ class APIClient {
                 if let apiError = error as? APIError {
                     return apiError
                 }
-                return APIError.networkError(error)
+                return APIError.networkError(error.localizedDescription)
             }
             .eraseToAnyPublisher()
     }
@@ -654,18 +654,371 @@ class APIClient {
         let request = createRequest(path: "/api/websites/\(id)/sessions/\(sessionId)/properties", method: "GET")
         return performRequest(request: request)
     }
+
+    // MARK: - Async/Await Support
+
+    private func performRequestAsync<T: Decodable & Sendable>(request: URLRequest) async throws -> T {
+        logDebug("API Request: \(request.httpMethod ?? "GET") \(request.url?.absoluteString ?? "unknown")")
+
+        let (data, response): (Data, URLResponse)
+        do {
+            (data, response) = try await URLSession.shared.data(for: request)
+        } catch {
+            throw APIError.networkError(error.localizedDescription)
+        }
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw APIError.unknown
+        }
+
+        logDebug("Response Status: \(httpResponse.statusCode) for \(request.url?.absoluteString ?? "unknown")")
+        if let responseString = String(data: data, encoding: .utf8) {
+            logDebug("Response Body: \(responseString)")
+        }
+
+        if httpResponse.statusCode == 401 {
+            throw APIError.unauthorized
+        }
+
+        guard (200...299).contains(httpResponse.statusCode) else {
+            if let errorMessage = parseErrorMessage(from: data) {
+                throw APIError.serverError(errorMessage)
+            }
+            throw APIError.serverError("Status code: \(httpResponse.statusCode)")
+        }
+
+        if data.isEmpty, T.self == EmptyResponse.self, let empty = EmptyResponse() as? T {
+            return empty
+        }
+
+        do {
+            return try jsonDecoder.decode(T.self, from: data)
+        } catch {
+            logDebug("Decoding error: \(error)")
+            throw APIError.decodingError
+        }
+    }
+
+    private func performVoidRequestAsync(request: URLRequest) async throws {
+        logDebug("API Request: \(request.httpMethod ?? "GET") \(request.url?.absoluteString ?? "unknown")")
+
+        let (data, response): (Data, URLResponse)
+        do {
+            (data, response) = try await URLSession.shared.data(for: request)
+        } catch {
+            throw APIError.networkError(error.localizedDescription)
+        }
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw APIError.unknown
+        }
+
+        logDebug("Response Status: \(httpResponse.statusCode)")
+
+        if httpResponse.statusCode == 401 {
+            throw APIError.unauthorized
+        }
+
+        guard (200...299).contains(httpResponse.statusCode) else {
+            if let errorMessage = parseErrorMessage(from: data) {
+                throw APIError.serverError(errorMessage)
+            }
+            throw APIError.serverError("Status code: \(httpResponse.statusCode)")
+        }
+    }
+
+    // MARK: - Async Authentication
+
+    func loginAsync(username: String, password: String) async throws -> AuthResponse {
+        let credentials = AuthCredentials(username: username, password: password)
+        let request = createRequest(path: "/api/auth/login", method: "POST", body: credentials)
+        return try await performRequestAsync(request: request)
+    }
+
+    func verifyTokenAsync() async throws -> User {
+        guard authToken != nil else { throw APIError.unauthorized }
+        let request = createRequest(path: "/api/auth/verify", method: "POST")
+        return try await performRequestAsync(request: request)
+    }
+
+    func logoutAsync() async throws {
+        guard authToken != nil else { return }
+        let request = createRequest(path: "/api/auth/logout", method: "POST")
+        try await performVoidRequestAsync(request: request)
+    }
+
+    // MARK: - Async Websites
+
+    func getWebsitesAsync(page: Int = 1, pageSize: Int = 10) async throws -> WebsiteListResponse {
+        var components = URLComponents(string: "/api/websites")
+        components?.queryItems = [
+            URLQueryItem(name: "page", value: "\(page)"),
+            URLQueryItem(name: "pageSize", value: "\(pageSize)")
+        ]
+        let path = components?.string ?? "/api/websites?page=\(page)&pageSize=\(pageSize)"
+        let request = createRequest(path: path, method: "GET")
+        return try await performRequestAsync(request: request)
+    }
+
+    func getAllWebsitesAsync() async throws -> [WebsiteModel] {
+        let firstPage = try await getWebsitesAsync(page: 1, pageSize: 50)
+        if firstPage.count <= firstPage.data.count {
+            return firstPage.data
+        }
+
+        let pageSize = 50
+        let totalPages = (firstPage.count + pageSize - 1) / pageSize
+
+        var allWebsites = firstPage.data
+        for page in 2...totalPages {
+            let response = try await getWebsitesAsync(page: page, pageSize: pageSize)
+            allWebsites.append(contentsOf: response.data)
+        }
+
+        return allWebsites
+    }
+
+    func getWebsiteAsync(id: String) async throws -> WebsiteModel {
+        let request = createRequest(path: "/api/websites/\(id)", method: "GET")
+        return try await performRequestAsync(request: request)
+    }
+
+    func createWebsiteAsync(body: CreateWebsiteRequest) async throws -> WebsiteModel {
+        let request = createRequest(path: "/api/websites", method: "POST", body: body)
+        return try await performRequestAsync(request: request)
+    }
+
+    func updateWebsiteAsync(id: String, body: UpdateWebsiteRequest) async throws -> WebsiteModel {
+        let request = createRequest(path: "/api/websites/\(id)", method: "POST", body: body)
+        return try await performRequestAsync(request: request)
+    }
+
+    func deleteWebsiteAsync(id: String) async throws {
+        let request = createRequest(path: "/api/websites/\(id)", method: "DELETE")
+        try await performVoidRequestAsync(request: request)
+    }
+
+    // MARK: - Async Stats & Metrics
+
+    func getWebsiteStatsAsync(id: String, dateRange: DateRange) async throws -> WebsiteStatsResponse {
+        guard let path = buildPath(path: "/api/websites/\(id)/stats", queryItems: dateRangeQueryItems(dateRange)) else {
+            throw APIError.invalidURL
+        }
+        let request = createRequest(path: path, method: "GET")
+        return try await performRequestAsync(request: request)
+    }
+
+    func getWebsiteMetricsAsync(id: String, dateRange: DateRange, type: String = "path") async throws -> WebsiteMetricsResponse {
+        let queryItems = [
+            URLQueryItem(name: "startAt", value: "\(dateRange.startAt)"),
+            URLQueryItem(name: "endAt", value: "\(dateRange.endAt)"),
+            URLQueryItem(name: "type", value: type)
+        ]
+        guard let path = buildPath(path: "/api/websites/\(id)/metrics", queryItems: queryItems) else {
+            throw APIError.invalidURL
+        }
+        let request = createRequest(path: path, method: "GET")
+        return try await performRequestAsync(request: request)
+    }
+
+    func getWebsitePageviewsAsync(id: String, dateRange: DateRange) async throws -> PageviewsResponse {
+        guard let path = buildPath(path: "/api/websites/\(id)/pageviews", queryItems: dateRangeQueryItems(dateRange, includeUnit: true)) else {
+            throw APIError.invalidURL
+        }
+        let request = createRequest(path: path, method: "GET")
+        return try await performRequestAsync(request: request)
+    }
+
+    // MARK: - Async Active Users & Realtime
+
+    func getActiveUsersAsync(websiteId: String) async throws -> ActiveUsersResponse {
+        let request = createRequest(path: "/api/websites/\(websiteId)/active", method: "GET")
+        return try await performRequestAsync(request: request)
+    }
+
+    func getRealtimeAsync(websiteId: String, timezone: String?) async throws -> RealtimeData {
+        let items = [URLQueryItem(name: "timezone", value: timezone)]
+        guard let path = buildPath(path: "/api/realtime/\(websiteId)", queryItems: items) else {
+            throw APIError.invalidURL
+        }
+        let request = createRequest(path: path, method: "GET")
+        return try await performRequestAsync(request: request)
+    }
+
+    // MARK: - Async Events
+
+    func getWebsiteEventsAsync(id: String, dateRange: DateRange, page: Int, pageSize: Int, search: String?) async throws -> PaginatedResponse<AnalyticsRecord> {
+        var queryItems = dateRangeQueryItems(dateRange)
+        queryItems.append(contentsOf: [
+            URLQueryItem(name: "page", value: "\(page)"),
+            URLQueryItem(name: "pageSize", value: "\(pageSize)"),
+            URLQueryItem(name: "search", value: search)
+        ])
+        guard let path = buildPath(path: "/api/websites/\(id)/events", queryItems: queryItems) else {
+            throw APIError.invalidURL
+        }
+        let request = createRequest(path: path, method: "GET")
+        return try await performRequestAsync(request: request)
+    }
+
+    func getWebsiteEventSeriesAsync(id: String, dateRange: DateRange, eventName: String?) async throws -> [TimeSeriesData] {
+        var queryItems = dateRangeQueryItems(dateRange, includeUnit: true)
+        queryItems.append(URLQueryItem(name: "eventName", value: eventName))
+        guard let path = buildPath(path: "/api/websites/\(id)/events/series", queryItems: queryItems) else {
+            throw APIError.invalidURL
+        }
+        let request = createRequest(path: path, method: "GET")
+        return try await performRequestAsync(request: request)
+    }
+
+    func getWebsiteValuesAsync(id: String, type: String, dateRange: DateRange, search: String?) async throws -> [FilterValue] {
+        var queryItems = dateRangeQueryItems(dateRange)
+        queryItems.append(contentsOf: [
+            URLQueryItem(name: "type", value: type),
+            URLQueryItem(name: "search", value: search)
+        ])
+        guard let path = buildPath(path: "/api/websites/\(id)/values", queryItems: queryItems) else {
+            throw APIError.invalidURL
+        }
+        let request = createRequest(path: path, method: "GET")
+        return try await performRequestAsync(request: request)
+    }
+
+    // MARK: - Async Event Data
+
+    func getEventDataEventsAsync(id: String, dateRange: DateRange, event: String?) async throws -> [FilterValue] {
+        var queryItems = dateRangeQueryItems(dateRange)
+        queryItems.append(URLQueryItem(name: "event", value: event))
+        guard let path = buildPath(path: "/api/websites/\(id)/event-data/events", queryItems: queryItems) else {
+            throw APIError.invalidURL
+        }
+        let request = createRequest(path: path, method: "GET")
+        return try await performRequestAsync(request: request)
+    }
+
+    func getEventDataFieldsAsync(id: String, dateRange: DateRange) async throws -> [FilterValue] {
+        guard let path = buildPath(path: "/api/websites/\(id)/event-data/fields", queryItems: dateRangeQueryItems(dateRange)) else {
+            throw APIError.invalidURL
+        }
+        let request = createRequest(path: path, method: "GET")
+        return try await performRequestAsync(request: request)
+    }
+
+    func getEventDataPropertiesAsync(id: String, dateRange: DateRange, propertyName: String?) async throws -> [FilterValue] {
+        var queryItems = dateRangeQueryItems(dateRange)
+        queryItems.append(URLQueryItem(name: "propertyName", value: propertyName))
+        guard let path = buildPath(path: "/api/websites/\(id)/event-data/properties", queryItems: queryItems) else {
+            throw APIError.invalidURL
+        }
+        let request = createRequest(path: path, method: "GET")
+        return try await performRequestAsync(request: request)
+    }
+
+    func getEventDataStatsAsync(id: String, dateRange: DateRange) async throws -> [String: MetricValue] {
+        guard let path = buildPath(path: "/api/websites/\(id)/event-data/stats", queryItems: dateRangeQueryItems(dateRange)) else {
+            throw APIError.invalidURL
+        }
+        let request = createRequest(path: path, method: "GET")
+        return try await performRequestAsync(request: request)
+    }
+
+    func getEventDataValuesAsync(id: String, dateRange: DateRange, eventName: String?, propertyName: String?) async throws -> [FilterValue] {
+        var queryItems = dateRangeQueryItems(dateRange)
+        queryItems.append(contentsOf: [
+            URLQueryItem(name: "eventName", value: eventName),
+            URLQueryItem(name: "propertyName", value: propertyName)
+        ])
+        guard let path = buildPath(path: "/api/websites/\(id)/event-data/values", queryItems: queryItems) else {
+            throw APIError.invalidURL
+        }
+        let request = createRequest(path: path, method: "GET")
+        return try await performRequestAsync(request: request)
+    }
+
+    // MARK: - Async Session Data
+
+    func getSessionDataPropertiesAsync(id: String, dateRange: DateRange, propertyName: String?) async throws -> [FilterValue] {
+        var queryItems = dateRangeQueryItems(dateRange)
+        queryItems.append(URLQueryItem(name: "propertyName", value: propertyName))
+        guard let path = buildPath(path: "/api/websites/\(id)/session-data/properties", queryItems: queryItems) else {
+            throw APIError.invalidURL
+        }
+        let request = createRequest(path: path, method: "GET")
+        return try await performRequestAsync(request: request)
+    }
+
+    func getSessionDataValuesAsync(id: String, dateRange: DateRange, propertyName: String?) async throws -> [FilterValue] {
+        var queryItems = dateRangeQueryItems(dateRange)
+        queryItems.append(URLQueryItem(name: "propertyName", value: propertyName))
+        guard let path = buildPath(path: "/api/websites/\(id)/session-data/values", queryItems: queryItems) else {
+            throw APIError.invalidURL
+        }
+        let request = createRequest(path: path, method: "GET")
+        return try await performRequestAsync(request: request)
+    }
+
+    // MARK: - Async Sessions
+
+    func getWebsiteSessionsAsync(id: String, dateRange: DateRange, page: Int, pageSize: Int, search: String?) async throws -> PaginatedResponse<AnalyticsRecord> {
+        var queryItems = dateRangeQueryItems(dateRange)
+        queryItems.append(contentsOf: [
+            URLQueryItem(name: "page", value: "\(page)"),
+            URLQueryItem(name: "pageSize", value: "\(pageSize)"),
+            URLQueryItem(name: "search", value: search)
+        ])
+        guard let path = buildPath(path: "/api/websites/\(id)/sessions", queryItems: queryItems) else {
+            throw APIError.invalidURL
+        }
+        let request = createRequest(path: path, method: "GET")
+        return try await performRequestAsync(request: request)
+    }
+
+    func getWebsiteSessionStatsAsync(id: String, dateRange: DateRange) async throws -> [String: MetricValue] {
+        guard let path = buildPath(path: "/api/websites/\(id)/sessions/stats", queryItems: dateRangeQueryItems(dateRange)) else {
+            throw APIError.invalidURL
+        }
+        let request = createRequest(path: path, method: "GET")
+        return try await performRequestAsync(request: request)
+    }
+
+    func getWebsiteSessionsWeeklyAsync(id: String, dateRange: DateRange) async throws -> [WeeklySessionPoint] {
+        guard let path = buildPath(path: "/api/websites/\(id)/sessions/weekly", queryItems: dateRangeQueryItems(dateRange)) else {
+            throw APIError.invalidURL
+        }
+        let request = createRequest(path: path, method: "GET")
+        let response: WeeklySessionsResponse = try await performRequestAsync(request: request)
+        return response.data
+    }
+
+    func getWebsiteSessionAsync(id: String, sessionId: String) async throws -> AnalyticsRecord {
+        let request = createRequest(path: "/api/websites/\(id)/sessions/\(sessionId)", method: "GET")
+        return try await performRequestAsync(request: request)
+    }
+
+    func getWebsiteSessionActivityAsync(id: String, sessionId: String, dateRange: DateRange) async throws -> [AnalyticsRecord] {
+        guard let path = buildPath(path: "/api/websites/\(id)/sessions/\(sessionId)/activity", queryItems: dateRangeQueryItems(dateRange)) else {
+            throw APIError.invalidURL
+        }
+        let request = createRequest(path: path, method: "GET")
+        return try await performRequestAsync(request: request)
+    }
+
+    func getWebsiteSessionPropertiesAsync(id: String, sessionId: String) async throws -> [String: JSONValue] {
+        let request = createRequest(path: "/api/websites/\(id)/sessions/\(sessionId)/properties", method: "GET")
+        return try await performRequestAsync(request: request)
+    }
 }
 
 // MARK: - Helper Structures
 
-struct EmptyResponse: Codable {}
+struct EmptyResponse: Codable, Sendable {}
 
 // MARK: - API Errors
 
-enum APIError: Error {
+enum APIError: Error, Sendable {
     case invalidURL
     case unauthorized
-    case networkError(Error)
+    case networkError(String)
     case serverError(String)
     case decodingError
     case unknown
@@ -676,8 +1029,8 @@ enum APIError: Error {
             return "Invalid URL. Please check the URL and try again."
         case .unauthorized:
             return "Unauthorized. Please log in again."
-        case .networkError(let error):
-            return "Network error: \(error.localizedDescription)"
+        case .networkError(let description):
+            return "Network error: \(description)"
         case .serverError(let message):
             return "Server error: \(message)"
         case .decodingError:
