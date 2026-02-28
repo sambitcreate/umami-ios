@@ -7,17 +7,17 @@
 
 import Foundation
 
-struct AuthCredentials: Codable {
+struct AuthCredentials: Codable, Sendable {
     let username: String
     let password: String
 }
 
-struct AuthResponse: Codable {
+struct AuthResponse: Codable, Sendable {
     let token: String
     let user: User
 }
 
-struct User: Codable {
+struct User: Codable, Sendable {
     let id: String
     let username: String
     let role: String
@@ -29,12 +29,12 @@ struct User: Codable {
     }
 }
 
-struct ServerInfo: Codable {
+struct ServerInfo: Codable, Sendable {
     let url: String
     let name: String
 }
 
-enum ServerType: String, Codable, CaseIterable {
+enum ServerType: String, Codable, CaseIterable, Sendable {
     case cloud
     case selfHosted = "self"
 
@@ -48,11 +48,11 @@ enum ServerType: String, Codable, CaseIterable {
     }
 }
 
-enum AuthError: Error {
+enum AuthError: Error, Sendable {
     case invalidURL
     case invalidCredentials
     case missingAPIKey
-    case networkError(Error)
+    case networkError(String)
     case serverError(String)
     case decodingError
     case unknown
@@ -65,8 +65,8 @@ enum AuthError: Error {
             return "Incorrect username or password."
         case .missingAPIKey:
             return "Please enter your Umami Cloud API key."
-        case .networkError(let error):
-            return "Network error: \(error.localizedDescription)"
+        case .networkError(let description):
+            return "Network error: \(description)"
         case .serverError(let message):
             return "Server error: \(message)"
         case .decodingError:
