@@ -9,7 +9,8 @@ import Foundation
 import Combine
 import Security
 
-class AuthManager {
+@MainActor
+final class AuthManager {
     static let shared = AuthManager()
 
     private enum Constants {
