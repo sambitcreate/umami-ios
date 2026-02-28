@@ -29,7 +29,8 @@ struct Umami_AnalyticsApp: App {
     }
 }
 
-class AppState: ObservableObject {
+@MainActor
+final class AppState: ObservableObject {
     @Published var isAuthenticated: Bool = false
     private var cancellables = Set<AnyCancellable>()
 
