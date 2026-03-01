@@ -18,6 +18,10 @@ final class WebsiteViewModel: ObservableObject {
     var activeUsersTask: Task<Void, Never>?
     var tabTasks: [WebsiteDetailTab: Task<Void, Never>] = [:]
     var tabLoadTokens: [WebsiteDetailTab: UUID] = [:]
+    var eventsPageRequestID = UUID()
+    var sessionsPageRequestID = UUID()
+    var eventDataInspectorRequestID = UUID()
+    var eventDataValuesRequestID = UUID()
 
     let refreshInterval: TimeInterval
     let pageSize: Int
@@ -331,6 +335,7 @@ final class WebsiteViewModel: ObservableObject {
 
         service.invalidateAnalyticsCache(for: website.id)
         loadedTabs.removeAll()
+        refreshRequestTracking()
         loadTabIfNeeded(selectedDetailTab, force: true)
     }
 
@@ -481,6 +486,7 @@ final class WebsiteViewModel: ObservableObject {
     }
 
     private func resetWebsiteSelectionState() {
+        refreshRequestTracking()
         websiteStats = nil
         websiteMetrics = nil
         pageviewsData = nil
@@ -498,6 +504,8 @@ final class WebsiteViewModel: ObservableObject {
         selectedSessionProperties = [:]
         realtimeSnapshot = nil
         eventDataState = EventDataState()
+        eventsSearchQuery = ""
+        sessionsSearchQuery = ""
         hasMoreEvents = false
         hasMoreSessions = false
         isLoadingMoreEvents = false
@@ -528,6 +536,13 @@ final class WebsiteViewModel: ObservableObject {
 
     func sleepInterval(for interval: TimeInterval) -> UInt64 {
         UInt64(max(interval, 0.05) * 1_000_000_000)
+    }
+
+    func refreshRequestTracking() {
+        eventsPageRequestID = UUID()
+        sessionsPageRequestID = UUID()
+        eventDataInspectorRequestID = UUID()
+        eventDataValuesRequestID = UUID()
     }
 
     // MARK: - Cleanup

@@ -127,7 +127,7 @@ struct WebsiteDetailView: View {
                 Text("This Month").tag(StatsPeriod.month)
                 Text("This Year").tag(StatsPeriod.year)
             }
-            .pickerStyle(SegmentedPickerStyle())
+            .pickerStyle(.segmented)
             .onChange(of: viewModel.selectedPeriod) { _, newValue in
                 viewModel.changePeriod(newValue)
             }
@@ -161,7 +161,7 @@ struct WebsiteDetailView: View {
 }
 
 #Preview {
-    NavigationView {
+    NavigationStack {
         WebsiteDetailView(viewModel: WebsiteViewModel(shouldStartBackgroundRefresh: false))
     }
 }

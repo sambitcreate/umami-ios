@@ -17,7 +17,7 @@ struct WebsitesView: View {
     @State private var showingDeleteConfirmation = false
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             Group {
                 if viewModel.hasWebsites {
                     List {
@@ -93,7 +93,7 @@ struct WebsitesView: View {
                             }
                         }
                     }
-                    .listStyle(InsetGroupedListStyle())
+                    .listStyle(.insetGrouped)
                     .refreshable {
                         viewModel.loadWebsites()
                     }
@@ -130,7 +130,7 @@ struct WebsitesView: View {
             }
             .navigationTitle("Websites")
             .toolbar {
-                ToolbarItemGroup(placement: .navigationBarTrailing) {
+                ToolbarItemGroup(placement: .topBarTrailing) {
                     Button {
                         showingAddWebsite = true
                     } label: {

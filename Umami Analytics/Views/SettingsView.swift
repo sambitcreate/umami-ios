@@ -9,7 +9,6 @@ import SwiftUI
 
 @MainActor
 struct SettingsView: View {
-    @EnvironmentObject private var appState: AppState
     @State private var showingLogoutConfirmation = false
 
     private var authManager: AuthManager { AuthManager.shared }
@@ -24,8 +23,14 @@ struct SettingsView: View {
         return "\(prefix)…\(suffix)"
     }
 
+    private var appVersion: String {
+        let shortVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Unknown"
+        let buildNumber = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0"
+        return "\(shortVersion) (\(buildNumber))"
+    }
+
     var body: some View {
-        NavigationView {
+        NavigationStack {
             List {
                 Section(header: Text("Account")) {
                     if let user = authManager.currentUser {
@@ -104,7 +109,7 @@ struct SettingsView: View {
                     HStack {
                         Text("Version")
                         Spacer()
-                        Text("1.0.0")
+                        Text(appVersion)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -113,7 +118,9 @@ struct SettingsView: View {
             .alert("Sign Out", isPresented: $showingLogoutConfirmation) {
                 Button("Cancel", role: .cancel) { }
                 Button("Sign Out", role: .destructive) {
-                    AuthManager.shared.logout { _ in }
+                    Task { @MainActor in
+                        try? await authManager.logout()
+                    }
                 }
             } message: {
                 Text("Are you sure you want to sign out?")

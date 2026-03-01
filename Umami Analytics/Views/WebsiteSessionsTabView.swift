@@ -98,7 +98,9 @@ struct WebsiteSessionsTabView: View {
 
             HStack(spacing: 8) {
                 TextField("Search sessions", text: $draftSearch)
-                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .textFieldStyle(.roundedBorder)
                     .onSubmit {
                         viewModel.applySessionsSearch(draftSearch)
                     }

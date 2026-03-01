@@ -57,7 +57,7 @@ struct WebsiteFormView: View {
     }
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             Form {
                 Section(header: Text("Website Details")) {
                     TextField("Name", text: $name)
@@ -232,7 +232,7 @@ struct TrackingScriptView: View {
     }
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             Form {
                 Section(header: Text("Script Source")) {
                     TextField("Script URL", text: $scriptURL)

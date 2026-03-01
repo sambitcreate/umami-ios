@@ -14,27 +14,38 @@ extension WebsiteViewModel {
     func loadSessionsTab(websiteId: String, period: StatsPeriod) async {
         async let statsResult = fetchSessionStatsResult(websiteId: websiteId, period: period)
         async let weeklyResult = fetchSessionsWeeklyResult(websiteId: websiteId, period: period)
+        let requestID = UUID()
 
+        sessionsPageRequestID = requestID
         nextSessionsPage = 1
         hasMoreSessions = true
 
-        guard contextMatches(websiteId: websiteId, period: period) else { return }
+        let resolvedStatsResult = await statsResult
+        let resolvedWeeklyResult = await weeklyResult
 
-        switch await statsResult {
+        guard contextMatches(websiteId: websiteId, period: period), requestID == sessionsPageRequestID else { return }
+
+        switch resolvedStatsResult {
         case .success(let stats):
             sessionStats = stats
         case .failure(let error):
             setTabError(.sessions, error: error)
         }
 
-        switch await weeklyResult {
+        switch resolvedWeeklyResult {
         case .success(let weekly):
             sessionsWeekly = weekly
         case .failure(let error):
             setTabError(.sessions, error: error)
         }
 
-        await loadSessionsPage(reset: true, websiteId: websiteId, period: period, search: normalizedSearchQuery(sessionsSearchQuery))
+        await loadSessionsPage(
+            reset: true,
+            websiteId: websiteId,
+            period: period,
+            search: normalizedSearchQuery(sessionsSearchQuery),
+            requestID: requestID
+        )
     }
 
     func fetchSessionStatsResult(websiteId: String, period: StatsPeriod) async -> Result<[String: MetricValue], Error> {
@@ -58,14 +69,23 @@ extension WebsiteViewModel {
 
         let period = selectedPeriod
         let search = normalizedSearchQuery(sessionsSearchQuery)
+        let requestID = sessionsPageRequestID
 
         Task { @MainActor [weak self] in
-            await self?.loadSessionsPage(reset: false, websiteId: websiteId, period: period, search: search)
+            await self?.loadSessionsPage(
+                reset: false,
+                websiteId: websiteId,
+                period: period,
+                search: search,
+                requestID: requestID
+            )
         }
     }
 
     func applySessionsSearch(_ search: String) {
         sessionsSearchQuery = search
+        let requestID = UUID()
+        sessionsPageRequestID = requestID
         nextSessionsPage = 1
         hasMoreSessions = true
 
@@ -75,20 +95,33 @@ extension WebsiteViewModel {
         let normalizedSearch = normalizedSearchQuery(search)
 
         Task { @MainActor [weak self] in
-            await self?.loadSessionsPage(reset: true, websiteId: websiteId, period: period, search: normalizedSearch)
+            await self?.loadSessionsPage(
+                reset: true,
+                websiteId: websiteId,
+                period: period,
+                search: normalizedSearch,
+                requestID: requestID
+            )
         }
     }
 
-    func loadSessionsPage(reset: Bool, websiteId: String? = nil, period: StatsPeriod? = nil, search: String? = nil) async {
+    func loadSessionsPage(
+        reset: Bool,
+        websiteId: String? = nil,
+        period: StatsPeriod? = nil,
+        search: String? = nil,
+        requestID: UUID? = nil
+    ) async {
         guard let websiteId = websiteId ?? selectedWebsite?.id else { return }
         let period = period ?? selectedPeriod
         let search = search ?? normalizedSearchQuery(sessionsSearchQuery)
+        let requestID = requestID ?? sessionsPageRequestID
 
         let page = reset ? 1 : nextSessionsPage
         isLoadingMoreSessions = !reset
 
         defer {
-            if contextMatches(websiteId: websiteId, period: period) {
+            if contextMatches(websiteId: websiteId, period: period), requestID == sessionsPageRequestID {
                 isLoadingMoreSessions = false
             }
         }
@@ -103,7 +136,7 @@ extension WebsiteViewModel {
             )
         }
 
-        guard contextMatches(websiteId: websiteId, period: period) else { return }
+        guard contextMatches(websiteId: websiteId, period: period), requestID == sessionsPageRequestID else { return }
 
         switch result {
         case .success(let response):
@@ -122,6 +155,9 @@ extension WebsiteViewModel {
             hasMoreSessions = totalLoaded < (sessionsPage?.count ?? totalLoaded)
             nextSessionsPage = page + 1
         case .failure(let error):
+            if reset {
+                hasMoreSessions = false
+            }
             setTabError(.sessions, error: error)
         }
     }

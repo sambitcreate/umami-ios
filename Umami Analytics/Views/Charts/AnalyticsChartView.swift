@@ -45,7 +45,7 @@ struct AnalyticsChartView: View {
                                     .fill(selectedChartType == chartType ? Color.blue : Color.clear)
                             )
                     }
-                    .buttonStyle(PlainButtonStyle())
+                    .buttonStyle(.plain)
                 }
             }
             .padding(.horizontal, 4)
@@ -184,13 +184,17 @@ struct AnalyticsChartView: View {
                                     return
                                 }
 
-                                let resolvedFrame = geometry[plotFrame]
-                                let originX = resolvedFrame.origin.x
-                                let locationX = value.location.x - originX
+                                let plotAreaFrame = geometry[plotFrame]
+                                let plotLocation = CGPoint(
+                                    x: value.location.x - plotAreaFrame.origin.x,
+                                    y: value.location.y - plotAreaFrame.origin.y
+                                )
 
-                                guard locationX >= 0,
-                                      locationX <= resolvedFrame.size.width,
-                                      let date: Date = proxy.value(atX: value.location.x) else {
+                                guard plotLocation.x >= 0,
+                                      plotLocation.x <= plotAreaFrame.size.width,
+                                      plotLocation.y >= 0,
+                                      plotLocation.y <= plotAreaFrame.size.height,
+                                      let date: Date = proxy.value(atX: plotLocation.x) else {
                                     return
                                 }
 
@@ -284,13 +288,15 @@ struct AnalyticsChartView: View {
 }
 
 struct ChartPlaceholderView: View {
+    private let barHeights: [CGFloat] = [42, 78, 56, 92, 64, 86, 50]
+
     var body: some View {
         VStack(spacing: 20) {
             HStack(spacing: 4) {
-                ForEach(0..<7, id: \.self) { _ in
+                ForEach(Array(barHeights.enumerated()), id: \.offset) { _, height in
                     RoundedRectangle(cornerRadius: 4)
                         .fill(Color.gray.opacity(0.2))
-                        .frame(width: 30, height: CGFloat.random(in: 30...100))
+                        .frame(width: 30, height: height)
                 }
             }
             .frame(height: 100)

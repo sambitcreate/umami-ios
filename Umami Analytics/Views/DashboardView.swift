@@ -9,12 +9,10 @@ import SwiftUI
 
 @MainActor
 struct DashboardView: View {
-    @EnvironmentObject private var appState: AppState
     @StateObject private var viewModel = WebsiteViewModel()
-    @State private var selectedPeriod: StatsPeriod = .day
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ScrollView {
                 VStack(spacing: 20) {
                     welcomeHeader
@@ -32,7 +30,7 @@ struct DashboardView: View {
             }
             .navigationTitle("Dashboard")
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
+                ToolbarItem(placement: .topBarTrailing) {
                     Button(action: {
                         viewModel.loadWebsites()
                     }) {
@@ -114,14 +112,14 @@ struct DashboardView: View {
             Text("Period:")
                 .font(.headline)
 
-            Picker("Period", selection: $selectedPeriod) {
+            Picker("Period", selection: $viewModel.selectedPeriod) {
                 Text("Today").tag(StatsPeriod.day)
                 Text("This Week").tag(StatsPeriod.week)
                 Text("This Month").tag(StatsPeriod.month)
                 Text("This Year").tag(StatsPeriod.year)
             }
-            .pickerStyle(SegmentedPickerStyle())
-            .onChange(of: selectedPeriod) { _, newValue in
+            .pickerStyle(.segmented)
+            .onChange(of: viewModel.selectedPeriod) { _, newValue in
                 viewModel.changePeriod(newValue)
             }
         }

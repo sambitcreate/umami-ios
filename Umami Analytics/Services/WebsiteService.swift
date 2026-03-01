@@ -8,6 +8,7 @@
 import Foundation
 import Combine
 import CoreData
+import OSLog
 
 @MainActor
 protocol WebsiteServicing {
@@ -77,6 +78,7 @@ final class WebsiteService: WebsiteServicing {
     private let apiClientProvider: @MainActor () -> APIClient?
     private let nowProvider: () -> Date
     private let analyticsCacheTTL: TimeInterval
+    private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "UmamiAnalytics", category: "WebsiteService")
 
     private struct CacheEntry {
         let expiryDate: Date
@@ -599,6 +601,7 @@ final class WebsiteService: WebsiteServicing {
         completion: @escaping (Int) -> Void
     ) {
         stopRealtimeUpdates(for: websiteId)
+        let sleepInterval = realtimeSleepInterval(for: interval)
 
         realtimeTasks[websiteId] = Task { @MainActor [weak self] in
             guard let self else { return }
@@ -612,7 +615,7 @@ final class WebsiteService: WebsiteServicing {
                 }
 
                 guard !Task.isCancelled else { break }
-                try? await Task.sleep(nanoseconds: UInt64(max(interval, 0.05) * 1_000_000_000))
+                try? await Task.sleep(nanoseconds: sleepInterval)
             }
         }
     }
@@ -673,7 +676,7 @@ final class WebsiteService: WebsiteServicing {
 
                     try context.save()
                 } catch {
-                    print("Error saving websites to CoreData: \(error)")
+                    self.logger.error("Failed to save websites to Core Data: \(error.localizedDescription, privacy: .public)")
                 }
             }
         }
@@ -696,7 +699,7 @@ final class WebsiteService: WebsiteServicing {
                     try context.save()
                 }
             } catch {
-                print("Error deleting website from CoreData: \(error)")
+                self.logger.error("Failed to delete website from Core Data: \(error.localizedDescription, privacy: .public)")
             }
         }
     }
@@ -742,15 +745,14 @@ final class WebsiteService: WebsiteServicing {
                     try context.save()
                 }
             } catch {
-                print("Error saving stats to CoreData: \(error)")
+                self.logger.error("Failed to save website stats to Core Data: \(error.localizedDescription, privacy: .public)")
             }
         }
     }
 
     private func saveMetricsToCache(websiteId: String, metrics: WebsiteMetricsResponse, period: StatsPeriod) {
-        // For simplicity, we're not implementing full metrics caching in this example
-        // In a real app, you would create additional CoreData entities for each metric type
-        print("Metrics received for website \(websiteId) for period \(period.rawValue)")
+        guard !metrics.isEmpty else { return }
+        logger.debug("Received \(metrics.count) metrics entries for website \(websiteId, privacy: .private(mask: .hash)) and period \(period.rawValue, privacy: .public).")
     }
 
     // MARK: - Helper Methods
@@ -776,6 +778,10 @@ final class WebsiteService: WebsiteServicing {
     private func setCachedValue<T>(_ value: T, for key: String, ttl: TimeInterval? = nil) {
         let expiry = nowProvider().addingTimeInterval(ttl ?? analyticsCacheTTL)
         analyticsCache[key] = CacheEntry(expiryDate: expiry, value: value)
+    }
+
+    private func realtimeSleepInterval(for interval: TimeInterval) -> UInt64 {
+        UInt64(max(interval, 0.05) * 1_000_000_000)
     }
 
     private func createDateRange(for period: StatsPeriod) -> DateRange {
@@ -817,11 +823,15 @@ final class WebsiteService: WebsiteServicing {
     func fetchCachedWebsites() -> [UmamiWebsite] {
         let context = PersistenceController.shared.container.viewContext
         let fetchRequest: NSFetchRequest<UmamiWebsite> = UmamiWebsite.fetchRequest()
+        fetchRequest.sortDescriptors = [
+            NSSortDescriptor(key: "lastUpdated", ascending: false),
+            NSSortDescriptor(key: "name", ascending: true)
+        ]
 
         do {
             return try context.fetch(fetchRequest)
         } catch {
-            print("Error fetching websites from CoreData: \(error)")
+            logger.error("Failed to fetch cached websites: \(error.localizedDescription, privacy: .public)")
             return []
         }
     }
@@ -843,7 +853,7 @@ final class WebsiteService: WebsiteServicing {
                 return stats.first
             }
         } catch {
-            print("Error fetching stats from CoreData: \(error)")
+            logger.error("Failed to fetch cached stats: \(error.localizedDescription, privacy: .public)")
         }
 
         return nil
@@ -1038,13 +1048,15 @@ extension WebsiteService {
 
     func startRealtimeUpdatesAsync(for websiteId: String, interval: TimeInterval = AnalyticsRuntimeConfig.default.realtimePollInterval) -> AsyncStream<Int> {
         stopRealtimeUpdatesAsync(for: websiteId)
+        let sleepInterval = realtimeSleepInterval(for: interval)
 
-        return AsyncStream { continuation in
+        return AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
             let task = Task { @MainActor [weak self] in
+                defer { continuation.finish() }
+
                 while !Task.isCancelled {
                     do {
                         guard let self else {
-                            continuation.finish()
                             return
                         }
                         let response = try await self.fetchActiveUsersAsync(id: websiteId)
@@ -1052,9 +1064,9 @@ extension WebsiteService {
                     } catch {
                         // Continue polling on error
                     }
-                    try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
+                    guard !Task.isCancelled else { break }
+                    try? await Task.sleep(nanoseconds: sleepInterval)
                 }
-                continuation.finish()
             }
 
             realtimeTasks[websiteId] = task

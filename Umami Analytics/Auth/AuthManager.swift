@@ -8,6 +8,7 @@
 import Foundation
 import Combine
 import Security
+import OSLog
 
 @MainActor
 final class AuthManager {
@@ -22,9 +23,9 @@ final class AuthManager {
     private let serverURLKey = "umami.server.url"
     private let serverTypeKey = "umami.server.type"
     private let userKey = "umami.auth.user"
+    private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "UmamiAnalytics", category: "Auth")
 
     private(set) var apiClient: APIClient?
-    private var cancellables = Set<AnyCancellable>()
     private var storedSelfHostedServerURL: String?
 
     @Published var isAuthenticated = false
@@ -71,12 +72,59 @@ final class AuthManager {
         apiKey: String?,
         completion: @escaping (Result<Void, Error>) -> Void
     ) {
+        Task { @MainActor in
+            do {
+                try await login(
+                    serverType: serverType,
+                    serverURL: serverURL,
+                    username: username,
+                    password: password,
+                    apiKey: apiKey
+                )
+                completion(.success(()))
+            } catch {
+                completion(.failure(error))
+            }
+        }
+    }
+
+    func logout(completion: @escaping (Result<Void, Error>) -> Void) {
+        Task { @MainActor in
+            do {
+                try await logout()
+                completion(.success(()))
+            } catch {
+                completion(.failure(error))
+            }
+        }
+    }
+
+    func verifyAuthentication(completion: @escaping (Result<Void, Error>) -> Void) {
+        Task { @MainActor in
+            do {
+                try await verifyAuthentication()
+                completion(.success(()))
+            } catch {
+                completion(.failure(error))
+            }
+        }
+    }
+
+    func login(
+        serverType: ServerType,
+        serverURL: String?,
+        username: String?,
+        password: String?,
+        apiKey: String?
+    ) async throws {
+        isLoading = true
+        defer { isLoading = false }
+
         switch serverType {
         case .selfHosted:
             guard let trimmedURL = serverURL?.trimmingCharacters(in: .whitespacesAndNewlines),
                   !trimmedURL.isEmpty else {
-                completion(.failure(AuthError.invalidURL))
-                return
+                throw AuthError.invalidURL
             }
 
             var finalURL = trimmedURL
@@ -89,165 +137,108 @@ final class AuthManager {
 
             guard let username = username?.trimmingCharacters(in: .whitespacesAndNewlines),
                   !username.isEmpty,
-                  let password = password,
+                  let password,
                   !password.isEmpty else {
-                completion(.failure(AuthError.invalidCredentials))
-                return
+                throw AuthError.invalidCredentials
             }
 
+            let client = try APIClient(serverURL: finalURL, serverType: .selfHosted)
+
             do {
-                let client = try APIClient(serverURL: finalURL, serverType: .selfHosted)
+                let response = try await client.loginAsync(username: username, password: password)
+                client.setAuthToken(response.token)
+
                 apiClient = client
-
-                client.login(username: username, password: password)
-                    .receive(on: DispatchQueue.main)
-                    .sink(
-                        receiveCompletion: { [weak self] result in
-                            if case .failure(let error) = result {
-                                self?.isAuthenticated = false
-                                completion(.failure(error))
-                            }
-                        },
-                        receiveValue: { [weak self] response in
-                            guard let self = self else { return }
-
-                            self.saveAuthToken(response.token)
-                            self.saveServerURL(finalURL)
-                            self.saveServerType(.selfHosted)
-                            self.serverType = .selfHosted
-                            self.serverURL = finalURL
-                            self.storedSelfHostedServerURL = finalURL
-
-                            self.apiClient?.setAuthToken(response.token)
-                            self.currentUser = response.user
-                            self.saveUser(response.user)
-
-                            self.isAuthenticated = true
-                            completion(.success(()))
-                        }
-                    )
-                    .store(in: &cancellables)
+                saveAuthToken(response.token)
+                saveServerURL(finalURL)
+                saveServerType(.selfHosted)
+                self.serverType = .selfHosted
+                self.serverURL = finalURL
+                storedSelfHostedServerURL = finalURL
+                currentUser = response.user
+                saveUser(response.user)
+                isAuthenticated = true
             } catch {
-                completion(.failure(error))
+                apiClient = nil
+                isAuthenticated = false
+                throw error
             }
 
         case .cloud:
             guard let key = apiKey?.trimmingCharacters(in: .whitespacesAndNewlines),
                   !key.isEmpty else {
-                completion(.failure(AuthError.missingAPIKey))
-                return
+                throw AuthError.missingAPIKey
             }
+
+            let client = try APIClient(serverURL: Constants.cloudBaseURL, serverType: .cloud)
+            client.setAPIKey(key)
 
             do {
-                let client = try APIClient(serverURL: Constants.cloudBaseURL, serverType: .cloud)
-                client.setAPIKey(key)
+                _ = try await client.getWebsitesAsync(page: 1, pageSize: 1)
 
-                client.getWebsites(page: 1, pageSize: 1)
-                    .receive(on: DispatchQueue.main)
-                    .sink(
-                        receiveCompletion: { [weak self] result in
-                            if case .failure(let error) = result {
-                                self?.isAuthenticated = false
-                                completion(.failure(error))
-                            }
-                        },
-                        receiveValue: { [weak self] _ in
-                            guard let self = self else { return }
-
-                            self.apiClient = client
-                            self.saveAPIKey(key)
-                            self.cloudAPIKey = key
-                            self.serverType = .cloud
-                            self.saveServerType(.cloud)
-                            self.serverURL = Constants.cloudBaseURL
-
-                            self.clearStoredUser()
-                            self.isAuthenticated = true
-                            completion(.success(()))
-                        }
-                    )
-                    .store(in: &cancellables)
+                apiClient = client
+                saveAPIKey(key)
+                cloudAPIKey = key
+                self.serverType = .cloud
+                saveServerType(.cloud)
+                self.serverURL = Constants.cloudBaseURL
+                clearStoredUser()
+                isAuthenticated = true
             } catch {
-                completion(.failure(error))
+                apiClient = nil
+                isAuthenticated = false
+                throw error
             }
         }
     }
 
-    func logout(completion: @escaping (Result<Void, Error>) -> Void) {
+    func logout() async throws {
+        isLoading = true
+        defer { isLoading = false }
+
         switch serverType {
         case .selfHosted:
-            guard let apiClient = apiClient else {
-                clearAuthData(for: .selfHosted)
-                completion(.success(()))
-                return
+            var logoutError: Error?
+            if let apiClient {
+                do {
+                    try await apiClient.logoutAsync()
+                } catch {
+                    logoutError = error
+                    logger.error("Remote logout failed; clearing local session anyway: \(error.localizedDescription, privacy: .public)")
+                }
             }
-
-            apiClient.logout()
-                .receive(on: DispatchQueue.main)
-                .sink(
-                    receiveCompletion: { [weak self] result in
-                        switch result {
-                        case .failure(let error):
-                            completion(.failure(error))
-                        case .finished:
-                            self?.clearAuthData(for: .selfHosted)
-                            completion(.success(()))
-                        }
-                    },
-                    receiveValue: { [weak self] _ in
-                        self?.clearAuthData(for: .selfHosted)
-                        completion(.success(()))
-                    }
-                )
-                .store(in: &cancellables)
-
+            clearAuthData(for: .selfHosted)
+            if let logoutError {
+                throw logoutError
+            }
         case .cloud:
             clearAuthData(for: .cloud)
-            completion(.success(()))
         }
     }
 
-    func verifyAuthentication(completion: @escaping (Result<Void, Error>) -> Void) {
-        guard let apiClient = apiClient, isAuthenticated else {
-            completion(.failure(AuthError.invalidCredentials))
-            return
+    func verifyAuthentication() async throws {
+        guard let apiClient, isAuthenticated else {
+            throw AuthError.invalidCredentials
         }
+
+        isLoading = true
+        defer { isLoading = false }
 
         switch serverType {
         case .selfHosted:
-            apiClient.verifyToken()
-                .receive(on: DispatchQueue.main)
-                .sink(
-                    receiveCompletion: { [weak self] result in
-                        if case .failure(let error) = result {
-                            if let apiError = error as? APIError, case .unauthorized = apiError {
-                                self?.isAuthenticated = false
-                            }
-                            completion(.failure(error))
-                        }
-                    },
-                    receiveValue: { [weak self] user in
-                        self?.currentUser = user
-                        self?.saveUser(user)
-                        completion(.success(()))
-                    }
-                )
-                .store(in: &cancellables)
+            do {
+                let user = try await apiClient.verifyTokenAsync()
+                currentUser = user
+                saveUser(user)
+            } catch {
+                if let apiError = error as? APIError, case .unauthorized = apiError {
+                    isAuthenticated = false
+                }
+                throw error
+            }
 
         case .cloud:
-            apiClient.getWebsites(page: 1, pageSize: 1)
-                .receive(on: DispatchQueue.main)
-                .sink(
-                    receiveCompletion: { result in
-                        if case .failure(let error) = result {
-                            completion(.failure(error))
-                        }
-                    },
-                    receiveValue: { _ in
-                        completion(.success(()))
-                    }
-                )
-                .store(in: &cancellables)
+            _ = try await apiClient.getWebsitesAsync(page: 1, pageSize: 1)
         }
     }
 
@@ -285,13 +276,13 @@ final class AuthManager {
 
     private func loadSavedServerURL() {
         if let url = UserDefaults.standard.string(forKey: serverURLKey) {
-            print("📱 Restoring server URL: \(url)")
+            logger.debug("Restoring saved server URL.")
             storedSelfHostedServerURL = url
             if serverType == .selfHosted {
                 serverURL = url
             }
         } else {
-            print("📱 No saved server URL found")
+            logger.debug("No saved server URL was found.")
         }
     }
 
@@ -329,7 +320,7 @@ final class AuthManager {
                     isAuthenticated = false
                 }
             } catch {
-                print("❌ Error creating API client: \(error)")
+                logger.error("Failed to restore self-hosted session: \(error.localizedDescription, privacy: .public)")
                 isAuthenticated = false
             }
 
@@ -347,7 +338,7 @@ final class AuthManager {
                     isAuthenticated = false
                 }
             } catch {
-                print("❌ Error creating Cloud API client: \(error)")
+                logger.error("Failed to restore cloud session: \(error.localizedDescription, privacy: .public)")
                 isAuthenticated = false
             }
         }

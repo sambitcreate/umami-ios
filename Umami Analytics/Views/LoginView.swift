@@ -52,7 +52,7 @@ struct LoginView: View {
                                 Text(type.displayName).tag(type)
                             }
                         }
-                        .pickerStyle(SegmentedPickerStyle())
+                        .pickerStyle(.segmented)
                     }
 
                     if serverType == .cloud {
@@ -63,8 +63,8 @@ struct LoginView: View {
 
                             SecureField("umami_live_xxxxx", text: $apiKey)
                                 .textContentType(.password)
-                                .autocapitalization(.none)
-                                .disableAutocorrection(true)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
                                 .padding()
                                 .background(Color(UIColor.systemBackground))
                                 .cornerRadius(10)
@@ -84,8 +84,8 @@ struct LoginView: View {
                                 .foregroundColor(.primary)
 
                             TextField("https://analytics.example.com", text: $serverURL)
-                                .autocapitalization(.none)
-                                .disableAutocorrection(true)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
                                 .keyboardType(.URL)
                                 .padding()
                                 .background(Color(UIColor.systemBackground))
@@ -102,8 +102,8 @@ struct LoginView: View {
                                 .foregroundColor(.primary)
 
                             TextField("admin", text: $username)
-                                .autocapitalization(.none)
-                                .disableAutocorrection(true)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
                                 .padding()
                                 .background(Color(UIColor.systemBackground))
                                 .cornerRadius(10)
@@ -186,20 +186,21 @@ struct LoginView: View {
     private func login() {
         isLoading = true
         errorMessage = nil
+        showError = false
 
-        AuthManager.shared.login(
-            serverType: serverType,
-            serverURL: serverType == .selfHosted ? serverURL : nil,
-            username: username,
-            password: password,
-            apiKey: serverType == .cloud ? apiKey : nil
-        ) { result in
-            isLoading = false
+        Task { @MainActor in
+            defer { isLoading = false }
 
-            switch result {
-            case .success:
+            do {
+                try await AuthManager.shared.login(
+                    serverType: serverType,
+                    serverURL: serverType == .selfHosted ? serverURL : nil,
+                    username: username,
+                    password: password,
+                    apiKey: serverType == .cloud ? apiKey : nil
+                )
                 isAuthenticated = true
-            case .failure(let error):
+            } catch {
                 if let authError = error as? AuthError {
                     errorMessage = authError.message
                 } else if let apiError = error as? APIError {

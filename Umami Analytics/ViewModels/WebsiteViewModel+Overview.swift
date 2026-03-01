@@ -43,12 +43,19 @@ extension WebsiteViewModel {
     }
 
     func loadAudienceTab(websiteId: String, period: StatsPeriod) async {
-        let dimensions: [MetricDimension] = [.url, .referrer, .browser, .device, .country, .event, .channel]
+        async let referrerResult = fetchMetricDimensionResult(.referrer, websiteId: websiteId, period: period)
+        async let browserResult = fetchMetricDimensionResult(.browser, websiteId: websiteId, period: period)
+        async let deviceResult = fetchMetricDimensionResult(.device, websiteId: websiteId, period: period)
+        async let countryResult = fetchMetricDimensionResult(.country, websiteId: websiteId, period: period)
+        async let eventResult = fetchMetricDimensionResult(.event, websiteId: websiteId, period: period)
+        async let channelResult = fetchMetricDimensionResult(.channel, websiteId: websiteId, period: period)
 
-        for dimension in dimensions {
-            let result = await fetchMetricDimensionResult(dimension, websiteId: websiteId, period: period)
-            await applyMetricDimensionResult(result, dimension: dimension, websiteId: websiteId, period: period, tab: .audience)
-        }
+        await applyMetricDimensionResult(await referrerResult, dimension: .referrer, websiteId: websiteId, period: period, tab: .audience)
+        await applyMetricDimensionResult(await browserResult, dimension: .browser, websiteId: websiteId, period: period, tab: .audience)
+        await applyMetricDimensionResult(await deviceResult, dimension: .device, websiteId: websiteId, period: period, tab: .audience)
+        await applyMetricDimensionResult(await countryResult, dimension: .country, websiteId: websiteId, period: period, tab: .audience)
+        await applyMetricDimensionResult(await eventResult, dimension: .event, websiteId: websiteId, period: period, tab: .audience)
+        await applyMetricDimensionResult(await channelResult, dimension: .channel, websiteId: websiteId, period: period, tab: .audience)
     }
 
     func fetchWebsiteStatsResult(websiteId: String, period: StatsPeriod) async -> Result<WebsiteStatsResponse, Error> {

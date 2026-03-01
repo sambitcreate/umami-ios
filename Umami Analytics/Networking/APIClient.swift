@@ -7,6 +7,7 @@
 
 import Foundation
 import Combine
+import OSLog
 
 class APIClient {
     private var baseURL: URL
@@ -15,6 +16,7 @@ class APIClient {
     private let jsonDecoder: JSONDecoder
     private let jsonEncoder: JSONEncoder
     private let serverType: ServerType
+    private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "UmamiAnalytics", category: "APIClient")
 
     init(serverURL: String, serverType: ServerType = .selfHosted) throws {
         guard let url = URL(string: serverURL) else {
@@ -52,8 +54,32 @@ class APIClient {
 
     private func logDebug(_ message: @autoclosure () -> String) {
 #if DEBUG
-        print(message())
+        let resolvedMessage = message()
+        logger.debug("\(resolvedMessage, privacy: .public)")
 #endif
+    }
+
+    private func sanitizedHeaders(_ headers: [String: String]) -> [String: String] {
+        var sanitized = headers
+
+        if sanitized["Authorization"] != nil {
+            sanitized["Authorization"] = "<redacted>"
+        }
+
+        if sanitized["x-umami-api-key"] != nil {
+            sanitized["x-umami-api-key"] = "<redacted>"
+        }
+
+        return sanitized
+    }
+
+    private func logResponseBody(_ data: Data) {
+        guard let responseString = String(data: data, encoding: .utf8), !responseString.isEmpty else {
+            return
+        }
+
+        let truncatedBody = responseString.count > 2_000 ? String(responseString.prefix(2_000)) + "…" : responseString
+        logDebug("📄 Response Body: \(truncatedBody)")
     }
 
     private func createRequest(path: String, method: String, body: Encodable? = nil) -> URLRequest {
@@ -97,7 +123,7 @@ class APIClient {
     private func performRequest<T: Decodable>(request: URLRequest) -> AnyPublisher<T, Error> {
         logDebug("🌐 API Request: \(request.httpMethod ?? "GET") \(request.url?.absoluteString ?? "unknown")")
         if let headers = request.allHTTPHeaderFields {
-            logDebug("🔑 Headers: \(headers)")
+            logDebug("🔑 Headers: \(sanitizedHeaders(headers))")
         }
 
         return URLSession.shared.dataTaskPublisher(for: request)
@@ -107,9 +133,7 @@ class APIClient {
                 }
 
                 self.logDebug("📡 Response Status: \(httpResponse.statusCode) for \(request.url?.absoluteString ?? "unknown")")
-                if let responseString = String(data: data, encoding: .utf8) {
-                    self.logDebug("📄 Response Body: \(responseString)")
-                }
+                self.logResponseBody(data)
 
                 if httpResponse.statusCode == 401 {
                     throw APIError.unauthorized
@@ -162,7 +186,7 @@ class APIClient {
     private func performVoidRequest(request: URLRequest) -> AnyPublisher<Void, Error> {
         logDebug("🌐 API Request: \(request.httpMethod ?? "GET") \(request.url?.absoluteString ?? "unknown")")
         if let headers = request.allHTTPHeaderFields {
-            logDebug("🔑 Headers: \(headers)")
+            logDebug("🔑 Headers: \(sanitizedHeaders(headers))")
         }
 
         return URLSession.shared.dataTaskPublisher(for: request)
@@ -172,9 +196,7 @@ class APIClient {
                 }
 
                 self.logDebug("📡 Response Status: \(httpResponse.statusCode) for \(request.url?.absoluteString ?? "unknown")")
-                if let responseString = String(data: data, encoding: .utf8), !responseString.isEmpty {
-                    self.logDebug("📄 Response Body: \(responseString)")
-                }
+                self.logResponseBody(data)
 
                 if httpResponse.statusCode == 401 {
                     throw APIError.unauthorized

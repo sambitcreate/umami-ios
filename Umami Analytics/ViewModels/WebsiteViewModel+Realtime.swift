@@ -57,22 +57,18 @@ extension WebsiteViewModel {
 
         activeUsersTask = Task { @MainActor [weak self] in
             guard let self else { return }
+            let updates = service.startRealtimeUpdatesAsync(for: websiteId, interval: realtimePollInterval)
 
-            while !Task.isCancelled, selectedWebsite?.id == websiteId, selectedDetailTab == .overview {
-                let result = await captureResult {
-                    try await self.service.fetchActiveUsersAsync(id: websiteId)
+            for await visitorCount in updates {
+                guard !Task.isCancelled,
+                      selectedWebsite?.id == websiteId,
+                      selectedDetailTab == .overview else {
+                    break
                 }
 
-                guard selectedWebsite?.id == websiteId, selectedDetailTab == .overview else { break }
-
-                if case .success(let response) = result {
-                    activeUsers = response
-                    activeUsersCount = response.visitors
-                    hasActiveUsersData = true
-                }
-
-                guard !Task.isCancelled else { break }
-                try? await Task.sleep(nanoseconds: sleepInterval(for: realtimePollInterval))
+                activeUsers = ActiveUsersResponse(visitors: visitorCount)
+                activeUsersCount = visitorCount
+                hasActiveUsersData = true
             }
         }
     }

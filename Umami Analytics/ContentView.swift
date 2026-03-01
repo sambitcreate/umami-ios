@@ -6,13 +6,9 @@
 //
 
 import SwiftUI
-import CoreData
 
 @MainActor
 struct ContentView: View {
-    @Environment(\.managedObjectContext) private var viewContext
-    @EnvironmentObject private var appState: AppState
-
     @State private var selectedTab = 0
 
     var body: some View {

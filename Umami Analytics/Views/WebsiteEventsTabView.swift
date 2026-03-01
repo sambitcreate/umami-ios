@@ -207,7 +207,9 @@ struct WebsiteEventsTabView: View {
 
             HStack(spacing: 8) {
                 TextField("Search events", text: $draftSearch)
-                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .textFieldStyle(.roundedBorder)
                     .onSubmit {
                         viewModel.applyEventsSearch(draftSearch)
                     }
