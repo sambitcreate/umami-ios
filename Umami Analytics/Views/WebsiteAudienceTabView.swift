@@ -11,9 +11,9 @@ struct WebsiteAudienceTabView: View {
 
             metricsSection(title: "Top Referrers", dimension: .referrer)
             metricsSection(title: "Browsers", dimension: .browser)
+            metricsSection(title: "Operating Systems", dimension: .os)
             metricsSection(title: "Devices", dimension: .device)
             metricsSection(title: "Countries", dimension: .country)
-            metricsSection(title: "Channels", dimension: .channel)
             metricsSection(title: "Top Events", dimension: .event)
         }
     }
