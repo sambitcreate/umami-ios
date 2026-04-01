@@ -10,6 +10,8 @@ import SwiftUI
 @MainActor
 struct SettingsView: View {
     @State private var showingLogoutConfirmation = false
+    @State private var selectedWorkspaceID = AuthManager.shared.selectedWorkspace.id
+    @StateObject private var resourceViewModel = WebsiteViewModel(shouldStartBackgroundRefresh: false)
 
     private var authManager: AuthManager { AuthManager.shared }
 
@@ -65,6 +67,13 @@ struct SettingsView: View {
                         }
                     }
 
+                    HStack {
+                        Text("Session")
+                        Spacer()
+                        Text(authManager.isReadOnlySession ? "Read Only" : "Read/Write")
+                            .foregroundStyle(.secondary)
+                    }
+
                     Button("Sign Out") {
                         showingLogoutConfirmation = true
                     }
@@ -77,6 +86,16 @@ struct SettingsView: View {
                         Spacer()
                         Text(authManager.serverType.displayName)
                             .foregroundStyle(.secondary)
+                    }
+
+                    if let session = authManager.currentSession {
+                        HStack {
+                            Text("Tracker URL")
+                            Spacer()
+                            Text(session.trackerBaseURL)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
                     }
 
                     if let serverURL = authManager.serverURL {
@@ -102,7 +121,56 @@ struct SettingsView: View {
                             Text("API Key Header")
                                 .foregroundStyle(.secondary)
                         }
+
+                        HStack {
+                            Text("Region")
+                            Spacer()
+                            Text(authManager.activeCloudRegion.displayName)
+                                .foregroundStyle(.secondary)
+                        }
                     }
+                }
+
+                Section(header: Text("Workspace")) {
+                    HStack {
+                        Text("Current")
+                        Spacer()
+                        Text(currentWorkspace.name)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    if !authManager.availableTeams.isEmpty {
+                        Menu {
+                            ForEach(authManager.workspaceOptions, id: \.id) { workspace in
+                                Button(workspace.name) {
+                                    selectedWorkspaceID = workspace.id
+                                    authManager.selectWorkspace(workspace)
+                                    refreshWorkspaceResources()
+                                }
+                            }
+                        } label: {
+                            HStack {
+                                Text("Switch Workspace")
+                                Spacer()
+                                Text("Choose")
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+
+                    if let teamId = currentWorkspace.teamId {
+                        HStack {
+                            Text("Team ID")
+                            Spacer()
+                            Text(teamId)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                    }
+                }
+
+                Section(header: Text("Resources")) {
+                    resourceSummary
                 }
 
                 Section(header: Text("About")) {
@@ -115,6 +183,10 @@ struct SettingsView: View {
                 }
             }
             .navigationTitle("Settings")
+            .onAppear {
+                selectedWorkspaceID = authManager.selectedWorkspace.id
+                refreshWorkspaceResources()
+            }
             .alert("Sign Out", isPresented: $showingLogoutConfirmation) {
                 Button("Cancel", role: .cancel) { }
                 Button("Sign Out", role: .destructive) {
@@ -126,5 +198,75 @@ struct SettingsView: View {
                 Text("Are you sure you want to sign out?")
             }
         }
+    }
+
+    private var currentWorkspace: WorkspaceSelection {
+        if let selected = authManager.workspaceOptions.first(where: { $0.id == selectedWorkspaceID }) {
+            return selected
+        }
+        return authManager.selectedWorkspace
+    }
+
+    private var resourceSummary: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            resourceCountRow(title: "Reports", count: resourceViewModel.reports.count)
+            resourceCountRow(title: "Segments", count: resourceViewModel.segments.count)
+            resourceCountRow(title: "Cohorts", count: resourceViewModel.cohorts.count)
+            resourceCountRow(title: "Links", count: resourceViewModel.links.count)
+            resourceCountRow(title: "Pixels", count: resourceViewModel.pixels.count)
+
+            if resourceViewModel.isLoadingResources {
+                ProgressView()
+            }
+
+            if !resourceViewModel.reports.isEmpty {
+                resourceItemList(title: "Saved Reports", items: resourceViewModel.reports.prefix(3).map { "\($0.name) - \($0.type)" })
+            }
+
+            if !resourceViewModel.segments.isEmpty {
+                resourceItemList(title: "Segments", items: resourceViewModel.segments.prefix(3).map { $0.name })
+            }
+
+            if !resourceViewModel.cohorts.isEmpty {
+                resourceItemList(title: "Cohorts", items: resourceViewModel.cohorts.prefix(3).map { $0.name })
+            }
+
+            if !resourceViewModel.links.isEmpty {
+                resourceItemList(title: "Links", items: resourceViewModel.links.prefix(3).map { "\($0.name) - \($0.slug)" })
+            }
+
+            if !resourceViewModel.pixels.isEmpty {
+                resourceItemList(title: "Pixels", items: resourceViewModel.pixels.prefix(3).map { "\($0.name) - \($0.slug)" })
+            }
+        }
+    }
+
+    private func resourceCountRow(title: String, count: Int) -> some View {
+        HStack {
+            Text(title)
+            Spacer()
+            Text("\(count)")
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func resourceItemList(title: String, items: [String]) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.footnote)
+                .fontWeight(.medium)
+
+            ForEach(items, id: \.self) { item in
+                Text(item)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        }
+    }
+
+    private func refreshWorkspaceResources() {
+        resourceViewModel.selectedWebsite = resourceViewModel.filteredWebsites.first
+        resourceViewModel.loadWorkspaceResources()
     }
 }
