@@ -14,7 +14,7 @@ extension WebsiteViewModel {
     func loadEventsTab(websiteId: String, period: StatsPeriod) async {
         async let metricResult = fetchMetricDimensionResult(.event, websiteId: websiteId, period: period)
         async let seriesResult = captureResult {
-            try await service.fetchWebsiteEventSeriesAsync(id: websiteId, period: period, eventName: nil)
+            try await service.fetchWebsiteEventSeriesAsync(id: websiteId, period: period, eventName: nil, query: queryOptions)
         }
         let pageRequestID = UUID()
         let inspectorRequestID = UUID()
@@ -128,7 +128,8 @@ extension WebsiteViewModel {
                 period: period,
                 page: page,
                 pageSize: pageSize,
-                search: search
+                search: search,
+                query: queryOptions
             )
         }
 
@@ -178,7 +179,7 @@ extension WebsiteViewModel {
             try await service.fetchEventDataEventsAsync(id: websiteId, period: period, event: nil)
         }
         async let statsResult = captureResult {
-            try await service.fetchEventDataStatsAsync(id: websiteId, period: period)
+            try await service.fetchEventDataStatsAsync(id: websiteId, period: period, query: queryOptions)
         }
 
         let resolvedFieldsResult = await fieldsResult
