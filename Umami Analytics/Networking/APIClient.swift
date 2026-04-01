@@ -448,6 +448,12 @@ class APIClient {
         }
     }
 
+    func getAllAccessibleWebsites() -> AnyPublisher<[WebsiteModel], Error> {
+        asyncPublisher {
+            try await self.getAllAccessibleWebsitesAsync()
+        }
+    }
+
     func getWebsite(id: String) -> AnyPublisher<WebsiteModel, Error> {
         asyncPublisher {
             try await self.getWebsiteAsync(id: id)
@@ -797,6 +803,18 @@ class APIClient {
         return try await performRequestAsync(request: request)
     }
 
+    func getAccessibleWebsitesAsync(page: Int = 1, pageSize: Int = 50) async throws -> WebsiteListResponse {
+        var components = URLComponents(string: "/api/me/websites")
+        components?.queryItems = [
+            URLQueryItem(name: "page", value: "\(page)"),
+            URLQueryItem(name: "pageSize", value: "\(pageSize)"),
+            URLQueryItem(name: "includeTeams", value: "true")
+        ]
+        let path = components?.string ?? "/api/me/websites?page=\(page)&pageSize=\(pageSize)&includeTeams=true"
+        let request = createRequest(path: path, method: "GET")
+        return try await performRequestAsync(request: request)
+    }
+
     func getAllWebsitesAsync() async throws -> [WebsiteModel] {
         let firstPage = try await getWebsitesAsync(page: 1, pageSize: 50)
         if firstPage.count <= firstPage.data.count {
@@ -813,6 +831,28 @@ class APIClient {
         }
 
         return allWebsites
+    }
+
+    func getAllAccessibleWebsitesAsync() async throws -> [WebsiteModel] {
+        do {
+            let firstPage = try await getAccessibleWebsitesAsync(page: 1, pageSize: 50)
+            if firstPage.count <= firstPage.data.count {
+                return firstPage.data
+            }
+
+            let pageSize = 50
+            let totalPages = (firstPage.count + pageSize - 1) / pageSize
+
+            var allWebsites = firstPage.data
+            for page in 2...totalPages {
+                let response = try await getAccessibleWebsitesAsync(page: page, pageSize: pageSize)
+                allWebsites.append(contentsOf: response.data)
+            }
+
+            return allWebsites
+        } catch {
+            return try await getAllWebsitesAsync()
+        }
     }
 
     func getWebsiteAsync(id: String) async throws -> WebsiteModel {
