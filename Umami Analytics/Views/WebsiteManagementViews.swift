@@ -38,6 +38,10 @@ struct WebsiteFormView: View {
     @State private var isSubmitting = false
     @State private var localError: String?
 
+    private var isReadOnlySession: Bool {
+        AuthManager.shared.isReadOnlySession
+    }
+
     init(mode: Mode, viewModel: WebsiteViewModel) {
         self.mode = mode
         self.viewModel = viewModel
@@ -59,34 +63,41 @@ struct WebsiteFormView: View {
     var body: some View {
         NavigationStack {
             Form {
+                if isReadOnlySession {
+                    Section {
+                        Label("This session is read-only. Website settings cannot be changed.", systemImage: "lock.fill")
+                            .foregroundColor(.secondary)
+                    }
+                }
+
                 Section(header: Text("Website Details")) {
                     TextField("Name", text: $name)
                         .textInputAutocapitalization(.words)
-                        .disabled(isSubmitting)
+                        .disabled(isSubmitting || isReadOnlySession)
 
                     TextField("Domain or URL", text: $domain)
                         .textInputAutocapitalization(.never)
                         .keyboardType(.URL)
                         .autocorrectionDisabled()
-                        .disabled(isSubmitting)
+                        .disabled(isSubmitting || isReadOnlySession)
                 }
 
                 Section(header: Text("Optional Settings")) {
                     TextField("Share ID", text: $shareId)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
-                        .disabled(isSubmitting)
+                        .disabled(isSubmitting || isReadOnlySession)
 
                     Button("Generate Share ID") {
                         shareId = String(UUID().uuidString.prefix(12)).lowercased().replacingOccurrences(of: "-", with: "")
                     }
-                    .disabled(isSubmitting)
+                    .disabled(isSubmitting || isReadOnlySession)
 
                     if case .create = mode {
                         TextField("Team ID (optional)", text: $teamId)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
-                            .disabled(isSubmitting)
+                            .disabled(isSubmitting || isReadOnlySession)
                     } else if !teamId.isEmpty {
                         HStack {
                             Text("Team ID")
@@ -123,10 +134,10 @@ struct WebsiteFormView: View {
                         if isSubmitting {
                             ProgressView()
                         } else {
-                            Text(mode.actionTitle)
+                            Text(isReadOnlySession ? "Read Only" : mode.actionTitle)
                         }
                     }
-                    .disabled(!canSubmit || isSubmitting)
+                    .disabled(!canSubmit || isSubmitting || isReadOnlySession)
                 }
             }
         }
@@ -159,7 +170,7 @@ struct WebsiteFormView: View {
     }
 
     private func submit() {
-        guard canSubmit else { return }
+        guard canSubmit, !isReadOnlySession else { return }
         localError = nil
         isSubmitting = true
 
@@ -216,16 +227,10 @@ struct TrackingScriptView: View {
     init(website: WebsiteModel) {
         self.website = website
 
-        let baseURL = AuthManager.shared.serverURL ?? ""
+        let scriptURL = AuthManager.shared.trackerScriptURL()
+        let baseURL = AuthManager.shared.currentSession?.trackerBaseURL ?? AuthManager.shared.serverURL ?? ""
         let scriptPath: String
-        if let url = URL(string: baseURL)?.appendingPathComponent("script.js").absoluteString, !baseURL.isEmpty {
-            scriptPath = url
-        } else if baseURL.isEmpty {
-            scriptPath = "https://your-umami-instance/script.js"
-        } else {
-            let separator = baseURL.hasSuffix("/") ? "" : "/"
-            scriptPath = "\(baseURL)\(separator)script.js"
-        }
+        scriptPath = scriptURL.isEmpty ? "https://your-umami-instance/script.js" : scriptURL
 
         _scriptURL = State(initialValue: scriptPath)
         _hostURL = State(initialValue: baseURL)
