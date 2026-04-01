@@ -172,7 +172,7 @@ final class WebsiteService: WebsiteServicing {
                 .eraseToAnyPublisher()
         }
 
-        return apiClient.getAllWebsites()
+        return apiClient.getAllAccessibleWebsites()
             .handleEvents(receiveOutput: { [weak self] websites in
                 self?.saveWebsitesToCoreData(websites)
             })
@@ -976,7 +976,7 @@ extension WebsiteService {
             saveWebsitesToCoreData([website])
             return [website]
         }
-        let websites = try await apiClient.getAllWebsitesAsync()
+        let websites = try await apiClient.getAllAccessibleWebsitesAsync()
         saveWebsitesToCoreData(websites)
         return websites
     }
