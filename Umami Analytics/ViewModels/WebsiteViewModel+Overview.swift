@@ -45,22 +45,22 @@ extension WebsiteViewModel {
     func loadAudienceTab(websiteId: String, period: StatsPeriod) async {
         async let referrerResult = fetchMetricDimensionResult(.referrer, websiteId: websiteId, period: period)
         async let browserResult = fetchMetricDimensionResult(.browser, websiteId: websiteId, period: period)
+        async let osResult = fetchMetricDimensionResult(.os, websiteId: websiteId, period: period)
         async let deviceResult = fetchMetricDimensionResult(.device, websiteId: websiteId, period: period)
         async let countryResult = fetchMetricDimensionResult(.country, websiteId: websiteId, period: period)
         async let eventResult = fetchMetricDimensionResult(.event, websiteId: websiteId, period: period)
-        async let channelResult = fetchMetricDimensionResult(.channel, websiteId: websiteId, period: period)
 
         await applyMetricDimensionResult(await referrerResult, dimension: .referrer, websiteId: websiteId, period: period, tab: .audience)
         await applyMetricDimensionResult(await browserResult, dimension: .browser, websiteId: websiteId, period: period, tab: .audience)
+        await applyMetricDimensionResult(await osResult, dimension: .os, websiteId: websiteId, period: period, tab: .audience)
         await applyMetricDimensionResult(await deviceResult, dimension: .device, websiteId: websiteId, period: period, tab: .audience)
         await applyMetricDimensionResult(await countryResult, dimension: .country, websiteId: websiteId, period: period, tab: .audience)
         await applyMetricDimensionResult(await eventResult, dimension: .event, websiteId: websiteId, period: period, tab: .audience)
-        await applyMetricDimensionResult(await channelResult, dimension: .channel, websiteId: websiteId, period: period, tab: .audience)
     }
 
     func fetchWebsiteStatsResult(websiteId: String, period: StatsPeriod) async -> Result<WebsiteStatsResponse, Error> {
         await captureResult {
-            try await service.fetchWebsiteStatsAsync(id: websiteId, period: period)
+            try await service.fetchWebsiteStatsAsync(id: websiteId, period: period, query: queryOptions)
         }
     }
 
@@ -68,16 +68,16 @@ extension WebsiteViewModel {
         await captureResult {
             let primaryType = dimension == .url ? "path" : dimension.rawValue
             do {
-                return try await service.fetchWebsiteMetricsAsync(id: websiteId, period: period, type: primaryType)
+                return try await service.fetchWebsiteMetricsAsync(id: websiteId, period: period, type: primaryType, query: queryOptions)
             } catch where dimension == .url {
-                return try await service.fetchWebsiteMetricsAsync(id: websiteId, period: period, type: "url")
+                return try await service.fetchWebsiteMetricsAsync(id: websiteId, period: period, type: "url", query: queryOptions)
             }
         }
     }
 
     func fetchPageviewsResult(websiteId: String, period: StatsPeriod) async -> Result<PageviewsResponse, Error> {
         await captureResult {
-            try await service.fetchWebsitePageviewsAsync(id: websiteId, period: period)
+            try await service.fetchWebsitePageviewsAsync(id: websiteId, period: period, query: queryOptions)
         }
     }
 
