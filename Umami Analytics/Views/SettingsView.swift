@@ -144,8 +144,7 @@ struct SettingsView: View {
                             ForEach(authManager.workspaceOptions, id: \.id) { workspace in
                                 Button(workspace.name) {
                                     selectedWorkspaceID = workspace.id
-                                    authManager.selectWorkspace(workspace)
-                                    refreshWorkspaceResources()
+                                    resourceViewModel.applyWorkspaceSelection(workspace, reloadResources: true)
                                 }
                             }
                         } label: {
@@ -185,6 +184,13 @@ struct SettingsView: View {
             .navigationTitle("Settings")
             .onAppear {
                 selectedWorkspaceID = authManager.selectedWorkspace.id
+                resourceViewModel.loadWebsites()
+            }
+            .onChange(of: authManager.selectedWorkspace) { _, newSelection in
+                selectedWorkspaceID = newSelection.id
+                resourceViewModel.applyWorkspaceSelection(newSelection, reloadResources: true)
+            }
+            .onChange(of: resourceViewModel.filteredWebsites.map(\.id)) { _, _ in
                 refreshWorkspaceResources()
             }
             .alert("Sign Out", isPresented: $showingLogoutConfirmation) {
