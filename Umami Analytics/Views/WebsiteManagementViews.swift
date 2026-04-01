@@ -35,8 +35,10 @@ struct WebsiteFormView: View {
     @State private var domain: String
     @State private var shareId: String
     @State private var teamId: String
+    @State private var transferTargetID: String
     @State private var isSubmitting = false
     @State private var localError: String?
+    @State private var showingResetConfirmation = false
 
     private var isReadOnlySession: Bool {
         AuthManager.shared.isReadOnlySession
@@ -52,11 +54,13 @@ struct WebsiteFormView: View {
             _domain = State(initialValue: "")
             _shareId = State(initialValue: "")
             _teamId = State(initialValue: "")
+            _transferTargetID = State(initialValue: WorkspaceSelection.personal.id)
         case .edit(let website):
             _name = State(initialValue: website.name)
             _domain = State(initialValue: website.domain)
             _shareId = State(initialValue: website.shareId ?? "")
             _teamId = State(initialValue: website.teamId ?? "")
+            _transferTargetID = State(initialValue: website.teamId ?? WorkspaceSelection.personal.id)
         }
     }
 
@@ -112,6 +116,9 @@ struct WebsiteFormView: View {
                         .foregroundColor(.secondary)
                 }
 
+                ownershipSection
+                dangerZoneSection
+
                 if let localError {
                     Section {
                         Text(localError)
@@ -143,6 +150,20 @@ struct WebsiteFormView: View {
         }
         .onAppear {
             viewModel.errorMessage = nil
+        }
+        .confirmationDialog(
+            "Reset Analytics",
+            isPresented: $showingResetConfirmation,
+            titleVisibility: .visible
+        ) {
+            if case .edit(let website) = mode {
+                Button("Reset Website Data", role: .destructive) {
+                    resetWebsite(website)
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This clears collected analytics for the selected website.")
         }
     }
 
@@ -206,6 +227,80 @@ struct WebsiteFormView: View {
             }
             localError = message
             viewModel.errorMessage = nil
+        }
+    }
+
+    @ViewBuilder
+    private var ownershipSection: some View {
+        if case .edit(let website) = mode {
+            Section(header: Text("Ownership")) {
+                Picker("Transfer To", selection: $transferTargetID) {
+                    ForEach(AuthManager.shared.workspaceOptions, id: \.id) { option in
+                        Text(option.name).tag(option.id)
+                    }
+                }
+                .disabled(isSubmitting || isReadOnlySession)
+
+                Button("Transfer Website") {
+                    transferWebsite(website)
+                }
+                .disabled(
+                    isSubmitting ||
+                    isReadOnlySession ||
+                    transferTargetID == (website.teamId ?? WorkspaceSelection.personal.id)
+                )
+
+                Text("Move this website between your personal workspace and a team.")
+                    .font(.footnote)
+                    .foregroundColor(.secondary)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var dangerZoneSection: some View {
+        if case .edit = mode {
+            Section(header: Text("Danger Zone")) {
+                Button("Reset Analytics", role: .destructive) {
+                    showingResetConfirmation = true
+                }
+                .disabled(isSubmitting || isReadOnlySession)
+            }
+        }
+    }
+
+    private func resetWebsite(_ website: WebsiteModel) {
+        isSubmitting = true
+        localError = nil
+
+        viewModel.resetWebsite(website) { result in
+            switch result {
+            case .success:
+                isSubmitting = false
+                dismiss()
+            case .failure(let error):
+                isSubmitting = false
+                localError = (error as? APIError)?.message ?? error.localizedDescription
+                viewModel.errorMessage = nil
+            }
+        }
+    }
+
+    private func transferWebsite(_ website: WebsiteModel) {
+        isSubmitting = true
+        localError = nil
+
+        let targetTeamId = transferTargetID == WorkspaceSelection.personal.id ? nil : transferTargetID
+        viewModel.transferWebsite(website, teamId: targetTeamId) { result in
+            switch result {
+            case .success:
+                isSubmitting = false
+                dismiss()
+            case .failure(let error):
+                isSubmitting = false
+                localError = (error as? APIError)?.message ?? error.localizedDescription
+                viewModel.errorMessage = nil
+            }
         }
     }
 }
