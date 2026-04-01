@@ -330,6 +330,52 @@ final class WebsiteViewModel: ObservableObject {
         }
     }
 
+    func resetWebsite(_ website: WebsiteModel, completion: @escaping (Result<Void, Error>) -> Void) {
+        isPerformingAction = true
+
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+
+            defer { isPerformingAction = false }
+
+            do {
+                try await service.resetWebsiteAsync(id: website.id)
+                service.invalidateAnalyticsCache(for: website.id)
+
+                if selectedWebsite?.id == website.id {
+                    loadedTabs.removeAll()
+                    refreshRequestTracking()
+                    loadTabIfNeeded(selectedDetailTab, force: true)
+                }
+
+                loadDashboardStats()
+                completion(.success(()))
+            } catch {
+                setRootError(error)
+                completion(.failure(error))
+            }
+        }
+    }
+
+    func transferWebsite(_ website: WebsiteModel, teamId: String?, completion: @escaping (Result<Void, Error>) -> Void) {
+        isPerformingAction = true
+
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+
+            defer { isPerformingAction = false }
+
+            do {
+                try await service.transferWebsiteAsync(id: website.id, userId: teamId == nil ? AuthManager.shared.currentUser?.id : nil, teamId: teamId)
+                loadWebsites()
+                completion(.success(()))
+            } catch {
+                setRootError(error)
+                completion(.failure(error))
+            }
+        }
+    }
+
     func changePeriod(_ period: StatsPeriod) {
         selectedPeriod = period
         loadDashboardStats()
