@@ -14,6 +14,8 @@ struct LoginView: View {
     @State private var username = ""
     @State private var password = ""
     @State private var apiKey = AuthManager.shared.cloudAPIKey ?? ""
+    @State private var shareID = ""
+    @State private var cloudRegion: CloudRegion = AuthManager.shared.activeCloudRegion
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var showError = false
@@ -77,6 +79,18 @@ struct LoginView: View {
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                         }
+
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Cloud Region")
+                                .font(.headline)
+
+                            Picker("Cloud Region", selection: $cloudRegion) {
+                                ForEach(CloudRegion.allCases) { region in
+                                    Text(region.displayName).tag(region)
+                                }
+                            }
+                            .pickerStyle(.segmented)
+                        }
                     } else {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Server URL")
@@ -96,36 +110,59 @@ struct LoginView: View {
                                 )
                         }
 
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Username")
-                                .font(.headline)
-                                .foregroundColor(.primary)
+                        if serverType == .publicShare {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Share ID")
+                                    .font(.headline)
+                                    .foregroundColor(.primary)
 
-                            TextField("admin", text: $username)
-                                .textInputAutocapitalization(.never)
-                                .autocorrectionDisabled()
-                                .padding()
-                                .background(Color(UIColor.systemBackground))
-                                .cornerRadius(10)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 10)
-                                        .stroke(Color.gray.opacity(0.3), lineWidth: 1)
-                                )
-                        }
+                                TextField("share_abcdef", text: $shareID)
+                                    .textInputAutocapitalization(.never)
+                                    .autocorrectionDisabled()
+                                    .padding()
+                                    .background(Color(UIColor.systemBackground))
+                                    .cornerRadius(10)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 10)
+                                            .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                                    )
 
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Password")
-                                .font(.headline)
-                                .foregroundColor(.primary)
+                                Text("Shared dashboards open in read-only mode.")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        } else {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Username")
+                                    .font(.headline)
+                                    .foregroundColor(.primary)
 
-                            SecureField("Password", text: $password)
-                                .padding()
-                                .background(Color(UIColor.systemBackground))
-                                .cornerRadius(10)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 10)
-                                        .stroke(Color.gray.opacity(0.3), lineWidth: 1)
-                                )
+                                TextField("admin", text: $username)
+                                    .textInputAutocapitalization(.never)
+                                    .autocorrectionDisabled()
+                                    .padding()
+                                    .background(Color(UIColor.systemBackground))
+                                    .cornerRadius(10)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 10)
+                                            .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                                    )
+                            }
+
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Password")
+                                    .font(.headline)
+                                    .foregroundColor(.primary)
+
+                                SecureField("Password", text: $password)
+                                    .padding()
+                                    .background(Color(UIColor.systemBackground))
+                                    .cornerRadius(10)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 10)
+                                            .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                                    )
+                            }
                         }
                     }
 
@@ -180,6 +217,9 @@ struct LoginView: View {
             return !serverURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
                 !username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
                 !password.isEmpty
+        case .publicShare:
+            return !serverURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+                !shareID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
     }
 
@@ -193,11 +233,13 @@ struct LoginView: View {
 
             do {
                 try await AuthManager.shared.login(
+                    serverURL: serverType == .selfHosted || serverType == .publicShare ? serverURL : nil,
                     serverType: serverType,
-                    serverURL: serverType == .selfHosted ? serverURL : nil,
                     username: username,
                     password: password,
-                    apiKey: serverType == .cloud ? apiKey : nil
+                    apiKey: serverType == .cloud ? apiKey : nil,
+                    shareID: serverType == .publicShare ? shareID : nil,
+                    cloudRegion: cloudRegion
                 )
                 isAuthenticated = true
             } catch {
@@ -216,8 +258,11 @@ struct LoginView: View {
     private func loadInitialState() {
         let authManager = AuthManager.shared
         serverType = authManager.serverType
+        cloudRegion = authManager.activeCloudRegion
         if serverType == .selfHosted {
             serverURL = authManager.savedSelfHostedServerURL ?? authManager.serverURL ?? ""
+        } else if serverType == .publicShare {
+            serverURL = authManager.savedPublicShareServerURL ?? authManager.serverURL ?? ""
         } else {
             serverURL = ""
         }
@@ -227,4 +272,26 @@ struct LoginView: View {
 
 #Preview {
     LoginView(isAuthenticated: .constant(false))
+}
+
+private extension AuthManager {
+    func login(
+        serverURL: String?,
+        serverType: ServerType,
+        username: String?,
+        password: String?,
+        apiKey: String?,
+        shareID: String? = nil,
+        cloudRegion: CloudRegion = .global
+    ) async throws {
+        try await login(
+            serverType: serverType,
+            serverURL: serverURL,
+            username: username,
+            password: password,
+            apiKey: apiKey,
+            shareID: shareID,
+            cloudRegion: cloudRegion
+        )
+    }
 }
