@@ -10,6 +10,7 @@ import SwiftUI
 @MainActor
 struct WebsitesView: View {
     @StateObject private var viewModel = WebsiteViewModel()
+    @ObservedObject private var authManager = AuthManager.shared
     @State private var showingAddWebsite = false
     @State private var websiteToEdit: WebsiteModel?
     @State private var websiteForScript: WebsiteModel?
@@ -21,7 +22,9 @@ struct WebsitesView: View {
             Group {
                 if viewModel.hasWebsites {
                     List {
-                        ForEach(viewModel.websites) { website in
+                        workspaceSection
+
+                        ForEach(viewModel.filteredWebsites) { website in
                             NavigationLink {
                                 WebsiteDetailContainerView(website: website)
                             } label: {
@@ -38,26 +41,30 @@ struct WebsitesView: View {
                                 }
                                 .tint(.yellow)
 
-                                Button {
-                                    websiteForScript = website
-                                } label: {
-                                    Label("Script", systemImage: "doc.on.doc")
+                                if canManageWebsites {
+                                    Button {
+                                        websiteForScript = website
+                                    } label: {
+                                        Label("Script", systemImage: "doc.on.doc")
+                                    }
+                                    .tint(.purple)
                                 }
-                                .tint(.purple)
                             }
                             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                Button {
-                                    websiteToEdit = website
-                                } label: {
-                                    Label("Edit", systemImage: "square.and.pencil")
-                                }
-                                .tint(.blue)
+                                if canManageWebsites {
+                                    Button {
+                                        websiteToEdit = website
+                                    } label: {
+                                        Label("Edit", systemImage: "square.and.pencil")
+                                    }
+                                    .tint(.blue)
 
-                                Button(role: .destructive) {
-                                    websitePendingDeletion = website
-                                    showingDeleteConfirmation = true
-                                } label: {
-                                    Label("Delete", systemImage: "trash")
+                                    Button(role: .destructive) {
+                                        websitePendingDeletion = website
+                                        showingDeleteConfirmation = true
+                                    } label: {
+                                        Label("Delete", systemImage: "trash")
+                                    }
                                 }
                             }
                             .contextMenu {
@@ -70,25 +77,27 @@ struct WebsitesView: View {
                                     )
                                 }
 
-                                Button {
-                                    websiteToEdit = website
-                                } label: {
-                                    Label("Edit Website", systemImage: "square.and.pencil")
-                                }
+                                if canManageWebsites {
+                                    Button {
+                                        websiteToEdit = website
+                                    } label: {
+                                        Label("Edit Website", systemImage: "square.and.pencil")
+                                    }
 
-                                Button {
-                                    websiteForScript = website
-                                } label: {
-                                    Label("Tracking Script", systemImage: "doc.on.doc")
-                                }
+                                    Button {
+                                        websiteForScript = website
+                                    } label: {
+                                        Label("Tracking Script", systemImage: "doc.on.doc")
+                                    }
 
-                                Divider()
+                                    Divider()
 
-                                Button(role: .destructive) {
-                                    websitePendingDeletion = website
-                                    showingDeleteConfirmation = true
-                                } label: {
-                                    Label("Delete Website", systemImage: "trash")
+                                    Button(role: .destructive) {
+                                        websitePendingDeletion = website
+                                        showingDeleteConfirmation = true
+                                    } label: {
+                                        Label("Delete Website", systemImage: "trash")
+                                    }
                                 }
                             }
                         }
@@ -108,16 +117,22 @@ struct WebsitesView: View {
                             .font(.headline)
                             .foregroundStyle(.secondary)
 
-                        Text("Websites connected to your Umami account will appear here.")
+                        Text(
+                            authManager.isReadOnlySession
+                            ? "This shared dashboard does not currently expose any websites."
+                            : "Websites connected to your selected workspace will appear here."
+                        )
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
                             .padding(.horizontal, 40)
 
-                        Button("Add Website") {
-                            showingAddWebsite = true
+                        if canManageWebsites {
+                            Button("Add Website") {
+                                showingAddWebsite = true
+                            }
+                            .buttonStyle(.borderedProminent)
                         }
-                        .buttonStyle(.borderedProminent)
 
                         Button("Refresh") {
                             viewModel.loadWebsites()
@@ -131,10 +146,12 @@ struct WebsitesView: View {
             .navigationTitle("Websites")
             .toolbar {
                 ToolbarItemGroup(placement: .topBarTrailing) {
-                    Button {
-                        showingAddWebsite = true
-                    } label: {
-                        Image(systemName: "plus")
+                    if canManageWebsites {
+                        Button {
+                            showingAddWebsite = true
+                        } label: {
+                            Image(systemName: "plus")
+                        }
                     }
 
                     Button(action: {
@@ -178,6 +195,9 @@ struct WebsitesView: View {
         .onAppear {
             viewModel.loadWebsites()
         }
+        .onChange(of: authManager.selectedWorkspace) { _, newSelection in
+            viewModel.applyWorkspaceSelection(newSelection)
+        }
         .sheet(isPresented: $showingAddWebsite) {
             WebsiteFormView(mode: .create, viewModel: viewModel)
         }
@@ -186,6 +206,41 @@ struct WebsitesView: View {
         }
         .sheet(item: $websiteForScript) { website in
             TrackingScriptView(website: website)
+        }
+    }
+
+    private var canManageWebsites: Bool {
+        !authManager.isReadOnlySession
+    }
+
+    @ViewBuilder
+    private var workspaceSection: some View {
+        if authManager.workspaceOptions.count > 1 || authManager.isReadOnlySession {
+            Section {
+                HStack {
+                    Label("Workspace", systemImage: "person.2")
+                    Spacer()
+                    Picker(
+                        "Workspace",
+                        selection: Binding(
+                            get: { authManager.selectedWorkspace },
+                            set: { viewModel.applyWorkspaceSelection($0) }
+                        )
+                    ) {
+                        ForEach(authManager.workspaceOptions, id: \.id) { option in
+                            Text(option.name).tag(option)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .disabled(authManager.isReadOnlySession)
+                }
+
+                if authManager.isReadOnlySession {
+                    Label("Editing is unavailable while browsing a public share.", systemImage: "lock.fill")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            }
         }
     }
 }
