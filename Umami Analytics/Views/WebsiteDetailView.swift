@@ -34,6 +34,7 @@ struct WebsiteDetailView: View {
             VStack(spacing: 20) {
                 websiteHeader
                 periodSelector
+                queryControls
                 tabPicker
 
                 currentTabView
@@ -69,7 +70,12 @@ struct WebsiteDetailView: View {
         .task {
             if let website = viewModel.selectedWebsite {
                 viewModel.loadWebsiteData(website: website)
+                viewModel.loadFilterValues()
+                viewModel.loadWorkspaceResources()
             }
+        }
+        .onChange(of: viewModel.selectedPeriod) { _, _ in
+            viewModel.loadFilterValues()
         }
         .onDisappear {
             viewModel.handleDetailDisappear()
@@ -135,6 +141,114 @@ struct WebsiteDetailView: View {
         .padding(.horizontal)
     }
 
+    private var queryControls: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 12) {
+                Menu {
+                    ForEach(AnalyticsComparison.allCases) { comparison in
+                        Button(comparison.displayName) {
+                            viewModel.updateComparison(comparison)
+                        }
+                    }
+                } label: {
+                    queryPill(title: "Compare", value: viewModel.queryOptions.compare.displayName)
+                }
+
+                if viewModel.queryOptions.hasActiveSelections {
+                    Button("Clear Filters") {
+                        viewModel.clearQuerySelections()
+                    }
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .buttonStyle(.bordered)
+                }
+
+                Spacer(minLength: 0)
+            }
+
+            if !filterMenus.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(filterMenus) { menu in
+                            Menu {
+                                Button("All \(menu.key.displayName.lowercased())") {
+                                    viewModel.updateFilter(menu.key, value: nil)
+                                }
+
+                                ForEach(menu.values.prefix(12)) { value in
+                                    Button(value.displayText) {
+                                        viewModel.updateFilter(menu.key, value: value.value)
+                                    }
+                                }
+                            } label: {
+                                queryPill(
+                                    title: menu.key.displayName,
+                                    value: selectedFilterValueText(for: menu.key) ?? "All"
+                                )
+                            }
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+            }
+
+            if !viewModel.queryOptions.activeFilters.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(viewModel.queryOptions.activeFilters, id: \.key) { filter in
+                            HStack(spacing: 6) {
+                                Text(filter.key.displayName)
+                                    .fontWeight(.medium)
+                                Text(filter.value)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .font(.caption)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(Color(UIColor.secondarySystemBackground))
+                            .clipShape(Capsule())
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+            }
+        }
+        .padding(.horizontal)
+    }
+
+    private var filterMenus: [QueryMenu] {
+        let keys = viewModel.availableFilterValues.keys.sorted { $0.displayName < $1.displayName }
+
+        return keys.compactMap { key in
+            guard let values = viewModel.availableFilterValues[key], !values.isEmpty else {
+                return nil
+            }
+
+            return QueryMenu(key: key, values: values)
+        }
+    }
+
+    private func selectedFilterValueText(for key: AnalyticsFilterKey) -> String? {
+        guard let value = viewModel.queryOptions.filters[key], !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return nil
+        }
+        return value
+    }
+
+    private func queryPill(title: String, value: String) -> some View {
+        HStack(spacing: 8) {
+            Text(title)
+                .fontWeight(.medium)
+            Text(value)
+                .foregroundStyle(.secondary)
+        }
+        .font(.subheadline)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Color(UIColor.secondarySystemBackground))
+        .clipShape(Capsule())
+    }
+
     private var tabPicker: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
@@ -158,6 +272,13 @@ struct WebsiteDetailView: View {
             .padding(.horizontal)
         }
     }
+}
+
+private struct QueryMenu: Identifiable {
+    let key: AnalyticsFilterKey
+    let values: [FilterValue]
+
+    var id: String { key.rawValue }
 }
 
 #Preview {
