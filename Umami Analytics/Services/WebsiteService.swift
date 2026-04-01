@@ -17,24 +17,31 @@ protocol WebsiteServicing {
     func deleteWebsite(id: String) -> AnyPublisher<Void, Error>
 
     func fetchWebsites() -> AnyPublisher<[WebsiteModel], Error>
-    func fetchWebsiteStats(id: String, period: StatsPeriod) -> AnyPublisher<WebsiteStatsResponse, Error>
-    func fetchWebsiteMetrics(id: String, period: StatsPeriod, type: String) -> AnyPublisher<WebsiteMetricsResponse, Error>
-    func fetchWebsitePageviews(id: String, period: StatsPeriod) -> AnyPublisher<PageviewsResponse, Error>
+    func fetchWebsiteStats(id: String, period: StatsPeriod, query: AnalyticsQueryOptions) -> AnyPublisher<WebsiteStatsResponse, Error>
+    func fetchWebsiteMetrics(id: String, period: StatsPeriod, type: String, query: AnalyticsQueryOptions) -> AnyPublisher<WebsiteMetricsResponse, Error>
+    func fetchWebsitePageviews(id: String, period: StatsPeriod, query: AnalyticsQueryOptions) -> AnyPublisher<PageviewsResponse, Error>
     func fetchActiveUsers(id: String) -> AnyPublisher<ActiveUsersResponse, Error>
     func fetchRealtimeSnapshot(websiteId: String) -> AnyPublisher<RealtimeData, Error>
-    func fetchWebsiteEventSeries(id: String, period: StatsPeriod, eventName: String?) -> AnyPublisher<[TimeSeriesData], Error>
-    func fetchWebsiteEvents(id: String, period: StatsPeriod, page: Int, pageSize: Int, search: String?) -> AnyPublisher<PaginatedResponse<AnalyticsRecord>, Error>
+    func fetchWebsiteEventSeries(id: String, period: StatsPeriod, eventName: String?, query: AnalyticsQueryOptions) -> AnyPublisher<[TimeSeriesData], Error>
+    func fetchWebsiteEvents(id: String, period: StatsPeriod, page: Int, pageSize: Int, search: String?, query: AnalyticsQueryOptions) -> AnyPublisher<PaginatedResponse<AnalyticsRecord>, Error>
+    func fetchWebsiteValues(id: String, type: String, period: StatsPeriod, search: String?, query: AnalyticsQueryOptions) -> AnyPublisher<[FilterValue], Error>
     func fetchEventDataFields(id: String, period: StatsPeriod) -> AnyPublisher<[FilterValue], Error>
     func fetchEventDataProperties(id: String, period: StatsPeriod, propertyName: String?) -> AnyPublisher<[FilterValue], Error>
     func fetchEventDataEvents(id: String, period: StatsPeriod, event: String?) -> AnyPublisher<[FilterValue], Error>
-    func fetchEventDataStats(id: String, period: StatsPeriod) -> AnyPublisher<[String: MetricValue], Error>
+    func fetchEventDataStats(id: String, period: StatsPeriod, query: AnalyticsQueryOptions) -> AnyPublisher<[String: MetricValue], Error>
     func fetchEventDataValues(id: String, period: StatsPeriod, eventName: String?, propertyName: String?) -> AnyPublisher<[FilterValue], Error>
-    func fetchWebsiteSessionStats(id: String, period: StatsPeriod) -> AnyPublisher<[String: MetricValue], Error>
-    func fetchWebsiteSessionsWeekly(id: String, period: StatsPeriod) -> AnyPublisher<[WeeklySessionPoint], Error>
-    func fetchWebsiteSessions(id: String, period: StatsPeriod, page: Int, pageSize: Int, search: String?) -> AnyPublisher<PaginatedResponse<AnalyticsRecord>, Error>
+    func fetchWebsiteSessionStats(id: String, period: StatsPeriod, query: AnalyticsQueryOptions) -> AnyPublisher<[String: MetricValue], Error>
+    func fetchWebsiteSessionsWeekly(id: String, period: StatsPeriod, query: AnalyticsQueryOptions) -> AnyPublisher<[WeeklySessionPoint], Error>
+    func fetchWebsiteSessions(id: String, period: StatsPeriod, page: Int, pageSize: Int, search: String?, query: AnalyticsQueryOptions) -> AnyPublisher<PaginatedResponse<AnalyticsRecord>, Error>
     func fetchWebsiteSession(id: String, sessionId: String) -> AnyPublisher<AnalyticsRecord, Error>
     func fetchWebsiteSessionActivity(id: String, sessionId: String, period: StatsPeriod) -> AnyPublisher<[AnalyticsRecord], Error>
     func fetchWebsiteSessionProperties(id: String, sessionId: String) -> AnyPublisher<[String: JSONValue], Error>
+    func fetchWebsiteReports(websiteId: String) -> AnyPublisher<[SavedReport], Error>
+    func fetchWebsiteSegments(websiteId: String, type: SegmentType?) -> AnyPublisher<[SegmentDefinition], Error>
+    func fetchLinks(teamId: String?) -> AnyPublisher<[TrackedAsset], Error>
+    func fetchPixels(teamId: String?) -> AnyPublisher<[TrackedAsset], Error>
+    func resetWebsite(id: String) -> AnyPublisher<Void, Error>
+    func transferWebsite(id: String, userId: String?, teamId: String?) -> AnyPublisher<Void, Error>
 
     func invalidateAnalyticsCache(for websiteId: String?)
     func startRealtimeUpdates(for websiteId: String, interval: TimeInterval, completion: @escaping (Int) -> Void)
@@ -46,27 +53,34 @@ protocol WebsiteServicing {
     // MARK: - Async/Await Methods
 
     func fetchWebsitesAsync() async throws -> [WebsiteModel]
-    func fetchWebsiteStatsAsync(id: String, period: StatsPeriod) async throws -> WebsiteStatsResponse
-    func fetchWebsiteMetricsAsync(id: String, period: StatsPeriod, type: String) async throws -> WebsiteMetricsResponse
-    func fetchWebsitePageviewsAsync(id: String, period: StatsPeriod) async throws -> PageviewsResponse
+    func fetchWebsiteStatsAsync(id: String, period: StatsPeriod, query: AnalyticsQueryOptions) async throws -> WebsiteStatsResponse
+    func fetchWebsiteMetricsAsync(id: String, period: StatsPeriod, type: String, query: AnalyticsQueryOptions) async throws -> WebsiteMetricsResponse
+    func fetchWebsitePageviewsAsync(id: String, period: StatsPeriod, query: AnalyticsQueryOptions) async throws -> PageviewsResponse
     func fetchActiveUsersAsync(id: String) async throws -> ActiveUsersResponse
     func fetchRealtimeSnapshotAsync(websiteId: String) async throws -> RealtimeData
-    func fetchWebsiteEventSeriesAsync(id: String, period: StatsPeriod, eventName: String?) async throws -> [TimeSeriesData]
-    func fetchWebsiteEventsAsync(id: String, period: StatsPeriod, page: Int, pageSize: Int, search: String?) async throws -> PaginatedResponse<AnalyticsRecord>
+    func fetchWebsiteEventSeriesAsync(id: String, period: StatsPeriod, eventName: String?, query: AnalyticsQueryOptions) async throws -> [TimeSeriesData]
+    func fetchWebsiteEventsAsync(id: String, period: StatsPeriod, page: Int, pageSize: Int, search: String?, query: AnalyticsQueryOptions) async throws -> PaginatedResponse<AnalyticsRecord>
+    func fetchWebsiteValuesAsync(id: String, type: String, period: StatsPeriod, search: String?, query: AnalyticsQueryOptions) async throws -> [FilterValue]
     func fetchEventDataFieldsAsync(id: String, period: StatsPeriod) async throws -> [FilterValue]
     func fetchEventDataPropertiesAsync(id: String, period: StatsPeriod, propertyName: String?) async throws -> [FilterValue]
     func fetchEventDataEventsAsync(id: String, period: StatsPeriod, event: String?) async throws -> [FilterValue]
-    func fetchEventDataStatsAsync(id: String, period: StatsPeriod) async throws -> [String: MetricValue]
+    func fetchEventDataStatsAsync(id: String, period: StatsPeriod, query: AnalyticsQueryOptions) async throws -> [String: MetricValue]
     func fetchEventDataValuesAsync(id: String, period: StatsPeriod, eventName: String?, propertyName: String?) async throws -> [FilterValue]
-    func fetchWebsiteSessionStatsAsync(id: String, period: StatsPeriod) async throws -> [String: MetricValue]
-    func fetchWebsiteSessionsWeeklyAsync(id: String, period: StatsPeriod) async throws -> [WeeklySessionPoint]
-    func fetchWebsiteSessionsAsync(id: String, period: StatsPeriod, page: Int, pageSize: Int, search: String?) async throws -> PaginatedResponse<AnalyticsRecord>
+    func fetchWebsiteSessionStatsAsync(id: String, period: StatsPeriod, query: AnalyticsQueryOptions) async throws -> [String: MetricValue]
+    func fetchWebsiteSessionsWeeklyAsync(id: String, period: StatsPeriod, query: AnalyticsQueryOptions) async throws -> [WeeklySessionPoint]
+    func fetchWebsiteSessionsAsync(id: String, period: StatsPeriod, page: Int, pageSize: Int, search: String?, query: AnalyticsQueryOptions) async throws -> PaginatedResponse<AnalyticsRecord>
     func fetchWebsiteSessionAsync(id: String, sessionId: String) async throws -> AnalyticsRecord
     func fetchWebsiteSessionActivityAsync(id: String, sessionId: String, period: StatsPeriod) async throws -> [AnalyticsRecord]
     func fetchWebsiteSessionPropertiesAsync(id: String, sessionId: String) async throws -> [String: JSONValue]
+    func fetchWebsiteReportsAsync(websiteId: String) async throws -> [SavedReport]
+    func fetchWebsiteSegmentsAsync(websiteId: String, type: SegmentType?) async throws -> [SegmentDefinition]
+    func fetchLinksAsync(teamId: String?) async throws -> [TrackedAsset]
+    func fetchPixelsAsync(teamId: String?) async throws -> [TrackedAsset]
     func createWebsiteAsync(name: String, domain: String, shareId: String?, teamId: String?, id: String?) async throws -> WebsiteModel
     func updateWebsiteAsync(id: String, name: String?, domain: String?, shareId: String?) async throws -> WebsiteModel
     func deleteWebsiteAsync(id: String) async throws
+    func resetWebsiteAsync(id: String) async throws
+    func transferWebsiteAsync(id: String, userId: String?, teamId: String?) async throws
     func startRealtimeUpdatesAsync(for websiteId: String, interval: TimeInterval) -> AsyncStream<Int>
 }
 
@@ -150,6 +164,14 @@ final class WebsiteService: WebsiteServicing {
             return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
         }
 
+        if let session = AuthManager.shared.currentSession,
+           session.serverType == .publicShare,
+           let websiteId = session.sharedWebsiteId {
+            return apiClient.getWebsite(id: websiteId)
+                .map { [$0] }
+                .eraseToAnyPublisher()
+        }
+
         return apiClient.getAllWebsites()
             .handleEvents(receiveOutput: { [weak self] websites in
                 self?.saveWebsitesToCoreData(websites)
@@ -170,14 +192,14 @@ final class WebsiteService: WebsiteServicing {
 
     // MARK: - Website Stats
 
-    func fetchWebsiteStats(id: String, period: StatsPeriod = .day) -> AnyPublisher<WebsiteStatsResponse, Error> {
+    func fetchWebsiteStats(id: String, period: StatsPeriod = .day, query: AnalyticsQueryOptions = .default) -> AnyPublisher<WebsiteStatsResponse, Error> {
         guard let apiClient = apiClientProvider() else {
             return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
         }
 
         let dateRange = createDateRange(for: period)
 
-        return apiClient.getWebsiteStats(id: id, dateRange: dateRange)
+        return apiClient.getWebsiteStats(id: id, dateRange: dateRange, query: query)
             .handleEvents(receiveOutput: { [weak self] response in
                 self?.saveStatsToCache(websiteId: id, stats: response, period: period)
             })
@@ -186,12 +208,12 @@ final class WebsiteService: WebsiteServicing {
 
     // MARK: - Website Metrics
 
-    func fetchWebsiteMetrics(id: String, period: StatsPeriod = .day, type: String = "path") -> AnyPublisher<WebsiteMetricsResponse, Error> {
+    func fetchWebsiteMetrics(id: String, period: StatsPeriod = .day, type: String = "path", query: AnalyticsQueryOptions = .default) -> AnyPublisher<WebsiteMetricsResponse, Error> {
         guard let apiClient = apiClientProvider() else {
             return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
         }
 
-        let cacheKey = makeCacheKey(prefix: "metrics", websiteId: id, period: period, extras: [type])
+        let cacheKey = makeCacheKey(prefix: "metrics", websiteId: id, period: period, extras: [type, query.cacheKey])
         if let cached: WebsiteMetricsResponse = cachedValue(for: cacheKey) {
             return Just(cached)
                 .setFailureType(to: Error.self)
@@ -200,7 +222,7 @@ final class WebsiteService: WebsiteServicing {
 
         let dateRange = createDateRange(for: period)
 
-        return apiClient.getWebsiteMetrics(id: id, dateRange: dateRange, type: type)
+        return apiClient.getWebsiteMetrics(id: id, dateRange: dateRange, type: type, query: query)
             .handleEvents(receiveOutput: { [weak self] response in
                 self?.saveMetricsToCache(websiteId: id, metrics: response, period: period)
                 self?.setCachedValue(response, for: cacheKey)
@@ -210,14 +232,14 @@ final class WebsiteService: WebsiteServicing {
 
     // MARK: - Website Pageviews
 
-    func fetchWebsitePageviews(id: String, period: StatsPeriod = .day) -> AnyPublisher<PageviewsResponse, Error> {
+    func fetchWebsitePageviews(id: String, period: StatsPeriod = .day, query: AnalyticsQueryOptions = .default) -> AnyPublisher<PageviewsResponse, Error> {
         guard let apiClient = apiClientProvider() else {
             return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
         }
 
         let dateRange = createDateRange(for: period)
 
-        return apiClient.getWebsitePageviews(id: id, dateRange: dateRange)
+        return apiClient.getWebsitePageviews(id: id, dateRange: dateRange, query: query)
             .eraseToAnyPublisher()
     }
 
@@ -253,7 +275,8 @@ final class WebsiteService: WebsiteServicing {
         period: StatsPeriod = .day,
         page: Int = 1,
         pageSize: Int = AnalyticsRuntimeConfig.default.eventsSessionsPageSize,
-        search: String? = nil
+        search: String? = nil,
+        query: AnalyticsQueryOptions = .default
     ) -> AnyPublisher<PaginatedResponse<AnalyticsRecord>, Error> {
         guard let apiClient = apiClientProvider() else {
             return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
@@ -263,14 +286,14 @@ final class WebsiteService: WebsiteServicing {
             prefix: "events",
             websiteId: id,
             period: period,
-            extras: ["\(page)", "\(pageSize)", search ?? ""]
+            extras: ["\(page)", "\(pageSize)", search ?? "", query.cacheKey]
         )
         if let cached: PaginatedResponse<AnalyticsRecord> = cachedValue(for: cacheKey) {
             return Just(cached).setFailureType(to: Error.self).eraseToAnyPublisher()
         }
 
         let dateRange = createDateRange(for: period)
-        return apiClient.getWebsiteEvents(id: id, dateRange: dateRange, page: page, pageSize: pageSize, search: search)
+        return apiClient.getWebsiteEvents(id: id, dateRange: dateRange, page: page, pageSize: pageSize, search: search, query: query)
             .handleEvents(receiveOutput: { [weak self] response in
                 self?.setCachedValue(response, for: cacheKey)
             })
@@ -280,19 +303,20 @@ final class WebsiteService: WebsiteServicing {
     func fetchWebsiteEventSeries(
         id: String,
         period: StatsPeriod = .day,
-        eventName: String? = nil
+        eventName: String? = nil,
+        query: AnalyticsQueryOptions = .default
     ) -> AnyPublisher<[TimeSeriesData], Error> {
         guard let apiClient = apiClientProvider() else {
             return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
         }
 
-        let cacheKey = makeCacheKey(prefix: "eventSeries", websiteId: id, period: period, extras: [eventName ?? ""])
+        let cacheKey = makeCacheKey(prefix: "eventSeries", websiteId: id, period: period, extras: [eventName ?? "", query.cacheKey])
         if let cached: [TimeSeriesData] = cachedValue(for: cacheKey) {
             return Just(cached).setFailureType(to: Error.self).eraseToAnyPublisher()
         }
 
         let dateRange = createDateRange(for: period)
-        return apiClient.getWebsiteEventSeries(id: id, dateRange: dateRange, eventName: eventName)
+        return apiClient.getWebsiteEventSeries(id: id, dateRange: dateRange, eventName: eventName, query: query)
             .handleEvents(receiveOutput: { [weak self] response in
                 self?.setCachedValue(response, for: cacheKey)
             })
@@ -303,19 +327,20 @@ final class WebsiteService: WebsiteServicing {
         id: String,
         type: String,
         period: StatsPeriod = .day,
-        search: String? = nil
+        search: String? = nil,
+        query: AnalyticsQueryOptions = .default
     ) -> AnyPublisher<[FilterValue], Error> {
         guard let apiClient = apiClientProvider() else {
             return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
         }
 
-        let cacheKey = makeCacheKey(prefix: "values", websiteId: id, period: period, extras: [type, search ?? ""])
+        let cacheKey = makeCacheKey(prefix: "values", websiteId: id, period: period, extras: [type, search ?? "", query.cacheKey])
         if let cached: [FilterValue] = cachedValue(for: cacheKey) {
             return Just(cached).setFailureType(to: Error.self).eraseToAnyPublisher()
         }
 
         let dateRange = createDateRange(for: period)
-        return apiClient.getWebsiteValues(id: id, type: type, dateRange: dateRange, search: search)
+        return apiClient.getWebsiteValues(id: id, type: type, dateRange: dateRange, search: search, query: query)
             .handleEvents(receiveOutput: { [weak self] values in
                 self?.setCachedValue(values, for: cacheKey)
             })
@@ -386,19 +411,20 @@ final class WebsiteService: WebsiteServicing {
 
     func fetchEventDataStats(
         id: String,
-        period: StatsPeriod = .day
+        period: StatsPeriod = .day,
+        query: AnalyticsQueryOptions = .default
     ) -> AnyPublisher<[String: MetricValue], Error> {
         guard let apiClient = apiClientProvider() else {
             return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
         }
 
-        let cacheKey = makeCacheKey(prefix: "eventDataStats", websiteId: id, period: period)
+        let cacheKey = makeCacheKey(prefix: "eventDataStats", websiteId: id, period: period, extras: [query.cacheKey])
         if let cached: [String: MetricValue] = cachedValue(for: cacheKey) {
             return Just(cached).setFailureType(to: Error.self).eraseToAnyPublisher()
         }
 
         let dateRange = createDateRange(for: period)
-        return apiClient.getEventDataStats(id: id, dateRange: dateRange)
+        return apiClient.getEventDataStats(id: id, dateRange: dateRange, query: query)
             .handleEvents(receiveOutput: { [weak self] stats in
                 self?.setCachedValue(stats, for: cacheKey)
             })
@@ -482,7 +508,8 @@ final class WebsiteService: WebsiteServicing {
         period: StatsPeriod = .day,
         page: Int = 1,
         pageSize: Int = AnalyticsRuntimeConfig.default.eventsSessionsPageSize,
-        search: String? = nil
+        search: String? = nil,
+        query: AnalyticsQueryOptions = .default
     ) -> AnyPublisher<PaginatedResponse<AnalyticsRecord>, Error> {
         guard let apiClient = apiClientProvider() else {
             return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
@@ -492,14 +519,14 @@ final class WebsiteService: WebsiteServicing {
             prefix: "sessions",
             websiteId: id,
             period: period,
-            extras: ["\(page)", "\(pageSize)", search ?? ""]
+            extras: ["\(page)", "\(pageSize)", search ?? "", query.cacheKey]
         )
         if let cached: PaginatedResponse<AnalyticsRecord> = cachedValue(for: cacheKey) {
             return Just(cached).setFailureType(to: Error.self).eraseToAnyPublisher()
         }
 
         let dateRange = createDateRange(for: period)
-        return apiClient.getWebsiteSessions(id: id, dateRange: dateRange, page: page, pageSize: pageSize, search: search)
+        return apiClient.getWebsiteSessions(id: id, dateRange: dateRange, page: page, pageSize: pageSize, search: search, query: query)
             .handleEvents(receiveOutput: { [weak self] sessions in
                 self?.setCachedValue(sessions, for: cacheKey)
             })
@@ -508,19 +535,20 @@ final class WebsiteService: WebsiteServicing {
 
     func fetchWebsiteSessionStats(
         id: String,
-        period: StatsPeriod = .day
+        period: StatsPeriod = .day,
+        query: AnalyticsQueryOptions = .default
     ) -> AnyPublisher<[String: MetricValue], Error> {
         guard let apiClient = apiClientProvider() else {
             return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
         }
 
-        let cacheKey = makeCacheKey(prefix: "sessionStats", websiteId: id, period: period)
+        let cacheKey = makeCacheKey(prefix: "sessionStats", websiteId: id, period: period, extras: [query.cacheKey])
         if let cached: [String: MetricValue] = cachedValue(for: cacheKey) {
             return Just(cached).setFailureType(to: Error.self).eraseToAnyPublisher()
         }
 
         let dateRange = createDateRange(for: period)
-        return apiClient.getWebsiteSessionStats(id: id, dateRange: dateRange)
+        return apiClient.getWebsiteSessionStats(id: id, dateRange: dateRange, query: query)
             .handleEvents(receiveOutput: { [weak self] stats in
                 self?.setCachedValue(stats, for: cacheKey)
             })
@@ -529,19 +557,20 @@ final class WebsiteService: WebsiteServicing {
 
     func fetchWebsiteSessionsWeekly(
         id: String,
-        period: StatsPeriod = .day
+        period: StatsPeriod = .day,
+        query: AnalyticsQueryOptions = .default
     ) -> AnyPublisher<[WeeklySessionPoint], Error> {
         guard let apiClient = apiClientProvider() else {
             return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
         }
 
-        let cacheKey = makeCacheKey(prefix: "sessionsWeekly", websiteId: id, period: period)
+        let cacheKey = makeCacheKey(prefix: "sessionsWeekly", websiteId: id, period: period, extras: [query.cacheKey])
         if let cached: [WeeklySessionPoint] = cachedValue(for: cacheKey) {
             return Just(cached).setFailureType(to: Error.self).eraseToAnyPublisher()
         }
 
         let dateRange = createDateRange(for: period)
-        return apiClient.getWebsiteSessionsWeekly(id: id, dateRange: dateRange)
+        return apiClient.getWebsiteSessionsWeekly(id: id, dateRange: dateRange, query: query)
             .handleEvents(receiveOutput: { [weak self] data in
                 self?.setCachedValue(data, for: cacheKey)
             })
@@ -578,6 +607,60 @@ final class WebsiteService: WebsiteServicing {
 
         return apiClient.getWebsiteSessionProperties(id: id, sessionId: sessionId)
             .eraseToAnyPublisher()
+    }
+
+    func fetchWebsiteReports(websiteId: String) -> AnyPublisher<[SavedReport], Error> {
+        guard let apiClient = apiClientProvider() else {
+            return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
+        }
+
+        return apiClient.getWebsiteReports(websiteId: websiteId)
+            .map(\.data)
+            .eraseToAnyPublisher()
+    }
+
+    func fetchWebsiteSegments(websiteId: String, type: SegmentType?) -> AnyPublisher<[SegmentDefinition], Error> {
+        guard let apiClient = apiClientProvider() else {
+            return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
+        }
+
+        return apiClient.getWebsiteSegments(websiteId: websiteId, type: type)
+    }
+
+    func fetchLinks(teamId: String?) -> AnyPublisher<[TrackedAsset], Error> {
+        guard let apiClient = apiClientProvider() else {
+            return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
+        }
+
+        return apiClient.getLinks(teamId: teamId)
+            .map(\.data)
+            .eraseToAnyPublisher()
+    }
+
+    func fetchPixels(teamId: String?) -> AnyPublisher<[TrackedAsset], Error> {
+        guard let apiClient = apiClientProvider() else {
+            return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
+        }
+
+        return apiClient.getPixels(teamId: teamId)
+            .map(\.data)
+            .eraseToAnyPublisher()
+    }
+
+    func resetWebsite(id: String) -> AnyPublisher<Void, Error> {
+        guard let apiClient = apiClientProvider() else {
+            return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
+        }
+
+        return apiClient.resetWebsite(id: id)
+    }
+
+    func transferWebsite(id: String, userId: String?, teamId: String?) -> AnyPublisher<Void, Error> {
+        guard let apiClient = apiClientProvider() else {
+            return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
+        }
+
+        return apiClient.transferWebsite(id: id, body: TransferWebsiteRequest(userId: userId, teamId: teamId))
     }
 
     func invalidateAnalyticsCache(for websiteId: String? = nil) {
@@ -654,7 +737,7 @@ final class WebsiteService: WebsiteServicing {
                     // Create or update websites
                     for website in websites {
                         let websiteFetchRequest: NSFetchRequest<UmamiWebsite> = UmamiWebsite.fetchRequest()
-                        websiteFetchRequest.predicate = NSPredicate(format: "id == %@", website.id)
+                        websiteFetchRequest.predicate = NSPredicate(format: "id == %@ AND server == %@", website.id, server)
 
                         let existingWebsites = try context.fetch(websiteFetchRequest)
 
@@ -684,12 +767,19 @@ final class WebsiteService: WebsiteServicing {
 
     private func deleteWebsiteFromCoreData(_ websiteId: String) {
         let context = PersistenceController.shared.container.viewContext
+        let serverURL = AuthManager.shared.serverURL
 
         context.perform {
+            guard let serverURL else { return }
+
+            let serverFetchRequest: NSFetchRequest<UmamiServer> = UmamiServer.fetchRequest()
+            serverFetchRequest.predicate = NSPredicate(format: "url == %@", serverURL)
+
             let fetchRequest: NSFetchRequest<UmamiWebsite> = UmamiWebsite.fetchRequest()
-            fetchRequest.predicate = NSPredicate(format: "id == %@", websiteId)
 
             do {
+                guard let server = try context.fetch(serverFetchRequest).first else { return }
+                fetchRequest.predicate = NSPredicate(format: "id == %@ AND server == %@", websiteId, server)
                 let results = try context.fetch(fetchRequest)
                 for object in results {
                     context.delete(object)
@@ -707,13 +797,19 @@ final class WebsiteService: WebsiteServicing {
     private func saveStatsToCache(websiteId: String, stats: WebsiteStatsResponse, period: StatsPeriod) {
         let context = PersistenceController.shared.container.viewContext
         let updatedAt = nowProvider()
+        let serverURL = AuthManager.shared.serverURL
 
         context.perform {
+            guard let serverURL else { return }
+
             // Fetch the website
+            let serverFetchRequest: NSFetchRequest<UmamiServer> = UmamiServer.fetchRequest()
+            serverFetchRequest.predicate = NSPredicate(format: "url == %@", serverURL)
             let websiteFetchRequest: NSFetchRequest<UmamiWebsite> = UmamiWebsite.fetchRequest()
-            websiteFetchRequest.predicate = NSPredicate(format: "id == %@", websiteId)
 
             do {
+                guard let server = try context.fetch(serverFetchRequest).first else { return }
+                websiteFetchRequest.predicate = NSPredicate(format: "id == %@ AND server == %@", websiteId, server)
                 let websites = try context.fetch(websiteFetchRequest)
 
                 if let website = websites.first {
@@ -758,8 +854,9 @@ final class WebsiteService: WebsiteServicing {
     // MARK: - Helper Methods
 
     private func makeCacheKey(prefix: String, websiteId: String, period: StatsPeriod, extras: [String] = []) -> String {
+        let sessionIdentifier = AuthManager.shared.currentSession?.identifier ?? "sessionless"
         let extraSegment = extras.joined(separator: "|")
-        return "\(prefix)|\(websiteId)|\(period.rawValue)|\(extraSegment)"
+        return "\(sessionIdentifier)|\(prefix)|\(websiteId)|\(period.rawValue)|\(extraSegment)"
     }
 
     private func cachedValue<T>(for key: String) -> T? {
@@ -822,11 +919,15 @@ final class WebsiteService: WebsiteServicing {
 
     func fetchCachedWebsites() -> [UmamiWebsite] {
         let context = PersistenceController.shared.container.viewContext
+        guard let serverURL = AuthManager.shared.serverURL else {
+            return []
+        }
         let fetchRequest: NSFetchRequest<UmamiWebsite> = UmamiWebsite.fetchRequest()
         fetchRequest.sortDescriptors = [
             NSSortDescriptor(key: "lastUpdated", ascending: false),
             NSSortDescriptor(key: "name", ascending: true)
         ]
+        fetchRequest.predicate = NSPredicate(format: "server.url == %@", serverURL)
 
         do {
             return try context.fetch(fetchRequest)
@@ -838,9 +939,12 @@ final class WebsiteService: WebsiteServicing {
 
     func fetchCachedStats(for websiteId: String, period: StatsPeriod) -> UmamiWebsiteStats? {
         let context = PersistenceController.shared.container.viewContext
+        guard let serverURL = AuthManager.shared.serverURL else {
+            return nil
+        }
 
         let websiteFetchRequest: NSFetchRequest<UmamiWebsite> = UmamiWebsite.fetchRequest()
-        websiteFetchRequest.predicate = NSPredicate(format: "id == %@", websiteId)
+        websiteFetchRequest.predicate = NSPredicate(format: "id == %@ AND server.url == %@", websiteId, serverURL)
 
         do {
             let websites = try context.fetch(websiteFetchRequest)
@@ -865,34 +969,41 @@ final class WebsiteService: WebsiteServicing {
 extension WebsiteService {
     func fetchWebsitesAsync() async throws -> [WebsiteModel] {
         guard let apiClient = apiClientProvider() else { throw APIError.unauthorized }
+        if let session = AuthManager.shared.currentSession,
+           session.serverType == .publicShare,
+           let websiteId = session.sharedWebsiteId {
+            let website = try await apiClient.getWebsiteAsync(id: websiteId)
+            saveWebsitesToCoreData([website])
+            return [website]
+        }
         let websites = try await apiClient.getAllWebsitesAsync()
         saveWebsitesToCoreData(websites)
         return websites
     }
 
-    func fetchWebsiteStatsAsync(id: String, period: StatsPeriod) async throws -> WebsiteStatsResponse {
+    func fetchWebsiteStatsAsync(id: String, period: StatsPeriod, query: AnalyticsQueryOptions = .default) async throws -> WebsiteStatsResponse {
         guard let apiClient = apiClientProvider() else { throw APIError.unauthorized }
         let dateRange = createDateRange(for: period)
-        let response = try await apiClient.getWebsiteStatsAsync(id: id, dateRange: dateRange)
+        let response = try await apiClient.getWebsiteStatsAsync(id: id, dateRange: dateRange, query: query)
         saveStatsToCache(websiteId: id, stats: response, period: period)
         return response
     }
 
-    func fetchWebsiteMetricsAsync(id: String, period: StatsPeriod, type: String) async throws -> WebsiteMetricsResponse {
+    func fetchWebsiteMetricsAsync(id: String, period: StatsPeriod, type: String, query: AnalyticsQueryOptions = .default) async throws -> WebsiteMetricsResponse {
         guard let apiClient = apiClientProvider() else { throw APIError.unauthorized }
-        let cacheKey = makeCacheKey(prefix: "metrics", websiteId: id, period: period, extras: [type])
+        let cacheKey = makeCacheKey(prefix: "metrics", websiteId: id, period: period, extras: [type, query.cacheKey])
         if let cached: WebsiteMetricsResponse = cachedValue(for: cacheKey) { return cached }
         let dateRange = createDateRange(for: period)
-        let response = try await apiClient.getWebsiteMetricsAsync(id: id, dateRange: dateRange, type: type)
+        let response = try await apiClient.getWebsiteMetricsAsync(id: id, dateRange: dateRange, type: type, query: query)
         saveMetricsToCache(websiteId: id, metrics: response, period: period)
         setCachedValue(response, for: cacheKey)
         return response
     }
 
-    func fetchWebsitePageviewsAsync(id: String, period: StatsPeriod) async throws -> PageviewsResponse {
+    func fetchWebsitePageviewsAsync(id: String, period: StatsPeriod, query: AnalyticsQueryOptions = .default) async throws -> PageviewsResponse {
         guard let apiClient = apiClientProvider() else { throw APIError.unauthorized }
         let dateRange = createDateRange(for: period)
-        return try await apiClient.getWebsitePageviewsAsync(id: id, dateRange: dateRange)
+        return try await apiClient.getWebsitePageviewsAsync(id: id, dateRange: dateRange, query: query)
     }
 
     func fetchActiveUsersAsync(id: String) async throws -> ActiveUsersResponse {
@@ -907,22 +1018,32 @@ extension WebsiteService {
         return snapshot
     }
 
-    func fetchWebsiteEventSeriesAsync(id: String, period: StatsPeriod, eventName: String?) async throws -> [TimeSeriesData] {
+    func fetchWebsiteEventSeriesAsync(id: String, period: StatsPeriod, eventName: String?, query: AnalyticsQueryOptions = .default) async throws -> [TimeSeriesData] {
         guard let apiClient = apiClientProvider() else { throw APIError.unauthorized }
-        let cacheKey = makeCacheKey(prefix: "eventSeries", websiteId: id, period: period, extras: [eventName ?? ""])
+        let cacheKey = makeCacheKey(prefix: "eventSeries", websiteId: id, period: period, extras: [eventName ?? "", query.cacheKey])
         if let cached: [TimeSeriesData] = cachedValue(for: cacheKey) { return cached }
         let dateRange = createDateRange(for: period)
-        let response = try await apiClient.getWebsiteEventSeriesAsync(id: id, dateRange: dateRange, eventName: eventName)
+        let response = try await apiClient.getWebsiteEventSeriesAsync(id: id, dateRange: dateRange, eventName: eventName, query: query)
         setCachedValue(response, for: cacheKey)
         return response
     }
 
-    func fetchWebsiteEventsAsync(id: String, period: StatsPeriod, page: Int, pageSize: Int, search: String?) async throws -> PaginatedResponse<AnalyticsRecord> {
+    func fetchWebsiteEventsAsync(id: String, period: StatsPeriod, page: Int, pageSize: Int, search: String?, query: AnalyticsQueryOptions = .default) async throws -> PaginatedResponse<AnalyticsRecord> {
         guard let apiClient = apiClientProvider() else { throw APIError.unauthorized }
-        let cacheKey = makeCacheKey(prefix: "events", websiteId: id, period: period, extras: ["\(page)", "\(pageSize)", search ?? ""])
+        let cacheKey = makeCacheKey(prefix: "events", websiteId: id, period: period, extras: ["\(page)", "\(pageSize)", search ?? "", query.cacheKey])
         if let cached: PaginatedResponse<AnalyticsRecord> = cachedValue(for: cacheKey) { return cached }
         let dateRange = createDateRange(for: period)
-        let response = try await apiClient.getWebsiteEventsAsync(id: id, dateRange: dateRange, page: page, pageSize: pageSize, search: search)
+        let response = try await apiClient.getWebsiteEventsAsync(id: id, dateRange: dateRange, page: page, pageSize: pageSize, search: search, query: query)
+        setCachedValue(response, for: cacheKey)
+        return response
+    }
+
+    func fetchWebsiteValuesAsync(id: String, type: String, period: StatsPeriod, search: String?, query: AnalyticsQueryOptions = .default) async throws -> [FilterValue] {
+        guard let apiClient = apiClientProvider() else { throw APIError.unauthorized }
+        let cacheKey = makeCacheKey(prefix: "values", websiteId: id, period: period, extras: [type, search ?? "", query.cacheKey])
+        if let cached: [FilterValue] = cachedValue(for: cacheKey) { return cached }
+        let dateRange = createDateRange(for: period)
+        let response = try await apiClient.getWebsiteValuesAsync(id: id, type: type, dateRange: dateRange, search: search, query: query)
         setCachedValue(response, for: cacheKey)
         return response
     }
@@ -957,12 +1078,12 @@ extension WebsiteService {
         return response
     }
 
-    func fetchEventDataStatsAsync(id: String, period: StatsPeriod) async throws -> [String: MetricValue] {
+    func fetchEventDataStatsAsync(id: String, period: StatsPeriod, query: AnalyticsQueryOptions = .default) async throws -> [String: MetricValue] {
         guard let apiClient = apiClientProvider() else { throw APIError.unauthorized }
-        let cacheKey = makeCacheKey(prefix: "eventDataStats", websiteId: id, period: period)
+        let cacheKey = makeCacheKey(prefix: "eventDataStats", websiteId: id, period: period, extras: [query.cacheKey])
         if let cached: [String: MetricValue] = cachedValue(for: cacheKey) { return cached }
         let dateRange = createDateRange(for: period)
-        let response = try await apiClient.getEventDataStatsAsync(id: id, dateRange: dateRange)
+        let response = try await apiClient.getEventDataStatsAsync(id: id, dateRange: dateRange, query: query)
         setCachedValue(response, for: cacheKey)
         return response
     }
@@ -977,32 +1098,32 @@ extension WebsiteService {
         return response
     }
 
-    func fetchWebsiteSessionStatsAsync(id: String, period: StatsPeriod) async throws -> [String: MetricValue] {
+    func fetchWebsiteSessionStatsAsync(id: String, period: StatsPeriod, query: AnalyticsQueryOptions = .default) async throws -> [String: MetricValue] {
         guard let apiClient = apiClientProvider() else { throw APIError.unauthorized }
-        let cacheKey = makeCacheKey(prefix: "sessionStats", websiteId: id, period: period)
+        let cacheKey = makeCacheKey(prefix: "sessionStats", websiteId: id, period: period, extras: [query.cacheKey])
         if let cached: [String: MetricValue] = cachedValue(for: cacheKey) { return cached }
         let dateRange = createDateRange(for: period)
-        let response = try await apiClient.getWebsiteSessionStatsAsync(id: id, dateRange: dateRange)
+        let response = try await apiClient.getWebsiteSessionStatsAsync(id: id, dateRange: dateRange, query: query)
         setCachedValue(response, for: cacheKey)
         return response
     }
 
-    func fetchWebsiteSessionsWeeklyAsync(id: String, period: StatsPeriod) async throws -> [WeeklySessionPoint] {
+    func fetchWebsiteSessionsWeeklyAsync(id: String, period: StatsPeriod, query: AnalyticsQueryOptions = .default) async throws -> [WeeklySessionPoint] {
         guard let apiClient = apiClientProvider() else { throw APIError.unauthorized }
-        let cacheKey = makeCacheKey(prefix: "sessionsWeekly", websiteId: id, period: period)
+        let cacheKey = makeCacheKey(prefix: "sessionsWeekly", websiteId: id, period: period, extras: [query.cacheKey])
         if let cached: [WeeklySessionPoint] = cachedValue(for: cacheKey) { return cached }
         let dateRange = createDateRange(for: period)
-        let response = try await apiClient.getWebsiteSessionsWeeklyAsync(id: id, dateRange: dateRange)
+        let response = try await apiClient.getWebsiteSessionsWeeklyAsync(id: id, dateRange: dateRange, query: query)
         setCachedValue(response, for: cacheKey)
         return response
     }
 
-    func fetchWebsiteSessionsAsync(id: String, period: StatsPeriod, page: Int, pageSize: Int, search: String?) async throws -> PaginatedResponse<AnalyticsRecord> {
+    func fetchWebsiteSessionsAsync(id: String, period: StatsPeriod, page: Int, pageSize: Int, search: String?, query: AnalyticsQueryOptions = .default) async throws -> PaginatedResponse<AnalyticsRecord> {
         guard let apiClient = apiClientProvider() else { throw APIError.unauthorized }
-        let cacheKey = makeCacheKey(prefix: "sessions", websiteId: id, period: period, extras: ["\(page)", "\(pageSize)", search ?? ""])
+        let cacheKey = makeCacheKey(prefix: "sessions", websiteId: id, period: period, extras: ["\(page)", "\(pageSize)", search ?? "", query.cacheKey])
         if let cached: PaginatedResponse<AnalyticsRecord> = cachedValue(for: cacheKey) { return cached }
         let dateRange = createDateRange(for: period)
-        let response = try await apiClient.getWebsiteSessionsAsync(id: id, dateRange: dateRange, page: page, pageSize: pageSize, search: search)
+        let response = try await apiClient.getWebsiteSessionsAsync(id: id, dateRange: dateRange, page: page, pageSize: pageSize, search: search, query: query)
         setCachedValue(response, for: cacheKey)
         return response
     }
@@ -1021,6 +1142,29 @@ extension WebsiteService {
     func fetchWebsiteSessionPropertiesAsync(id: String, sessionId: String) async throws -> [String: JSONValue] {
         guard let apiClient = apiClientProvider() else { throw APIError.unauthorized }
         return try await apiClient.getWebsiteSessionPropertiesAsync(id: id, sessionId: sessionId)
+    }
+
+    func fetchWebsiteReportsAsync(websiteId: String) async throws -> [SavedReport] {
+        guard let apiClient = apiClientProvider() else { throw APIError.unauthorized }
+        let response = try await apiClient.getWebsiteReportsAsync(websiteId: websiteId)
+        return response.data
+    }
+
+    func fetchWebsiteSegmentsAsync(websiteId: String, type: SegmentType?) async throws -> [SegmentDefinition] {
+        guard let apiClient = apiClientProvider() else { throw APIError.unauthorized }
+        return try await apiClient.getWebsiteSegmentsAsync(websiteId: websiteId, type: type)
+    }
+
+    func fetchLinksAsync(teamId: String?) async throws -> [TrackedAsset] {
+        guard let apiClient = apiClientProvider() else { throw APIError.unauthorized }
+        let response = try await apiClient.getLinksAsync(teamId: teamId)
+        return response.data
+    }
+
+    func fetchPixelsAsync(teamId: String?) async throws -> [TrackedAsset] {
+        guard let apiClient = apiClientProvider() else { throw APIError.unauthorized }
+        let response = try await apiClient.getPixelsAsync(teamId: teamId)
+        return response.data
     }
 
     func createWebsiteAsync(name: String, domain: String, shareId: String?, teamId: String?, id: String?) async throws -> WebsiteModel {
@@ -1043,6 +1187,18 @@ extension WebsiteService {
         guard let apiClient = apiClientProvider() else { throw APIError.unauthorized }
         try await apiClient.deleteWebsiteAsync(id: id)
         deleteWebsiteFromCoreData(id)
+        invalidateAnalyticsCache(for: id)
+    }
+
+    func resetWebsiteAsync(id: String) async throws {
+        guard let apiClient = apiClientProvider() else { throw APIError.unauthorized }
+        try await apiClient.resetWebsiteAsync(id: id)
+        invalidateAnalyticsCache(for: id)
+    }
+
+    func transferWebsiteAsync(id: String, userId: String?, teamId: String?) async throws {
+        guard let apiClient = apiClientProvider() else { throw APIError.unauthorized }
+        try await apiClient.transferWebsiteAsync(id: id, body: TransferWebsiteRequest(userId: userId, teamId: teamId))
         invalidateAnalyticsCache(for: id)
     }
 
