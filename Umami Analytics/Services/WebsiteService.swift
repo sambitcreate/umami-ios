@@ -49,6 +49,7 @@ protocol WebsiteServicing {
 
     func fetchCachedWebsites() -> [UmamiWebsite]
     func fetchCachedStats(for websiteId: String, period: StatsPeriod) -> UmamiWebsiteStats?
+    func purgeExpiredCoreDataStats()
 
     // MARK: - Async/Await Methods
 
@@ -93,6 +94,7 @@ final class WebsiteService: WebsiteServicing {
     private let nowProvider: () -> Date
     private let analyticsCacheTTL: TimeInterval
     private let analyticsCacheMaxEntries: Int
+    private let coreDataStatsTTL: TimeInterval
     private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "UmamiAnalytics", category: "WebsiteService")
 
     private struct CacheEntry {
@@ -109,12 +111,14 @@ final class WebsiteService: WebsiteServicing {
         apiClientProvider: @escaping @MainActor () -> APIClient? = { AuthManager.shared.apiClient },
         nowProvider: @escaping () -> Date = Date.init,
         analyticsCacheTTL: TimeInterval = AnalyticsRuntimeConfig.default.analyticsCacheTTL,
-        analyticsCacheMaxEntries: Int = AnalyticsRuntimeConfig.default.analyticsCacheMaxEntries
+        analyticsCacheMaxEntries: Int = AnalyticsRuntimeConfig.default.analyticsCacheMaxEntries,
+        coreDataStatsTTL: TimeInterval = AnalyticsRuntimeConfig.default.coreDataStatsTTL
     ) {
         self.apiClientProvider = apiClientProvider
         self.nowProvider = nowProvider
         self.analyticsCacheTTL = analyticsCacheTTL
         self.analyticsCacheMaxEntries = analyticsCacheMaxEntries
+        self.coreDataStatsTTL = coreDataStatsTTL
     }
 
     // MARK: - Website Management
@@ -1020,13 +1024,43 @@ final class WebsiteService: WebsiteServicing {
                 statsFetchRequest.predicate = NSPredicate(format: "website == %@ AND period == %@", website, period.rawValue)
 
                 let stats = try context.fetch(statsFetchRequest)
-                return stats.first
+                guard let entry = stats.first else { return nil }
+
+                if let date = entry.date, date.addingTimeInterval(coreDataStatsTTL) < nowProvider() {
+                    context.delete(entry)
+                    try? context.save()
+                    return nil
+                }
+
+                return entry
             }
         } catch {
             logger.error("Failed to fetch cached stats: \(error.localizedDescription, privacy: .public)")
         }
 
         return nil
+    }
+
+    func purgeExpiredCoreDataStats() {
+        let context = PersistenceController.shared.container.viewContext
+        let cutoff = nowProvider().addingTimeInterval(-coreDataStatsTTL) as NSDate
+
+        context.perform { [logger] in
+            let fetchRequest: NSFetchRequest<UmamiWebsiteStats> = UmamiWebsiteStats.fetchRequest()
+            fetchRequest.predicate = NSPredicate(format: "date < %@", cutoff)
+
+            do {
+                let stale = try context.fetch(fetchRequest)
+                guard !stale.isEmpty else { return }
+                for record in stale {
+                    context.delete(record)
+                }
+                try context.save()
+                logger.debug("Purged \(stale.count) expired CoreData stats records")
+            } catch {
+                logger.error("Failed to purge expired stats: \(error.localizedDescription, privacy: .public)")
+            }
+        }
     }
 }
 

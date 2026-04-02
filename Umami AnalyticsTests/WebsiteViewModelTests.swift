@@ -429,6 +429,8 @@ private final class MockWebsiteService: WebsiteServicing {
         nil
     }
 
+    func purgeExpiredCoreDataStats() {}
+
     // MARK: - Async Mock Implementations
 
     func fetchWebsitesAsync() async throws -> [WebsiteModel] { [makeWebsite(id: "site-1")] }
@@ -521,7 +523,8 @@ private func testConfig(realtimePollInterval: TimeInterval) -> AnalyticsRuntimeC
         eventsSessionsPageSize: 2,
         analyticsCacheTTL: 60,
         realtimePollInterval: realtimePollInterval,
-        analyticsCacheMaxEntries: 150
+        analyticsCacheMaxEntries: 150,
+        coreDataStatsTTL: 86_400
     )
 }
 

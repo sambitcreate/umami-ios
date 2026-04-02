@@ -35,12 +35,13 @@ final class AppState: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
 
     init() {
-        // Subscribe to AuthManager's authentication state
         AuthManager.shared.$isAuthenticated
             .receive(on: DispatchQueue.main)
             .sink { [weak self] isAuthenticated in
                 self?.isAuthenticated = isAuthenticated
             }
             .store(in: &cancellables)
+
+        WebsiteService.shared.purgeExpiredCoreDataStats()
     }
 }
