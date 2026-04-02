@@ -38,6 +38,7 @@ struct DashboardView: View {
                     }) {
                         Image(systemName: "arrow.clockwise")
                     }
+                    .accessibilityLabel("Refresh")
                 }
             }
             .overlay {
@@ -248,7 +249,7 @@ struct DashboardView: View {
                     .padding()
                     .frame(maxWidth: .infinity)
                     .background(Color(.secondarySystemBackground))
-                    .cornerRadius(10)
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
             }
             .padding(.horizontal)
         }
@@ -281,9 +282,9 @@ struct DashboardView: View {
                         .fontWeight(.semibold)
                         .padding(.horizontal, 20)
                         .padding(.vertical, 10)
-                        .background(Color.blue)
+                        .background(.tint)
                         .foregroundStyle(.white)
-                        .cornerRadius(10)
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
                 }
             }
         }
@@ -334,8 +335,10 @@ struct DashboardWebsiteCard: View {
             .padding(.bottom, 14)
         }
         .background(Color(.secondarySystemBackground))
-        .cornerRadius(12)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
         .padding(.horizontal)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(website.name), \(website.domain)")
     }
 
     private func metricCell(icon: String, label: String, value: String, color: Color) -> some View {

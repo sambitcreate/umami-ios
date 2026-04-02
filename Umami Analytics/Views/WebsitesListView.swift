@@ -152,6 +152,7 @@ struct WebsitesView: View {
                         } label: {
                             Image(systemName: "plus")
                         }
+                        .accessibilityLabel("Add website")
                     }
 
                     Button(action: {
@@ -159,6 +160,7 @@ struct WebsitesView: View {
                     }) {
                         Image(systemName: "arrow.clockwise")
                     }
+                    .accessibilityLabel("Refresh")
                 }
             }
             .overlay {
@@ -271,8 +273,11 @@ struct WebsiteRowView: View {
                 Image(systemName: "star.fill")
                     .foregroundStyle(.yellow)
                     .font(.caption)
+                    .accessibilityHidden(true)
             }
         }
         .padding(.vertical, 4)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(website.name), \(website.domain)\(isStarred ? ", starred" : "")")
     }
 }

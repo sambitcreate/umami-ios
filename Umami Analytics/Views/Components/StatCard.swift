@@ -40,6 +40,8 @@ struct StatCard: View {
         }
         .padding()
         .background(Color(.secondarySystemBackground))
-        .cornerRadius(10)
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(title): \(value)")
     }
 }
