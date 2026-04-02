@@ -520,7 +520,8 @@ private func testConfig(realtimePollInterval: TimeInterval) -> AnalyticsRuntimeC
         dashboardRefreshInterval: 3600,
         eventsSessionsPageSize: 2,
         analyticsCacheTTL: 60,
-        realtimePollInterval: realtimePollInterval
+        realtimePollInterval: realtimePollInterval,
+        analyticsCacheMaxEntries: 150
     )
 }
 

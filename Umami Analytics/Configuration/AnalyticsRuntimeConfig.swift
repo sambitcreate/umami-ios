@@ -12,11 +12,13 @@ struct AnalyticsRuntimeConfig: Sendable {
     let eventsSessionsPageSize: Int
     let analyticsCacheTTL: TimeInterval
     let realtimePollInterval: TimeInterval
+    let analyticsCacheMaxEntries: Int
 
     static let `default` = AnalyticsRuntimeConfig(
         dashboardRefreshInterval: 60,
         eventsSessionsPageSize: 20,
         analyticsCacheTTL: 60,
-        realtimePollInterval: 5
+        realtimePollInterval: 5,
+        analyticsCacheMaxEntries: 150
     )
 }

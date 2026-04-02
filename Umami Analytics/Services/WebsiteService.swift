@@ -92,11 +92,13 @@ final class WebsiteService: WebsiteServicing {
     private let apiClientProvider: @MainActor () -> APIClient?
     private let nowProvider: () -> Date
     private let analyticsCacheTTL: TimeInterval
+    private let analyticsCacheMaxEntries: Int
     private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "UmamiAnalytics", category: "WebsiteService")
 
     private struct CacheEntry {
         let expiryDate: Date
         let value: Any
+        var lastAccessDate: Date
     }
 
     private var analyticsCache: [String: CacheEntry] = [:]
@@ -106,11 +108,13 @@ final class WebsiteService: WebsiteServicing {
     init(
         apiClientProvider: @escaping @MainActor () -> APIClient? = { AuthManager.shared.apiClient },
         nowProvider: @escaping () -> Date = Date.init,
-        analyticsCacheTTL: TimeInterval = AnalyticsRuntimeConfig.default.analyticsCacheTTL
+        analyticsCacheTTL: TimeInterval = AnalyticsRuntimeConfig.default.analyticsCacheTTL,
+        analyticsCacheMaxEntries: Int = AnalyticsRuntimeConfig.default.analyticsCacheMaxEntries
     ) {
         self.apiClientProvider = apiClientProvider
         self.nowProvider = nowProvider
         self.analyticsCacheTTL = analyticsCacheTTL
+        self.analyticsCacheMaxEntries = analyticsCacheMaxEntries
     }
 
     // MARK: - Website Management
@@ -861,7 +865,7 @@ final class WebsiteService: WebsiteServicing {
     }
 
     private func cachedValue<T>(for key: String) -> T? {
-        guard let entry = analyticsCache[key] else {
+        guard var entry = analyticsCache[key] else {
             return nil
         }
 
@@ -870,12 +874,34 @@ final class WebsiteService: WebsiteServicing {
             return nil
         }
 
+        entry.lastAccessDate = nowProvider()
+        analyticsCache[key] = entry
         return entry.value as? T
     }
 
     private func setCachedValue<T>(_ value: T, for key: String, ttl: TimeInterval? = nil) {
-        let expiry = nowProvider().addingTimeInterval(ttl ?? analyticsCacheTTL)
-        analyticsCache[key] = CacheEntry(expiryDate: expiry, value: value)
+        let now = nowProvider()
+        let expiry = now.addingTimeInterval(ttl ?? analyticsCacheTTL)
+        analyticsCache[key] = CacheEntry(expiryDate: expiry, value: value, lastAccessDate: now)
+        evictIfNeeded()
+    }
+
+    private func evictIfNeeded() {
+        guard analyticsCache.count > analyticsCacheMaxEntries else { return }
+
+        let now = nowProvider()
+        let expiredKeys = analyticsCache.filter { $0.value.expiryDate < now }.map(\.key)
+        for key in expiredKeys {
+            analyticsCache.removeValue(forKey: key)
+        }
+
+        guard analyticsCache.count > analyticsCacheMaxEntries else { return }
+
+        let sorted = analyticsCache.sorted { $0.value.lastAccessDate < $1.value.lastAccessDate }
+        let toEvict = analyticsCache.count - analyticsCacheMaxEntries
+        for (key, _) in sorted.prefix(toEvict) {
+            analyticsCache.removeValue(forKey: key)
+        }
     }
 
     private func deduplicatedFetch<T>(key: String, fetch: @MainActor () async throws -> T) async throws -> T {
