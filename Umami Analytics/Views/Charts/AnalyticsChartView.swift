@@ -25,7 +25,8 @@ struct AnalyticsChartView: View {
         VStack(alignment: .leading, spacing: 16) {
             Text(period.displayName)
                 .font(.headline)
-                .foregroundColor(.primary)
+                .foregroundStyle(.primary)
+                .accessibilityAddTraits(.isHeader)
             
             // Chart type selector tabs
             HStack(spacing: 4) {
@@ -37,7 +38,7 @@ struct AnalyticsChartView: View {
                         Text(chartType.rawValue)
                             .font(.subheadline)
                             .fontWeight(.medium)
-                            .foregroundColor(selectedChartType == chartType ? .white : .secondary)
+                            .foregroundStyle(selectedChartType == chartType ? .white : .secondary)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 12)
                             .background(
@@ -65,7 +66,7 @@ struct AnalyticsChartView: View {
                         VStack(alignment: .leading) {
                             Text("Date")
                                 .font(.caption)
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                             Text(formatDate(dataPoint.date))
                                 .font(.subheadline)
                                 .fontWeight(.medium)
@@ -76,24 +77,24 @@ struct AnalyticsChartView: View {
                         VStack(alignment: .trailing) {
                             Text(selectedChartType.rawValue)
                                 .font(.caption)
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                             Text(formatValue(dataPoint.value))
                                 .font(.subheadline)
                                 .fontWeight(.medium)
-                                .foregroundColor(selectedChartType == .pageviews ? .blue : .orange)
+                                .foregroundStyle(selectedChartType == .pageviews ? .blue : .orange)
                         }
                     }
                     .padding(.horizontal, 8)
                     .padding(.vertical, 12)
                     .background(Color(UIColor.secondarySystemBackground))
-                    .cornerRadius(8)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
                 }
             }
         }
         .padding()
         .background(Color(UIColor.systemBackground))
-        .cornerRadius(12)
-        .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .shadow(color: .primary.opacity(0.05), radius: 5, x: 0, y: 2)
         .onAppear {
             updateSelectedDataPoint()
         }
@@ -142,7 +143,7 @@ struct AnalyticsChartView: View {
                             .font(.caption2)
                             .padding(6)
                             .background(gradientColors.primary.opacity(0.9))
-                            .foregroundColor(.white)
+                            .foregroundStyle(.white)
                             .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                     }
                 }
@@ -304,7 +305,8 @@ struct ChartPlaceholderView: View {
 
             Text("No data available")
                 .font(.caption)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
+                .accessibilityLabel("No chart data available")
         }
         .frame(height: 200)
     }

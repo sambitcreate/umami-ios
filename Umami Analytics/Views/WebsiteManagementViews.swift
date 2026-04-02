@@ -70,7 +70,7 @@ struct WebsiteFormView: View {
                 if isReadOnlySession {
                     Section {
                         Label("This session is read-only. Website settings cannot be changed.", systemImage: "lock.fill")
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     }
                 }
 
@@ -107,13 +107,13 @@ struct WebsiteFormView: View {
                             Text("Team ID")
                             Spacer()
                             Text(teamId)
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                         }
                     }
 
                     Text("Share IDs let you create public dashboards. Leave blank to skip.")
                         .font(.footnote)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
 
                 ownershipSection
@@ -122,7 +122,7 @@ struct WebsiteFormView: View {
                 if let localError {
                     Section {
                         Text(localError)
-                            .foregroundColor(.red)
+                            .foregroundStyle(.red)
                     }
                 }
             }
@@ -252,7 +252,7 @@ struct WebsiteFormView: View {
 
                 Text("Move this website between your personal workspace and a team.")
                     .font(.footnote)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             }
         }
     }
@@ -342,7 +342,7 @@ struct TrackingScriptView: View {
 
                     Text("Update the script location if you are using a CDN or custom domain.")
                         .font(.footnote)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
 
                 Section(header: Text("Attributes")) {
@@ -364,7 +364,7 @@ struct TrackingScriptView: View {
                             .keyboardType(.URL)
                         Text("Example: example.com,app.example.com")
                             .font(.footnote)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     }
 
                     Toggle("Disable automatic tracking", isOn: $disableAutoTrack)
@@ -395,7 +395,7 @@ struct TrackingScriptView: View {
                         }
                     }
                     .font(.footnote)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                 }
             }
             .navigationTitle("Tracking Script")
