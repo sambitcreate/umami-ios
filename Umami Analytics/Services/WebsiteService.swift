@@ -875,18 +875,28 @@ final class WebsiteService: WebsiteServicing {
         return "\(sessionIdentifier)|\(prefix)|\(websiteId)|\(period.rawValue)|\(extraSegment)"
     }
 
+    private func logCacheDebug(_ message: @autoclosure () -> String) {
+    #if DEBUG
+        let resolvedMessage = message()
+        logger.debug("\(resolvedMessage, privacy: .public)")
+    #endif
+    }
+
     private func cachedValue<T>(for key: String) -> T? {
         guard var entry = analyticsCache[key] else {
+            logCacheDebug("CACHE MISS (absent): \(key)")
             return nil
         }
 
         if entry.expiryDate < nowProvider() {
             analyticsCache.removeValue(forKey: key)
+            logCacheDebug("CACHE MISS (expired): \(key)")
             return nil
         }
 
         entry.lastAccessDate = nowProvider()
         analyticsCache[key] = entry
+        logCacheDebug("CACHE HIT: \(key) [\(analyticsCache.count) entries]")
         return entry.value as? T
     }
 
@@ -906,6 +916,10 @@ final class WebsiteService: WebsiteServicing {
             analyticsCache.removeValue(forKey: key)
         }
 
+        if !expiredKeys.isEmpty {
+            logCacheDebug("CACHE EVICT: \(expiredKeys.count) expired entries removed")
+        }
+
         guard analyticsCache.count > analyticsCacheMaxEntries else { return }
 
         let sorted = analyticsCache.sorted { $0.value.lastAccessDate < $1.value.lastAccessDate }
@@ -913,12 +927,14 @@ final class WebsiteService: WebsiteServicing {
         for (key, _) in sorted.prefix(toEvict) {
             analyticsCache.removeValue(forKey: key)
         }
+        logCacheDebug("CACHE EVICT: \(toEvict) LRU entries removed, \(analyticsCache.count) remaining")
     }
 
     private func deduplicatedFetch<T>(key: String, fetch: @MainActor () async throws -> T) async throws -> T {
         if let cached: T = cachedValue(for: key) { return cached }
 
         if inFlightCallbacks[key] != nil {
+            logCacheDebug("DEDUP JOIN: \(key)")
             return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<T, Error>) in
                 inFlightCallbacks[key]?.append { result in
                     switch result {
@@ -935,12 +951,16 @@ final class WebsiteService: WebsiteServicing {
             }
         }
 
+        logCacheDebug("FETCH START: \(key)")
         inFlightCallbacks[key] = []
 
         do {
             let result = try await fetch()
             setCachedValue(result, for: key)
             let callbacks = inFlightCallbacks.removeValue(forKey: key) ?? []
+            if !callbacks.isEmpty {
+                logCacheDebug("DEDUP RESOLVE: \(key) → \(callbacks.count) piggybacked callers")
+            }
             for callback in callbacks {
                 callback(.success(result))
             }
