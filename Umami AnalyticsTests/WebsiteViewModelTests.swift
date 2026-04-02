@@ -245,19 +245,19 @@ private final class MockWebsiteService: WebsiteServicing {
             .eraseToAnyPublisher()
     }
 
-    func fetchWebsiteStats(id: String, period: StatsPeriod) -> AnyPublisher<WebsiteStatsResponse, Error> {
+    func fetchWebsiteStats(id: String, period: StatsPeriod, query: AnalyticsQueryOptions) -> AnyPublisher<WebsiteStatsResponse, Error> {
         Just(WebsiteStatsResponse(pageviews: 10, visitors: 5, visits: 6, bounces: 2, totaltime: 120))
             .setFailureType(to: Error.self)
             .eraseToAnyPublisher()
     }
 
-    func fetchWebsiteMetrics(id: String, period: StatsPeriod, type: String) -> AnyPublisher<WebsiteMetricsResponse, Error> {
+    func fetchWebsiteMetrics(id: String, period: StatsPeriod, type: String, query: AnalyticsQueryOptions) -> AnyPublisher<WebsiteMetricsResponse, Error> {
         Just([MetricItem(x: type, y: 4)])
             .setFailureType(to: Error.self)
             .eraseToAnyPublisher()
     }
 
-    func fetchWebsitePageviews(id: String, period: StatsPeriod) -> AnyPublisher<PageviewsResponse, Error> {
+    func fetchWebsitePageviews(id: String, period: StatsPeriod, query: AnalyticsQueryOptions) -> AnyPublisher<PageviewsResponse, Error> {
         let point = TimeSeriesData(date: Date(timeIntervalSince1970: 1_700_000_000), value: 2)
         let response = PageviewsResponse(pageviews: [point], sessions: [point])
         return Just(response)
@@ -286,15 +286,21 @@ private final class MockWebsiteService: WebsiteServicing {
             .eraseToAnyPublisher()
     }
 
-    func fetchWebsiteEventSeries(id: String, period: StatsPeriod, eventName: String?) -> AnyPublisher<[TimeSeriesData], Error> {
+    func fetchWebsiteEventSeries(id: String, period: StatsPeriod, eventName: String?, query: AnalyticsQueryOptions) -> AnyPublisher<[TimeSeriesData], Error> {
         Just([TimeSeriesData(date: Date(timeIntervalSince1970: 1_700_000_000), value: 1)])
             .setFailureType(to: Error.self)
             .eraseToAnyPublisher()
     }
 
-    func fetchWebsiteEvents(id: String, period: StatsPeriod, page: Int, pageSize: Int, search: String?) -> AnyPublisher<PaginatedResponse<AnalyticsRecord>, Error> {
+    func fetchWebsiteEvents(id: String, period: StatsPeriod, page: Int, pageSize: Int, search: String?, query: AnalyticsQueryOptions) -> AnyPublisher<PaginatedResponse<AnalyticsRecord>, Error> {
         eventRequests.append(PageRequest(id: id, page: page, pageSize: pageSize, search: search))
         return Just(eventsPageProvider(page, pageSize, search))
+            .setFailureType(to: Error.self)
+            .eraseToAnyPublisher()
+    }
+
+    func fetchWebsiteValues(id: String, type: String, period: StatsPeriod, search: String?, query: AnalyticsQueryOptions) -> AnyPublisher<[FilterValue], Error> {
+        Just([FilterValue(value: search ?? type, count: 1)])
             .setFailureType(to: Error.self)
             .eraseToAnyPublisher()
     }
@@ -317,7 +323,7 @@ private final class MockWebsiteService: WebsiteServicing {
             .eraseToAnyPublisher()
     }
 
-    func fetchEventDataStats(id: String, period: StatsPeriod) -> AnyPublisher<[String: MetricValue], Error> {
+    func fetchEventDataStats(id: String, period: StatsPeriod, query: AnalyticsQueryOptions) -> AnyPublisher<[String: MetricValue], Error> {
         Just(["events": MetricValue(value: 3, prev: 2)])
             .setFailureType(to: Error.self)
             .eraseToAnyPublisher()
@@ -329,21 +335,21 @@ private final class MockWebsiteService: WebsiteServicing {
             .eraseToAnyPublisher()
     }
 
-    func fetchWebsiteSessionStats(id: String, period: StatsPeriod) -> AnyPublisher<[String: MetricValue], Error> {
+    func fetchWebsiteSessionStats(id: String, period: StatsPeriod, query: AnalyticsQueryOptions) -> AnyPublisher<[String: MetricValue], Error> {
         sessionStatsCalls += 1
         return Just(["sessions": MetricValue(value: 5, prev: 4)])
             .setFailureType(to: Error.self)
             .eraseToAnyPublisher()
     }
 
-    func fetchWebsiteSessionsWeekly(id: String, period: StatsPeriod) -> AnyPublisher<[WeeklySessionPoint], Error> {
+    func fetchWebsiteSessionsWeekly(id: String, period: StatsPeriod, query: AnalyticsQueryOptions) -> AnyPublisher<[WeeklySessionPoint], Error> {
         sessionsWeeklyCalls += 1
         return Just([WeeklySessionPoint(date: Date(timeIntervalSince1970: 1_700_000_000), value: 5)])
             .setFailureType(to: Error.self)
             .eraseToAnyPublisher()
     }
 
-    func fetchWebsiteSessions(id: String, period: StatsPeriod, page: Int, pageSize: Int, search: String?) -> AnyPublisher<PaginatedResponse<AnalyticsRecord>, Error> {
+    func fetchWebsiteSessions(id: String, period: StatsPeriod, page: Int, pageSize: Int, search: String?, query: AnalyticsQueryOptions) -> AnyPublisher<PaginatedResponse<AnalyticsRecord>, Error> {
         sessionRequests.append(PageRequest(id: id, page: page, pageSize: pageSize, search: search))
         return Just(sessionsPageProvider(page, pageSize, search))
             .setFailureType(to: Error.self)
@@ -364,6 +370,42 @@ private final class MockWebsiteService: WebsiteServicing {
 
     func fetchWebsiteSessionProperties(id: String, sessionId: String) -> AnyPublisher<[String: JSONValue], Error> {
         Just(["sessionId": .string(sessionId)])
+            .setFailureType(to: Error.self)
+            .eraseToAnyPublisher()
+    }
+
+    func fetchWebsiteReports(websiteId: String) -> AnyPublisher<[SavedReport], Error> {
+        Just([])
+            .setFailureType(to: Error.self)
+            .eraseToAnyPublisher()
+    }
+
+    func fetchWebsiteSegments(websiteId: String, type: SegmentType?) -> AnyPublisher<[SegmentDefinition], Error> {
+        Just([])
+            .setFailureType(to: Error.self)
+            .eraseToAnyPublisher()
+    }
+
+    func fetchLinks(teamId: String?) -> AnyPublisher<[TrackedAsset], Error> {
+        Just([])
+            .setFailureType(to: Error.self)
+            .eraseToAnyPublisher()
+    }
+
+    func fetchPixels(teamId: String?) -> AnyPublisher<[TrackedAsset], Error> {
+        Just([])
+            .setFailureType(to: Error.self)
+            .eraseToAnyPublisher()
+    }
+
+    func resetWebsite(id: String) -> AnyPublisher<Void, Error> {
+        Just(())
+            .setFailureType(to: Error.self)
+            .eraseToAnyPublisher()
+    }
+
+    func transferWebsite(id: String, userId: String?, teamId: String?) -> AnyPublisher<Void, Error> {
+        Just(())
             .setFailureType(to: Error.self)
             .eraseToAnyPublisher()
     }
@@ -390,11 +432,11 @@ private final class MockWebsiteService: WebsiteServicing {
     // MARK: - Async Mock Implementations
 
     func fetchWebsitesAsync() async throws -> [WebsiteModel] { [makeWebsite(id: "site-1")] }
-    func fetchWebsiteStatsAsync(id: String, period: StatsPeriod) async throws -> WebsiteStatsResponse {
+    func fetchWebsiteStatsAsync(id: String, period: StatsPeriod, query: AnalyticsQueryOptions) async throws -> WebsiteStatsResponse {
         WebsiteStatsResponse(pageviews: 10, visitors: 5, visits: 6, bounces: 2, totaltime: 120)
     }
-    func fetchWebsiteMetricsAsync(id: String, period: StatsPeriod, type: String) async throws -> WebsiteMetricsResponse { [MetricItem(x: type, y: 4)] }
-    func fetchWebsitePageviewsAsync(id: String, period: StatsPeriod) async throws -> PageviewsResponse {
+    func fetchWebsiteMetricsAsync(id: String, period: StatsPeriod, type: String, query: AnalyticsQueryOptions) async throws -> WebsiteMetricsResponse { [MetricItem(x: type, y: 4)] }
+    func fetchWebsitePageviewsAsync(id: String, period: StatsPeriod, query: AnalyticsQueryOptions) async throws -> PageviewsResponse {
         let point = TimeSeriesData(date: Date(timeIntervalSince1970: 1_700_000_000), value: 2)
         return PageviewsResponse(pageviews: [point], sessions: [point])
     }
@@ -403,29 +445,32 @@ private final class MockWebsiteService: WebsiteServicing {
         realtimeSnapshotCalls += 1
         return RealtimeData(websiteId: websiteId, timestamp: 1_700_000_000_000, pageviews: [], sessions: 2, events: [], countries: ["US": 2])
     }
-    func fetchWebsiteEventSeriesAsync(id: String, period: StatsPeriod, eventName: String?) async throws -> [TimeSeriesData] {
+    func fetchWebsiteEventSeriesAsync(id: String, period: StatsPeriod, eventName: String?, query: AnalyticsQueryOptions) async throws -> [TimeSeriesData] {
         [TimeSeriesData(date: Date(timeIntervalSince1970: 1_700_000_000), value: 1)]
     }
-    func fetchWebsiteEventsAsync(id: String, period: StatsPeriod, page: Int, pageSize: Int, search: String?) async throws -> PaginatedResponse<AnalyticsRecord> {
+    func fetchWebsiteEventsAsync(id: String, period: StatsPeriod, page: Int, pageSize: Int, search: String?, query: AnalyticsQueryOptions) async throws -> PaginatedResponse<AnalyticsRecord> {
         eventRequests.append(PageRequest(id: id, page: page, pageSize: pageSize, search: search))
         return eventsPageProvider(page, pageSize, search)
+    }
+    func fetchWebsiteValuesAsync(id: String, type: String, period: StatsPeriod, search: String?, query: AnalyticsQueryOptions) async throws -> [FilterValue] {
+        [FilterValue(value: search ?? type, count: 1)]
     }
     func fetchEventDataFieldsAsync(id: String, period: StatsPeriod) async throws -> [FilterValue] { [FilterValue(value: "event")] }
     func fetchEventDataPropertiesAsync(id: String, period: StatsPeriod, propertyName: String?) async throws -> [FilterValue] { [FilterValue(value: propertyName ?? "prop")] }
     func fetchEventDataEventsAsync(id: String, period: StatsPeriod, event: String?) async throws -> [FilterValue] { [FilterValue(value: event ?? "signup")] }
-    func fetchEventDataStatsAsync(id: String, period: StatsPeriod) async throws -> [String: MetricValue] { ["events": MetricValue(value: 3, prev: 2)] }
+    func fetchEventDataStatsAsync(id: String, period: StatsPeriod, query: AnalyticsQueryOptions) async throws -> [String: MetricValue] { ["events": MetricValue(value: 3, prev: 2)] }
     func fetchEventDataValuesAsync(id: String, period: StatsPeriod, eventName: String?, propertyName: String?) async throws -> [FilterValue] {
         [FilterValue(value: eventName ?? propertyName ?? "value", count: 1)]
     }
-    func fetchWebsiteSessionStatsAsync(id: String, period: StatsPeriod) async throws -> [String: MetricValue] {
+    func fetchWebsiteSessionStatsAsync(id: String, period: StatsPeriod, query: AnalyticsQueryOptions) async throws -> [String: MetricValue] {
         sessionStatsCalls += 1
         return ["sessions": MetricValue(value: 5, prev: 4)]
     }
-    func fetchWebsiteSessionsWeeklyAsync(id: String, period: StatsPeriod) async throws -> [WeeklySessionPoint] {
+    func fetchWebsiteSessionsWeeklyAsync(id: String, period: StatsPeriod, query: AnalyticsQueryOptions) async throws -> [WeeklySessionPoint] {
         sessionsWeeklyCalls += 1
         return [WeeklySessionPoint(date: Date(timeIntervalSince1970: 1_700_000_000), value: 5)]
     }
-    func fetchWebsiteSessionsAsync(id: String, period: StatsPeriod, page: Int, pageSize: Int, search: String?) async throws -> PaginatedResponse<AnalyticsRecord> {
+    func fetchWebsiteSessionsAsync(id: String, period: StatsPeriod, page: Int, pageSize: Int, search: String?, query: AnalyticsQueryOptions) async throws -> PaginatedResponse<AnalyticsRecord> {
         sessionRequests.append(PageRequest(id: id, page: page, pageSize: pageSize, search: search))
         return sessionsPageProvider(page, pageSize, search)
     }
@@ -434,6 +479,10 @@ private final class MockWebsiteService: WebsiteServicing {
         [makeRecord(id: "activity-\(sessionId)", title: "activity", count: 1)]
     }
     func fetchWebsiteSessionPropertiesAsync(id: String, sessionId: String) async throws -> [String: JSONValue] { ["sessionId": .string(sessionId)] }
+    func fetchWebsiteReportsAsync(websiteId: String) async throws -> [SavedReport] { [] }
+    func fetchWebsiteSegmentsAsync(websiteId: String, type: SegmentType?) async throws -> [SegmentDefinition] { [] }
+    func fetchLinksAsync(teamId: String?) async throws -> [TrackedAsset] { [] }
+    func fetchPixelsAsync(teamId: String?) async throws -> [TrackedAsset] { [] }
     func createWebsiteAsync(name: String, domain: String, shareId: String?, teamId: String?, id: String?) async throws -> WebsiteModel {
         makeWebsite(id: id ?? "created-site", name: name, domain: domain)
     }
@@ -441,6 +490,8 @@ private final class MockWebsiteService: WebsiteServicing {
         makeWebsite(id: id, name: name ?? "Updated", domain: domain ?? "updated.dev")
     }
     func deleteWebsiteAsync(id: String) async throws {}
+    func resetWebsiteAsync(id: String) async throws {}
+    func transferWebsiteAsync(id: String, userId: String?, teamId: String?) async throws {}
     func startRealtimeUpdatesAsync(for websiteId: String, interval: TimeInterval) -> AsyncStream<Int> {
         AsyncStream { $0.yield(2); $0.finish() }
     }

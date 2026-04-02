@@ -25,14 +25,152 @@ enum WebsiteDetailTab: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+enum AnalyticsComparison: String, CaseIterable, Identifiable, Codable, Sendable {
+    case none
+    case previous = "prev"
+    case yearOverYear = "yoy"
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .none:
+            return "None"
+        case .previous:
+            return "Previous Period"
+        case .yearOverYear:
+            return "Year over Year"
+        }
+    }
+
+    var queryValue: String? {
+        switch self {
+        case .none:
+            return nil
+        case .previous, .yearOverYear:
+            return rawValue
+        }
+    }
+}
+
+enum AnalyticsFilterKey: String, CaseIterable, Identifiable, Codable, Sendable {
+    case path
+    case referrer
+    case title
+    case query
+    case browser
+    case os
+    case device
+    case country
+    case region
+    case city
+    case language
+    case hostname
+    case event
+    case tag
+    case segment
+    case cohort
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .path:
+            return "Path"
+        case .referrer:
+            return "Referrer"
+        case .title:
+            return "Title"
+        case .query:
+            return "Query"
+        case .browser:
+            return "Browser"
+        case .os:
+            return "OS"
+        case .device:
+            return "Device"
+        case .country:
+            return "Country"
+        case .region:
+            return "Region"
+        case .city:
+            return "City"
+        case .language:
+            return "Language"
+        case .hostname:
+            return "Hostname"
+        case .event:
+            return "Event"
+        case .tag:
+            return "Tag"
+        case .segment:
+            return "Segment"
+        case .cohort:
+            return "Cohort"
+        }
+    }
+}
+
+struct AnalyticsQueryOptions: Codable, Equatable, Sendable {
+    static let `default` = AnalyticsQueryOptions()
+
+    var compare: AnalyticsComparison = .none
+    var filters: [AnalyticsFilterKey: String] = [:]
+
+    var hasActiveSelections: Bool {
+        compare != .none || !filters.isEmpty
+    }
+
+    var activeFilters: [(key: AnalyticsFilterKey, value: String)] {
+        filters
+            .compactMap { key, value in
+                let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { return nil }
+                return (key, trimmed)
+            }
+            .sorted { $0.key.displayName < $1.key.displayName }
+    }
+
+    var cacheKey: String {
+        let compareKey = compare.rawValue
+        let filterKey = activeFilters
+            .map { "\($0.key.rawValue)=\($0.value)" }
+            .joined(separator: "&")
+        return "\(compareKey)|\(filterKey)"
+    }
+
+    var queryItems: [URLQueryItem] {
+        var items: [URLQueryItem] = []
+
+        if let compareValue = compare.queryValue {
+            items.append(URLQueryItem(name: "compare", value: compareValue))
+        }
+
+        for filter in activeFilters {
+            items.append(URLQueryItem(name: filter.key.rawValue, value: filter.value))
+        }
+
+        return items
+    }
+
+    mutating func setFilter(_ key: AnalyticsFilterKey, value: String?) {
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if trimmed.isEmpty {
+            filters.removeValue(forKey: key)
+        } else {
+            filters[key] = trimmed
+        }
+    }
+}
+
 enum MetricDimension: String, CaseIterable, Identifiable, Sendable {
     case url
     case referrer
     case browser
+    case os
     case device
     case country
     case event
-    case channel
 
     var id: String { rawValue }
 
@@ -44,14 +182,14 @@ enum MetricDimension: String, CaseIterable, Identifiable, Sendable {
             return "Referrers"
         case .browser:
             return "Browsers"
+        case .os:
+            return "Operating Systems"
         case .device:
             return "Devices"
         case .country:
             return "Countries"
         case .event:
             return "Events"
-        case .channel:
-            return "Channels"
         }
     }
 }

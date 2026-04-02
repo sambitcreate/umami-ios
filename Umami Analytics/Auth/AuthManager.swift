@@ -11,22 +11,33 @@ import Security
 import OSLog
 
 @MainActor
-final class AuthManager {
+final class AuthManager: ObservableObject {
     static let shared = AuthManager()
 
     private enum Constants {
-        static let cloudBaseURL = "https://api.umami.is"
+        static let cloudAPIBaseURL = "https://api.umami.is"
+        static let cloudTrackerBaseURL = "https://cloud.umami.is"
     }
 
-    private let tokenKey = "umami.auth.token"
-    private let apiKeyKey = "umami.auth.apiKey"
-    private let serverURLKey = "umami.server.url"
-    private let serverTypeKey = "umami.server.type"
-    private let userKey = "umami.auth.user"
-    private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "UmamiAnalytics", category: "Auth")
+    private enum StorageKey {
+        static let currentSession = "umami.session.current"
+        static let lastSelectedServerType = "umami.server.type"
+        static let selfHostedServerURL = "umami.server.url.selfHosted"
+        static let publicShareServerURL = "umami.server.url.publicShare"
+    }
+
+    private enum SecretKind: String {
+        case bearerToken = "token"
+        case cloudAPIKey = "apiKey"
+        case shareToken = "shareToken"
+    }
 
     private(set) var apiClient: APIClient?
+
+    private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "UmamiAnalytics", category: "Auth")
+
     private var storedSelfHostedServerURL: String?
+    private var storedPublicShareServerURL: String?
 
     @Published var isAuthenticated = false
     @Published var currentUser: User?
@@ -34,19 +45,37 @@ final class AuthManager {
     @Published var serverType: ServerType = .selfHosted
     @Published var isLoading = false
     @Published var cloudAPIKey: String?
+    @Published var currentSession: UmamiSession?
+    @Published var serverConfig: ServerConfig?
+    @Published var availableTeams: [WorkspaceTeam] = []
+    @Published var selectedWorkspace: WorkspaceSelection = .personal
 
     private init() {
         loadServerType()
-        loadSavedServerURL()
+        loadSavedServerURLs()
         restoreSession()
-        loadUser()
-        if cloudAPIKey == nil {
-            cloudAPIKey = loadAPIKey()
-        }
     }
 
     var savedSelfHostedServerURL: String? {
         storedSelfHostedServerURL
+    }
+
+    var savedPublicShareServerURL: String? {
+        storedPublicShareServerURL
+    }
+
+    var workspaceOptions: [WorkspaceSelection] {
+        [.personal] + availableTeams.map {
+            WorkspaceSelection(teamId: $0.id, name: $0.name)
+        }
+    }
+
+    var isReadOnlySession: Bool {
+        currentSession?.isReadOnly == true
+    }
+
+    var activeCloudRegion: CloudRegion {
+        currentSession?.cloudRegion ?? .global
     }
 
     // MARK: - Authentication
@@ -57,10 +86,12 @@ final class AuthManager {
 
         switch type {
         case .cloud:
-            serverURL = Constants.cloudBaseURL
-            cloudAPIKey = loadAPIKey()
+            serverURL = Constants.cloudAPIBaseURL
+            cloudAPIKey = currentSession?.serverType == .cloud ? loadSecret(kind: .cloudAPIKey, for: currentSession) : nil
         case .selfHosted:
             serverURL = storedSelfHostedServerURL
+        case .publicShare:
+            serverURL = storedPublicShareServerURL
         }
     }
 
@@ -70,6 +101,8 @@ final class AuthManager {
         username: String?,
         password: String?,
         apiKey: String?,
+        shareID: String? = nil,
+        cloudRegion: CloudRegion = .global,
         completion: @escaping (Result<Void, Error>) -> Void
     ) {
         Task { @MainActor in
@@ -79,7 +112,9 @@ final class AuthManager {
                     serverURL: serverURL,
                     username: username,
                     password: password,
-                    apiKey: apiKey
+                    apiKey: apiKey,
+                    shareID: shareID,
+                    cloudRegion: cloudRegion
                 )
                 completion(.success(()))
             } catch {
@@ -115,26 +150,16 @@ final class AuthManager {
         serverURL: String?,
         username: String?,
         password: String?,
-        apiKey: String?
+        apiKey: String?,
+        shareID: String? = nil,
+        cloudRegion: CloudRegion = .global
     ) async throws {
         isLoading = true
         defer { isLoading = false }
 
         switch serverType {
         case .selfHosted:
-            guard let trimmedURL = serverURL?.trimmingCharacters(in: .whitespacesAndNewlines),
-                  !trimmedURL.isEmpty else {
-                throw AuthError.invalidURL
-            }
-
-            var finalURL = trimmedURL
-            if !finalURL.lowercased().hasPrefix("http") {
-                finalURL = "https://\(finalURL)"
-            }
-            if finalURL.hasSuffix("/") {
-                finalURL.removeLast()
-            }
-
+            let finalURL = try normalizedServerURL(serverURL)
             guard let username = username?.trimmingCharacters(in: .whitespacesAndNewlines),
                   !username.isEmpty,
                   let password,
@@ -142,25 +167,34 @@ final class AuthManager {
                 throw AuthError.invalidCredentials
             }
 
+            let session = UmamiSession(
+                serverType: .selfHosted,
+                baseURL: finalURL,
+                normalizedBaseURL: finalURL,
+                cloudRegion: nil,
+                trackerBaseURL: finalURL,
+                shareId: nil,
+                sharedWebsiteId: nil
+            )
             let client = try APIClient(serverURL: finalURL, serverType: .selfHosted)
 
             do {
                 let response = try await client.loginAsync(username: username, password: password)
                 client.setAuthToken(response.token)
 
-                apiClient = client
-                saveAuthToken(response.token)
-                saveServerURL(finalURL)
-                saveServerType(.selfHosted)
-                self.serverType = .selfHosted
-                self.serverURL = finalURL
-                storedSelfHostedServerURL = finalURL
-                currentUser = response.user
-                saveUser(response.user)
-                isAuthenticated = true
+                let bootstrap = try await loadSelfHostedBootstrap(client: client, session: session, fallbackUser: response.user)
+                saveServerURL(finalURL, for: .selfHosted)
+                persistAuthenticatedSession(
+                    session: session,
+                    client: client,
+                    secret: response.token,
+                    secretKind: .bearerToken,
+                    currentUser: bootstrap.user,
+                    serverConfig: bootstrap.config,
+                    teams: bootstrap.teams
+                )
             } catch {
-                apiClient = nil
-                isAuthenticated = false
+                resetRuntimeState(clearSelection: false)
                 throw error
             }
 
@@ -170,23 +204,71 @@ final class AuthManager {
                 throw AuthError.missingAPIKey
             }
 
-            let client = try APIClient(serverURL: Constants.cloudBaseURL, serverType: .cloud)
+            let session = UmamiSession(
+                serverType: .cloud,
+                baseURL: Constants.cloudAPIBaseURL,
+                normalizedBaseURL: Constants.cloudAPIBaseURL,
+                cloudRegion: cloudRegion,
+                trackerBaseURL: Constants.cloudTrackerBaseURL,
+                shareId: nil,
+                sharedWebsiteId: nil
+            )
+            let client = try APIClient(serverURL: Constants.cloudAPIBaseURL, serverType: .cloud, cloudRegion: cloudRegion)
             client.setAPIKey(key)
 
             do {
                 _ = try await client.getWebsitesAsync(page: 1, pageSize: 1)
 
-                apiClient = client
-                saveAPIKey(key)
+                persistAuthenticatedSession(
+                    session: session,
+                    client: client,
+                    secret: key,
+                    secretKind: .cloudAPIKey,
+                    currentUser: nil,
+                    serverConfig: ServerConfig(cloudMode: true, privateMode: nil, trackerScriptName: "script.js"),
+                    teams: []
+                )
                 cloudAPIKey = key
-                self.serverType = .cloud
-                saveServerType(.cloud)
-                self.serverURL = Constants.cloudBaseURL
-                clearStoredUser()
-                isAuthenticated = true
             } catch {
-                apiClient = nil
-                isAuthenticated = false
+                resetRuntimeState(clearSelection: false)
+                throw error
+            }
+
+        case .publicShare:
+            let finalURL = try normalizedServerURL(serverURL)
+            guard let shareID = shareID?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !shareID.isEmpty else {
+                throw AuthError.missingShareID
+            }
+
+            let client = try APIClient(serverURL: finalURL, serverType: .publicShare)
+
+            do {
+                let share = try await client.getShareSessionAsync(shareId: shareID)
+                client.setShareToken(share.token)
+
+                let session = UmamiSession(
+                    serverType: .publicShare,
+                    baseURL: finalURL,
+                    normalizedBaseURL: finalURL,
+                    cloudRegion: nil,
+                    trackerBaseURL: finalURL,
+                    shareId: shareID,
+                    sharedWebsiteId: share.websiteId
+                )
+
+                saveServerURL(finalURL, for: .publicShare)
+                persistAuthenticatedSession(
+                    session: session,
+                    client: client,
+                    secret: share.token,
+                    secretKind: .shareToken,
+                    currentUser: nil,
+                    serverConfig: ServerConfig(privateMode: true, trackerScriptName: "script.js"),
+                    teams: []
+                )
+            } catch {
+                resetRuntimeState(clearSelection: false)
                 throw error
             }
         }
@@ -196,193 +278,420 @@ final class AuthManager {
         isLoading = true
         defer { isLoading = false }
 
-        switch serverType {
-        case .selfHosted:
-            var logoutError: Error?
-            if let apiClient {
-                do {
-                    try await apiClient.logoutAsync()
-                } catch {
-                    logoutError = error
-                    logger.error("Remote logout failed; clearing local session anyway: \(error.localizedDescription, privacy: .public)")
-                }
+        let session = currentSession
+        var logoutError: Error?
+
+        if let session, session.serverType == .selfHosted, let apiClient {
+            do {
+                try await apiClient.logoutAsync()
+            } catch {
+                logoutError = error
+                logger.error("Remote logout failed; clearing local session anyway: \(error.localizedDescription, privacy: .public)")
             }
-            clearAuthData(for: .selfHosted)
-            if let logoutError {
-                throw logoutError
-            }
-        case .cloud:
-            clearAuthData(for: .cloud)
+        }
+
+        clearCurrentSession()
+
+        if let logoutError {
+            throw logoutError
         }
     }
 
     func verifyAuthentication() async throws {
-        guard let apiClient, isAuthenticated else {
+        guard let apiClient, let session = currentSession, isAuthenticated else {
             throw AuthError.invalidCredentials
         }
 
         isLoading = true
         defer { isLoading = false }
 
-        switch serverType {
+        switch session.serverType {
         case .selfHosted:
-            do {
-                let user = try await apiClient.verifyTokenAsync()
-                currentUser = user
-                saveUser(user)
-            } catch {
-                if let apiError = error as? APIError, case .unauthorized = apiError {
-                    isAuthenticated = false
-                }
-                throw error
-            }
+            let bootstrap = try await loadSelfHostedBootstrap(client: apiClient, session: session, fallbackUser: currentUser)
+            currentUser = bootstrap.user
+            availableTeams = bootstrap.teams
+            serverConfig = bootstrap.config
+            persistUser(bootstrap.user, for: session)
+            persistTeams(bootstrap.teams, for: session)
+            persistServerConfig(bootstrap.config, for: session)
+            selectedWorkspace = sanitizedWorkspaceSelection(loadedWorkspaceSelection(for: session), teams: bootstrap.teams)
+            persistWorkspaceSelection(selectedWorkspace, for: session)
 
         case .cloud:
             _ = try await apiClient.getWebsitesAsync(page: 1, pageSize: 1)
-        }
-    }
+            serverConfig = serverConfig ?? ServerConfig(cloudMode: true, trackerScriptName: "script.js")
 
-    // MARK: - Token & Secret Management
-
-    private func saveAuthToken(_ token: String) {
-        saveToKeychain(value: token, key: tokenKey)
-    }
-
-    private func loadAuthToken() -> String? {
-        loadFromKeychain(key: tokenKey)
-    }
-
-    private func clearAuthToken() {
-        deleteFromKeychain(key: tokenKey)
-    }
-
-    private func saveAPIKey(_ key: String) {
-        saveToKeychain(value: key, key: apiKeyKey)
-    }
-
-    private func loadAPIKey() -> String? {
-        loadFromKeychain(key: apiKeyKey)
-    }
-
-    private func clearAPIKey() {
-        deleteFromKeychain(key: apiKeyKey)
-        cloudAPIKey = nil
-    }
-
-    private func saveServerURL(_ url: String) {
-        storedSelfHostedServerURL = url
-        UserDefaults.standard.set(url, forKey: serverURLKey)
-    }
-
-    private func loadSavedServerURL() {
-        if let url = UserDefaults.standard.string(forKey: serverURLKey) {
-            logger.debug("Restoring saved server URL.")
-            storedSelfHostedServerURL = url
-            if serverType == .selfHosted {
-                serverURL = url
+        case .publicShare:
+            guard let websiteId = session.sharedWebsiteId else {
+                throw AuthError.invalidCredentials
             }
-        } else {
-            logger.debug("No saved server URL was found.")
+            _ = try await apiClient.getWebsiteAsync(id: websiteId)
         }
     }
 
-    private func loadServerType() {
-        if let storedValue = UserDefaults.standard.string(forKey: serverTypeKey),
-           let storedType = ServerType(rawValue: storedValue) {
-            serverType = storedType
-        } else {
-            serverType = .selfHosted
+    func selectWorkspace(_ selection: WorkspaceSelection) {
+        selectedWorkspace = sanitizedWorkspaceSelection(selection, teams: availableTeams)
+        if let session = currentSession {
+            persistWorkspaceSelection(selectedWorkspace, for: session)
         }
     }
 
-    private func saveServerType(_ type: ServerType) {
-        UserDefaults.standard.set(type.rawValue, forKey: serverTypeKey)
+    func trackerScriptURL() -> String {
+        let baseURLString = currentSession?.trackerBaseURL ?? serverURL ?? Constants.cloudTrackerBaseURL
+        let scriptName = serverConfig?.trackerScriptName ?? "script.js"
+
+        guard let url = URL(string: baseURLString) else {
+            return baseURLString.isEmpty ? scriptName : "\(baseURLString)/\(scriptName)"
+        }
+
+        return url.appendingPathComponent(scriptName).absoluteString
     }
+
+    // MARK: - Private Bootstrap
+
+    private func loadSelfHostedBootstrap(
+        client: APIClient,
+        session: UmamiSession,
+        fallbackUser: User?
+    ) async throws -> (user: User, config: ServerConfig?, teams: [WorkspaceTeam]) {
+        async let configTask = client.getServerConfigAsync()
+        async let userTask = client.getCurrentUserAsync()
+        async let teamsTask = client.getMyTeamsAsync(page: 1, pageSize: 100)
+
+        let resolvedUser: User
+        do {
+            resolvedUser = try await userTask
+        } catch {
+            if let fallbackUser {
+                resolvedUser = fallbackUser
+            } else {
+                throw error
+            }
+        }
+
+        let resolvedConfig = try? await configTask
+        let resolvedTeams = (try? await teamsTask) ?? []
+
+        persistUser(resolvedUser, for: session)
+        persistTeams(resolvedTeams, for: session)
+        persistServerConfig(resolvedConfig, for: session)
+
+        return (resolvedUser, resolvedConfig, resolvedTeams)
+    }
+
+    private func persistAuthenticatedSession(
+        session: UmamiSession,
+        client: APIClient,
+        secret: String,
+        secretKind: SecretKind,
+        currentUser: User?,
+        serverConfig: ServerConfig?,
+        teams: [WorkspaceTeam]
+    ) {
+        currentSession = session
+        apiClient = client
+        serverType = session.serverType
+        serverURL = session.baseURL
+        isAuthenticated = true
+        self.currentUser = currentUser
+        self.serverConfig = serverConfig
+        self.availableTeams = teams
+        self.selectedWorkspace = sanitizedWorkspaceSelection(.personal, teams: teams)
+
+        persistSession(session)
+        saveSecret(secret, kind: secretKind, for: session)
+        persistServerConfig(serverConfig, for: session)
+        persistTeams(teams, for: session)
+        persistWorkspaceSelection(selectedWorkspace, for: session)
+
+        if let currentUser {
+            persistUser(currentUser, for: session)
+        } else {
+            clearPersistedUser(for: session)
+        }
+    }
+
+    // MARK: - Session Restore
 
     private func restoreSession() {
-        switch serverType {
-        case .selfHosted:
-            guard let url = storedSelfHostedServerURL else {
-                isAuthenticated = false
-                cloudAPIKey = loadAPIKey()
-                return
-            }
-
-            do {
-                let client = try APIClient(serverURL: url, serverType: .selfHosted)
-                apiClient = client
-
-                if let token = loadAuthToken() {
-                    client.setAuthToken(token)
-                    serverURL = url
-                    isAuthenticated = true
-                } else {
-                    isAuthenticated = false
-                }
-            } catch {
-                logger.error("Failed to restore self-hosted session: \(error.localizedDescription, privacy: .public)")
-                isAuthenticated = false
-            }
-
-        case .cloud:
-            do {
-                let client = try APIClient(serverURL: Constants.cloudBaseURL, serverType: .cloud)
-                apiClient = client
-                serverURL = Constants.cloudBaseURL
-
-                if let key = loadAPIKey() {
-                    client.setAPIKey(key)
-                    cloudAPIKey = key
-                    isAuthenticated = true
-                } else {
-                    isAuthenticated = false
-                }
-            } catch {
-                logger.error("Failed to restore cloud session: \(error.localizedDescription, privacy: .public)")
-                isAuthenticated = false
-            }
-        }
-    }
-
-    private func saveUser(_ user: User) {
-        guard serverType == .selfHosted else { return }
-
-        if let userData = try? JSONEncoder().encode(user) {
-            UserDefaults.standard.set(userData, forKey: userKey)
-            currentUser = user
-        }
-    }
-
-    private func loadUser() {
-        guard serverType == .selfHosted else {
-            currentUser = nil
+        guard let session = loadCurrentSession() else {
+            resetRuntimeState(clearSelection: false)
+            serverType = loadSavedServerType()
+            serverURL = initialServerURL(for: serverType)
             return
         }
 
-        if let userData = UserDefaults.standard.data(forKey: userKey),
-           let user = try? JSONDecoder().decode(User.self, from: userData) {
-            currentUser = user
+        do {
+            let client = try APIClient(
+                serverURL: session.baseURL,
+                serverType: session.serverType,
+                cloudRegion: session.cloudRegion ?? .global
+            )
+
+            let secret: String?
+            switch session.serverType {
+            case .selfHosted:
+                secret = loadSecret(kind: .bearerToken, for: session)
+                if let secret {
+                    client.setAuthToken(secret)
+                }
+            case .cloud:
+                secret = loadSecret(kind: .cloudAPIKey, for: session)
+                if let secret {
+                    client.setAPIKey(secret)
+                    cloudAPIKey = secret
+                }
+            case .publicShare:
+                secret = loadSecret(kind: .shareToken, for: session)
+                if let secret {
+                    client.setShareToken(secret)
+                }
+            }
+
+            guard secret != nil else {
+                clearCurrentSession()
+                return
+            }
+
+            currentSession = session
+            apiClient = client
+            serverType = session.serverType
+            serverURL = session.baseURL
+            isAuthenticated = true
+            serverConfig = loadPersistedServerConfig(for: session)
+            currentUser = loadPersistedUser(for: session)
+            availableTeams = loadPersistedTeams(for: session)
+            selectedWorkspace = sanitizedWorkspaceSelection(loadedWorkspaceSelection(for: session), teams: availableTeams)
+        } catch {
+            logger.error("Failed to restore session: \(error.localizedDescription, privacy: .public)")
+            clearCurrentSession()
         }
     }
 
-    private func clearStoredUser() {
-        UserDefaults.standard.removeObject(forKey: userKey)
-        currentUser = nil
+    // MARK: - Persistence Helpers
+
+    private func persistSession(_ session: UmamiSession) {
+        if let encoded = try? JSONEncoder().encode(session) {
+            UserDefaults.standard.set(encoded, forKey: StorageKey.currentSession)
+        }
     }
 
-    private func clearAuthData(for type: ServerType) {
+    private func loadCurrentSession() -> UmamiSession? {
+        guard let data = UserDefaults.standard.data(forKey: StorageKey.currentSession) else {
+            return nil
+        }
+        return try? JSONDecoder().decode(UmamiSession.self, from: data)
+    }
+
+    private func clearCurrentSessionStorage() {
+        UserDefaults.standard.removeObject(forKey: StorageKey.currentSession)
+    }
+
+    private func saveServerType(_ type: ServerType) {
+        UserDefaults.standard.set(type.rawValue, forKey: StorageKey.lastSelectedServerType)
+    }
+
+    private func loadSavedServerType() -> ServerType {
+        if let storedValue = UserDefaults.standard.string(forKey: StorageKey.lastSelectedServerType),
+           let storedType = ServerType(rawValue: storedValue) {
+            return storedType
+        }
+        return .selfHosted
+    }
+
+    private func loadServerType() {
+        serverType = loadSavedServerType()
+    }
+
+    private func saveServerURL(_ url: String, for type: ServerType) {
         switch type {
         case .selfHosted:
-            clearAuthToken()
-            apiClient?.clearAuthToken()
-            clearStoredUser()
+            storedSelfHostedServerURL = url
+            UserDefaults.standard.set(url, forKey: StorageKey.selfHostedServerURL)
+        case .publicShare:
+            storedPublicShareServerURL = url
+            UserDefaults.standard.set(url, forKey: StorageKey.publicShareServerURL)
         case .cloud:
-            clearAPIKey()
+            break
+        }
+    }
+
+    private func loadSavedServerURLs() {
+        storedSelfHostedServerURL = UserDefaults.standard.string(forKey: StorageKey.selfHostedServerURL)
+        storedPublicShareServerURL = UserDefaults.standard.string(forKey: StorageKey.publicShareServerURL)
+    }
+
+    private func initialServerURL(for type: ServerType) -> String? {
+        switch type {
+        case .cloud:
+            return Constants.cloudAPIBaseURL
+        case .selfHosted:
+            return storedSelfHostedServerURL
+        case .publicShare:
+            return storedPublicShareServerURL
+        }
+    }
+
+    private func normalizedServerURL(_ value: String?) throws -> String {
+        guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty else {
+            throw AuthError.invalidURL
         }
 
+        var normalized = trimmed
+        if !normalized.lowercased().hasPrefix("http") {
+            normalized = "https://\(normalized)"
+        }
+
+        while normalized.hasSuffix("/") {
+            normalized.removeLast()
+        }
+
+        guard URL(string: normalized) != nil else {
+            throw AuthError.invalidURL
+        }
+
+        return normalized
+    }
+
+    // MARK: - Namespaced Storage
+
+    private func namespacedKey(_ base: String, session: UmamiSession) -> String {
+        let namespace = session.identifier.replacingOccurrences(
+            of: "[^A-Za-z0-9]+",
+            with: "_",
+            options: .regularExpression
+        )
+        return "\(base).\(namespace)"
+    }
+
+    private func saveSecret(_ value: String, kind: SecretKind, for session: UmamiSession) {
+        saveToKeychain(value: value, key: namespacedKey("secret.\(kind.rawValue)", session: session))
+    }
+
+    private func loadSecret(kind: SecretKind, for session: UmamiSession?) -> String? {
+        guard let session else { return nil }
+        return loadFromKeychain(key: namespacedKey("secret.\(kind.rawValue)", session: session))
+    }
+
+    private func deleteSecret(kind: SecretKind, for session: UmamiSession) {
+        deleteFromKeychain(key: namespacedKey("secret.\(kind.rawValue)", session: session))
+    }
+
+    private func persistUser(_ user: User, for session: UmamiSession) {
+        if let data = try? JSONEncoder().encode(user) {
+            UserDefaults.standard.set(data, forKey: namespacedKey("user", session: session))
+        }
+    }
+
+    private func loadPersistedUser(for session: UmamiSession) -> User? {
+        guard let data = UserDefaults.standard.data(forKey: namespacedKey("user", session: session)) else {
+            return nil
+        }
+        return try? JSONDecoder().decode(User.self, from: data)
+    }
+
+    private func clearPersistedUser(for session: UmamiSession) {
+        UserDefaults.standard.removeObject(forKey: namespacedKey("user", session: session))
+    }
+
+    private func persistServerConfig(_ config: ServerConfig?, for session: UmamiSession) {
+        let key = namespacedKey("config", session: session)
+        guard let config else {
+            UserDefaults.standard.removeObject(forKey: key)
+            return
+        }
+        if let data = try? JSONEncoder().encode(config) {
+            UserDefaults.standard.set(data, forKey: key)
+        }
+    }
+
+    private func loadPersistedServerConfig(for session: UmamiSession) -> ServerConfig? {
+        guard let data = UserDefaults.standard.data(forKey: namespacedKey("config", session: session)) else {
+            return nil
+        }
+        return try? JSONDecoder().decode(ServerConfig.self, from: data)
+    }
+
+    private func persistTeams(_ teams: [WorkspaceTeam], for session: UmamiSession) {
+        if let data = try? JSONEncoder().encode(teams) {
+            UserDefaults.standard.set(data, forKey: namespacedKey("teams", session: session))
+        }
+    }
+
+    private func loadPersistedTeams(for session: UmamiSession) -> [WorkspaceTeam] {
+        guard let data = UserDefaults.standard.data(forKey: namespacedKey("teams", session: session)),
+              let teams = try? JSONDecoder().decode([WorkspaceTeam].self, from: data) else {
+            return []
+        }
+        return teams
+    }
+
+    private func persistWorkspaceSelection(_ selection: WorkspaceSelection, for session: UmamiSession) {
+        if let data = try? JSONEncoder().encode(selection) {
+            UserDefaults.standard.set(data, forKey: namespacedKey("workspace", session: session))
+        }
+    }
+
+    private func loadedWorkspaceSelection(for session: UmamiSession) -> WorkspaceSelection {
+        guard let data = UserDefaults.standard.data(forKey: namespacedKey("workspace", session: session)),
+              let selection = try? JSONDecoder().decode(WorkspaceSelection.self, from: data) else {
+            return .personal
+        }
+        return selection
+    }
+
+    private func sanitizedWorkspaceSelection(_ selection: WorkspaceSelection, teams: [WorkspaceTeam]) -> WorkspaceSelection {
+        guard let teamId = selection.teamId else {
+            return .personal
+        }
+
+        if let matchingTeam = teams.first(where: { $0.id == teamId }) {
+            return WorkspaceSelection(teamId: matchingTeam.id, name: matchingTeam.name)
+        }
+
+        return .personal
+    }
+
+    // MARK: - Reset Helpers
+
+    private func clearCurrentSession() {
+        guard let session = currentSession else {
+            resetRuntimeState(clearSelection: true)
+            clearCurrentSessionStorage()
+            return
+        }
+
+        switch session.serverType {
+        case .selfHosted:
+            deleteSecret(kind: .bearerToken, for: session)
+        case .cloud:
+            deleteSecret(kind: .cloudAPIKey, for: session)
+        case .publicShare:
+            deleteSecret(kind: .shareToken, for: session)
+        }
+
+        clearPersistedUser(for: session)
+        UserDefaults.standard.removeObject(forKey: namespacedKey("config", session: session))
+        UserDefaults.standard.removeObject(forKey: namespacedKey("teams", session: session))
+        UserDefaults.standard.removeObject(forKey: namespacedKey("workspace", session: session))
+        clearCurrentSessionStorage()
+
+        resetRuntimeState(clearSelection: true)
+        serverURL = initialServerURL(for: serverType)
+    }
+
+    private func resetRuntimeState(clearSelection: Bool) {
         apiClient = nil
         isAuthenticated = false
         currentUser = nil
+        currentSession = nil
+        serverConfig = nil
+        availableTeams = []
+        cloudAPIKey = nil
+        if clearSelection {
+            selectedWorkspace = .personal
+        }
     }
 
     // MARK: - Keychain Helpers

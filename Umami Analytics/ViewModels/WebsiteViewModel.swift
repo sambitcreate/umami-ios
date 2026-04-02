@@ -38,6 +38,9 @@ final class WebsiteViewModel: ObservableObject {
     @Published var isPerformingAction = false
     @Published var errorMessage: String?
     @Published var selectedPeriod: StatsPeriod = .day
+    @Published var queryOptions = AnalyticsQueryOptions()
+    @Published var availableFilterValues: [AnalyticsFilterKey: [FilterValue]] = [:]
+    @Published var isLoadingFilterValues = false
 
     // Selected website properties
     @Published var selectedWebsite: WebsiteModel?
@@ -64,11 +67,20 @@ final class WebsiteViewModel: ObservableObject {
     @Published var sessionsPage: PaginatedResponse<AnalyticsRecord>?
     @Published var sessionStats: [String: MetricValue] = [:]
     @Published var sessionsWeekly: [WeeklySessionPoint] = []
+    @Published var selectedSessionID: String?
+    @Published var isLoadingSessionDetail = false
     @Published var selectedSessionRecord: AnalyticsRecord?
     @Published var selectedSessionActivity: [AnalyticsRecord] = []
     @Published var selectedSessionProperties: [String: JSONValue] = [:]
     @Published var realtimeSnapshot: RealtimeData?
     @Published var eventDataState = EventDataState()
+
+    @Published var reports: [SavedReport] = []
+    @Published var segments: [SegmentDefinition] = []
+    @Published var cohorts: [SegmentDefinition] = []
+    @Published var links: [TrackedAsset] = []
+    @Published var pixels: [TrackedAsset] = []
+    @Published var isLoadingResources = false
 
     @Published var eventsSearchQuery = ""
     @Published var sessionsSearchQuery = ""
@@ -135,14 +147,7 @@ final class WebsiteViewModel: ObservableObject {
 
             self.websites = websites
             loadDashboardStats()
-
-            if let selectedId = selectedWebsite?.id,
-               let website = websites.first(where: { $0.id == selectedId }) {
-                selectedWebsite = website
-                loadTabIfNeeded(selectedDetailTab, force: true)
-            } else if let firstWebsite = websites.first, selectedWebsite == nil {
-                selectWebsite(firstWebsite)
-            }
+            syncSelectedWebsiteWithVisibleContext(reloadCurrentTab: true)
         } catch {
             guard !Task.isCancelled else { return }
             setRootError(error)
@@ -325,6 +330,52 @@ final class WebsiteViewModel: ObservableObject {
         }
     }
 
+    func resetWebsite(_ website: WebsiteModel, completion: @escaping (Result<Void, Error>) -> Void) {
+        isPerformingAction = true
+
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+
+            defer { isPerformingAction = false }
+
+            do {
+                try await service.resetWebsiteAsync(id: website.id)
+                service.invalidateAnalyticsCache(for: website.id)
+
+                if selectedWebsite?.id == website.id {
+                    loadedTabs.removeAll()
+                    refreshRequestTracking()
+                    loadTabIfNeeded(selectedDetailTab, force: true)
+                }
+
+                loadDashboardStats()
+                completion(.success(()))
+            } catch {
+                setRootError(error)
+                completion(.failure(error))
+            }
+        }
+    }
+
+    func transferWebsite(_ website: WebsiteModel, teamId: String?, completion: @escaping (Result<Void, Error>) -> Void) {
+        isPerformingAction = true
+
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+
+            defer { isPerformingAction = false }
+
+            do {
+                try await service.transferWebsiteAsync(id: website.id, userId: teamId == nil ? AuthManager.shared.currentUser?.id : nil, teamId: teamId)
+                loadWebsites()
+                completion(.success(()))
+            } catch {
+                setRootError(error)
+                completion(.failure(error))
+            }
+        }
+    }
+
     func changePeriod(_ period: StatsPeriod) {
         selectedPeriod = period
         loadDashboardStats()
@@ -457,7 +508,11 @@ final class WebsiteViewModel: ObservableObject {
 
             for website in websites {
                 do {
-                    statsByWebsite[website.id] = try await service.fetchWebsiteStatsAsync(id: website.id, period: period)
+                    statsByWebsite[website.id] = try await service.fetchWebsiteStatsAsync(
+                        id: website.id,
+                        period: period,
+                        query: queryOptions
+                    )
                 } catch {
                     continue
                 }
@@ -497,6 +552,8 @@ final class WebsiteViewModel: ObservableObject {
         eventSeries = []
         eventsPage = nil
         sessionsPage = nil
+        selectedSessionID = nil
+        isLoadingSessionDetail = false
         sessionStats = [:]
         sessionsWeekly = []
         selectedSessionRecord = nil
@@ -504,12 +561,19 @@ final class WebsiteViewModel: ObservableObject {
         selectedSessionProperties = [:]
         realtimeSnapshot = nil
         eventDataState = EventDataState()
+        reports = []
+        segments = []
+        cohorts = []
+        links = []
+        pixels = []
         eventsSearchQuery = ""
         sessionsSearchQuery = ""
         hasMoreEvents = false
         hasMoreSessions = false
         isLoadingMoreEvents = false
         isLoadingMoreSessions = false
+        availableFilterValues = [:]
+        isLoadingFilterValues = false
         nextEventsPage = 1
         nextSessionsPage = 1
     }

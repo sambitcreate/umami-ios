@@ -50,13 +50,13 @@ extension WebsiteViewModel {
 
     func fetchSessionStatsResult(websiteId: String, period: StatsPeriod) async -> Result<[String: MetricValue], Error> {
         await captureResult {
-            try await service.fetchWebsiteSessionStatsAsync(id: websiteId, period: period)
+            try await service.fetchWebsiteSessionStatsAsync(id: websiteId, period: period, query: queryOptions)
         }
     }
 
     func fetchSessionsWeeklyResult(websiteId: String, period: StatsPeriod) async -> Result<[WeeklySessionPoint], Error> {
         await captureResult {
-            try await service.fetchWebsiteSessionsWeeklyAsync(id: websiteId, period: period)
+            try await service.fetchWebsiteSessionsWeeklyAsync(id: websiteId, period: period, query: queryOptions)
         }
     }
 
@@ -132,7 +132,8 @@ extension WebsiteViewModel {
                 period: period,
                 page: page,
                 pageSize: pageSize,
-                search: search
+                search: search,
+                query: queryOptions
             )
         }
 
@@ -165,19 +166,54 @@ extension WebsiteViewModel {
     func loadSessionDetail(sessionId: String) {
         guard let websiteId = selectedWebsite?.id else { return }
         let period = selectedPeriod
+        selectedSessionID = sessionId
+        isLoadingSessionDetail = true
+        selectedSessionRecord = nil
+        selectedSessionActivity = []
+        selectedSessionProperties = [:]
 
         Task { @MainActor [weak self] in
             guard let self else { return }
 
-            let result = await captureResult {
+            async let detailResult = captureResult {
                 try await self.service.fetchWebsiteSessionAsync(id: websiteId, sessionId: sessionId)
             }
+            async let activityResult = captureResult {
+                try await self.service.fetchWebsiteSessionActivityAsync(id: websiteId, sessionId: sessionId, period: period)
+            }
+            async let propertiesResult = captureResult {
+                try await self.service.fetchWebsiteSessionPropertiesAsync(id: websiteId, sessionId: sessionId)
+            }
 
-            guard contextMatches(websiteId: websiteId, period: period) else { return }
+            defer {
+                if contextMatches(websiteId: websiteId, period: period), selectedSessionID == sessionId {
+                    isLoadingSessionDetail = false
+                }
+            }
 
-            switch result {
+            let resolvedDetail = await detailResult
+            let resolvedActivity = await activityResult
+            let resolvedProperties = await propertiesResult
+
+            guard contextMatches(websiteId: websiteId, period: period), selectedSessionID == sessionId else { return }
+
+            switch resolvedDetail {
             case .success(let session):
                 selectedSessionRecord = session
+            case .failure(let error):
+                setTabError(.sessions, error: error)
+            }
+
+            switch resolvedActivity {
+            case .success(let activity):
+                selectedSessionActivity = activity
+            case .failure(let error):
+                setTabError(.sessions, error: error)
+            }
+
+            switch resolvedProperties {
+            case .success(let properties):
+                selectedSessionProperties = properties
             case .failure(let error):
                 setTabError(.sessions, error: error)
             }

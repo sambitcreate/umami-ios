@@ -34,9 +34,38 @@ struct ServerInfo: Codable, Sendable {
     let name: String
 }
 
+enum CloudRegion: String, Codable, CaseIterable, Identifiable, Sendable {
+    case global
+    case us
+    case eu
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .global:
+            return "Global"
+        case .us:
+            return "United States"
+        case .eu:
+            return "Europe"
+        }
+    }
+
+    var pathComponent: String? {
+        switch self {
+        case .global:
+            return nil
+        case .us, .eu:
+            return rawValue
+        }
+    }
+}
+
 enum ServerType: String, Codable, CaseIterable, Sendable {
     case cloud
     case selfHosted = "self"
+    case publicShare = "share"
 
     var displayName: String {
         switch self {
@@ -44,14 +73,97 @@ enum ServerType: String, Codable, CaseIterable, Sendable {
             return "Umami Cloud"
         case .selfHosted:
             return "Self Hosted"
+        case .publicShare:
+            return "Shared Dashboard"
         }
     }
+}
+
+struct ServerConfig: Codable, Sendable, Equatable {
+    let cloudMode: Bool?
+    let privateMode: Bool?
+    let trackerScriptName: String?
+    let linksUrl: String?
+    let pixelsUrl: String?
+
+    init(
+        cloudMode: Bool? = nil,
+        privateMode: Bool? = nil,
+        trackerScriptName: String? = nil,
+        linksUrl: String? = nil,
+        pixelsUrl: String? = nil
+    ) {
+        self.cloudMode = cloudMode
+        self.privateMode = privateMode
+        self.trackerScriptName = trackerScriptName
+        self.linksUrl = linksUrl
+        self.pixelsUrl = pixelsUrl
+    }
+}
+
+struct WorkspaceTeam: Codable, Identifiable, Hashable, Sendable {
+    let id: String
+    let name: String
+    let role: String?
+    let accessCode: String?
+
+    init(id: String, name: String, role: String? = nil, accessCode: String? = nil) {
+        self.id = id
+        self.name = name
+        self.role = role
+        self.accessCode = accessCode
+    }
+}
+
+struct WorkspaceSelection: Codable, Equatable, Hashable, Sendable {
+    let teamId: String?
+    let name: String
+
+    static let personal = WorkspaceSelection(teamId: nil, name: "Personal")
+
+    var id: String {
+        teamId ?? "personal"
+    }
+
+    var isPersonal: Bool {
+        teamId == nil
+    }
+}
+
+struct UmamiSession: Codable, Equatable, Sendable {
+    let serverType: ServerType
+    let baseURL: String
+    let normalizedBaseURL: String
+    let cloudRegion: CloudRegion?
+    let trackerBaseURL: String
+    let shareId: String?
+    let sharedWebsiteId: String?
+
+    var identifier: String {
+        let regionSegment = cloudRegion?.rawValue ?? "none"
+        let shareSegment = shareId ?? "none"
+        return "\(serverType.rawValue)|\(normalizedBaseURL)|\(regionSegment)|\(shareSegment)"
+    }
+
+    var isReadOnly: Bool {
+        serverType == .publicShare
+    }
+
+    var isCloud: Bool {
+        serverType == .cloud
+    }
+}
+
+struct ShareBootstrapResponse: Codable, Sendable {
+    let websiteId: String
+    let token: String
 }
 
 enum AuthError: Error, Sendable {
     case invalidURL
     case invalidCredentials
     case missingAPIKey
+    case missingShareID
     case networkError(String)
     case serverError(String)
     case decodingError
@@ -65,6 +177,8 @@ enum AuthError: Error, Sendable {
             return "Incorrect username or password."
         case .missingAPIKey:
             return "Please enter your Umami Cloud API key."
+        case .missingShareID:
+            return "Please enter the shared dashboard ID."
         case .networkError(let description):
             return "Network error: \(description)"
         case .serverError(let message):

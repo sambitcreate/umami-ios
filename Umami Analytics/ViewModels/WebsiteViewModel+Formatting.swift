@@ -12,7 +12,7 @@ import Foundation
 extension WebsiteViewModel {
 
     var hasWebsites: Bool {
-        !websites.isEmpty
+        !filteredWebsites.isEmpty
     }
 
     var formattedPageviews: String {

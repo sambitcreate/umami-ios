@@ -10,12 +10,14 @@ import SwiftUI
 @MainActor
 struct DashboardView: View {
     @StateObject private var viewModel = WebsiteViewModel()
+    @ObservedObject private var authManager = AuthManager.shared
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 20) {
                     welcomeHeader
+                    workspaceSelector
                     periodSelector
 
                     if viewModel.hasWebsites {
@@ -36,6 +38,7 @@ struct DashboardView: View {
                     }) {
                         Image(systemName: "arrow.clockwise")
                     }
+                    .accessibilityLabel("Refresh")
                 }
             }
             .overlay {
@@ -63,18 +66,24 @@ struct DashboardView: View {
             viewModel.loadWebsites()
             viewModel.loadDashboardStats()
         }
+        .onChange(of: authManager.selectedWorkspace) { _, newSelection in
+            viewModel.applyWorkspaceSelection(newSelection)
+        }
     }
 
     // MARK: - Subviews
 
     @ViewBuilder
     private var welcomeHeader: some View {
-        let authManager = AuthManager.shared
         if let user = authManager.currentUser {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Welcome, \(user.username)")
                     .font(.title)
                     .fontWeight(.bold)
+
+                Text(authManager.selectedWorkspace.name)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
 
                 if let serverURL = authManager.serverURL {
                     Text("Connected to: \(serverURL)")
@@ -90,6 +99,16 @@ struct DashboardView: View {
                     .font(.title)
                     .fontWeight(.bold)
 
+                if authManager.isReadOnlySession {
+                    Label("Read-only shared analytics", systemImage: "lock.fill")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text(authManager.selectedWorkspace.name)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+
                 if authManager.serverType == .cloud {
                     Text("Connected using your Umami Cloud API key.")
                         .font(.subheadline)
@@ -103,6 +122,41 @@ struct DashboardView: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal)
+        }
+    }
+
+    @ViewBuilder
+    private var workspaceSelector: some View {
+        if authManager.workspaceOptions.count > 1 || authManager.isReadOnlySession {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text("Workspace")
+                        .font(.headline)
+
+                    Spacer()
+
+                    Picker(
+                        "Workspace",
+                        selection: Binding(
+                            get: { authManager.selectedWorkspace },
+                            set: { viewModel.applyWorkspaceSelection($0) }
+                        )
+                    ) {
+                        ForEach(authManager.workspaceOptions, id: \.id) { option in
+                            Text(option.name).tag(option)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .disabled(authManager.isReadOnlySession)
+                }
+
+                if authManager.isReadOnlySession {
+                    Text("Public shares stay read-only, so website settings remain hidden.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            }
             .padding(.horizontal)
         }
     }
@@ -195,7 +249,7 @@ struct DashboardView: View {
                     .padding()
                     .frame(maxWidth: .infinity)
                     .background(Color(.secondarySystemBackground))
-                    .cornerRadius(10)
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
             }
             .padding(.horizontal)
         }
@@ -203,29 +257,35 @@ struct DashboardView: View {
 
     private var emptyState: some View {
         VStack(spacing: 20) {
-            Image(systemName: "chart.bar.xaxis")
+            Image(systemName: authManager.isReadOnlySession ? "lock.doc" : "chart.bar.xaxis")
                 .font(.largeTitle)
                 .imageScale(.large)
                 .foregroundStyle(.secondary)
 
-            Text("No websites found")
+            Text(authManager.isReadOnlySession ? "No shared website loaded" : "No websites found")
                 .font(.headline)
                 .foregroundStyle(.secondary)
 
-            Text("Add websites to your Umami account to see analytics data here.")
+            Text(
+                authManager.isReadOnlySession
+                ? "This shared dashboard session does not currently expose a website."
+                : "Add websites to your selected workspace to see analytics data here."
+            )
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 40)
 
-            NavigationLink(destination: WebsitesView()) {
-                Text("Go to Websites")
-                    .fontWeight(.semibold)
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 10)
-                    .background(Color.blue)
-                    .foregroundStyle(.white)
-                    .cornerRadius(10)
+            if !authManager.isReadOnlySession {
+                NavigationLink(destination: WebsitesView()) {
+                    Text("Go to Websites")
+                        .fontWeight(.semibold)
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 10)
+                        .background(.tint)
+                        .foregroundStyle(.white)
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                }
             }
         }
         .padding(40)
@@ -275,8 +335,10 @@ struct DashboardWebsiteCard: View {
             .padding(.bottom, 14)
         }
         .background(Color(.secondarySystemBackground))
-        .cornerRadius(12)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
         .padding(.horizontal)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(website.name), \(website.domain)")
     }
 
     private func metricCell(icon: String, label: String, value: String, color: Color) -> some View {

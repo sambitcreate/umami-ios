@@ -131,7 +131,8 @@ private final class StubAPIClient: APIClient {
         dateRange: DateRange,
         page: Int,
         pageSize: Int,
-        search: String?
+        search: String?,
+        query: AnalyticsQueryOptions = .default
     ) -> AnyPublisher<PaginatedResponse<AnalyticsRecord>, Error> {
         eventsCallsByWebsite[id, default: 0] += 1
         let eventName = search ?? "event-\(page)"

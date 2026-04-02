@@ -113,11 +113,59 @@ struct UpdateWebsiteRequest: Codable, Sendable {
     let shareId: String?
 }
 
+struct TransferWebsiteRequest: Codable, Sendable {
+    let userId: String?
+    let teamId: String?
+}
+
 struct WebsiteListResponse: Codable, Sendable {
     let data: [WebsiteModel]
     let count: Int
     let page: Int?
     let pageSize: Int?
+}
+
+struct SavedReport: Codable, Identifiable, Sendable {
+    let id: String
+    let websiteId: String?
+    let teamId: String?
+    let name: String
+    let type: String
+    let description: String?
+    let updatedAt: String?
+}
+
+enum SegmentType: String, Codable, CaseIterable, Identifiable, Sendable {
+    case segment
+    case cohort
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .segment:
+            return "Segments"
+        case .cohort:
+            return "Cohorts"
+        }
+    }
+}
+
+struct SegmentDefinition: Decodable, Identifiable, Sendable {
+    let id: String
+    let websiteId: String?
+    let name: String
+    let type: SegmentType
+    let parameters: [String: JSONValue]?
+    let updatedAt: String?
+}
+
+struct TrackedAsset: Codable, Identifiable, Sendable {
+    let id: String
+    let name: String
+    let slug: String
+    let url: String?
+    let teamId: String?
 }
 
 // Supports both flat numeric and nested {value, prev} stat payloads.
