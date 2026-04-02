@@ -81,33 +81,34 @@ struct WebsiteOverviewTabView: View {
                         .font(.subheadline)
                         .fontWeight(.semibold)
                 } icon: {
-                    Circle()
-                        .fill(viewModel.activeUsersCount > 0 ? Color.green : Color.gray)
-                        .frame(width: 10, height: 10)
-                        .overlay(Circle().stroke(Color.white, lineWidth: 1))
+                    Image(systemName: viewModel.activeUsersCount > 0 ? "circle.fill" : "circle")
+                        .font(.caption2)
+                        .foregroundStyle(viewModel.activeUsersCount > 0 ? .green : .secondary)
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
                 .background((viewModel.activeUsersCount > 0 ? Color.green : Color.gray).opacity(0.1))
                 .clipShape(Capsule())
+                .accessibilityLabel(viewModel.activeUsersCount > 0 ? "\(viewModel.activeUsersCount) visitors online now" : "No active visitors")
             }
             .padding(.horizontal)
 
             Text(viewModel.activeUsersCount > 0 ? "These visitors are browsing your site right now." : "We'll update this section as soon as someone arrives on your site.")
                 .font(.caption)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
                 .padding(.horizontal)
         }
     }
 
     private func topMetricsSection(title: String, items: [MetricItem]) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
+        let displayItems = Array(items.prefix(8))
+        return VStack(alignment: .leading, spacing: 12) {
             Text(title)
                 .font(.headline)
                 .padding(.horizontal)
 
             VStack(spacing: 0) {
-                ForEach(Array(items.prefix(8).enumerated()), id: \.offset) { _, item in
+                ForEach(Array(displayItems.enumerated()), id: \.offset) { index, item in
                     HStack {
                         Text(item.x.isEmpty ? "(empty)" : item.x)
                             .font(.subheadline)
@@ -117,17 +118,19 @@ struct WebsiteOverviewTabView: View {
 
                         Text("\(item.y)")
                             .font(.subheadline)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     }
                     .padding()
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("\(item.x.isEmpty ? "empty" : item.x), \(item.y) views")
 
-                    if item.id != items.prefix(8).last?.id {
+                    if index < displayItems.count - 1 {
                         Divider()
                     }
                 }
             }
             .background(Color(UIColor.secondarySystemBackground))
-            .cornerRadius(10)
+            .clipShape(RoundedRectangle(cornerRadius: 10))
             .padding(.horizontal)
         }
     }
@@ -135,15 +138,18 @@ struct WebsiteOverviewTabView: View {
     private func inlineError(_ message: String) -> some View {
         HStack(spacing: 10) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundColor(.orange)
+                .foregroundStyle(.orange)
+                .accessibilityHidden(true)
             Text(message)
                 .font(.footnote)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
             Spacer()
         }
         .padding(12)
         .background(Color(UIColor.secondarySystemBackground))
-        .cornerRadius(10)
+        .clipShape(RoundedRectangle(cornerRadius: 10))
         .padding(.horizontal)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Error: \(message)")
     }
 }

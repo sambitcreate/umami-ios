@@ -20,20 +20,21 @@ struct WebsiteAudienceTabView: View {
 
     private func metricsSection(title: String, dimension: MetricDimension) -> some View {
         let items = viewModel.metricsByDimension[dimension] ?? []
+        let displayItems = Array(items.prefix(8))
 
         return VStack(alignment: .leading, spacing: 12) {
             Text(title)
                 .font(.headline)
                 .padding(.horizontal)
 
-            if items.isEmpty {
+            if displayItems.isEmpty {
                 Text("No data available")
                     .font(.footnote)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .padding(.horizontal)
             } else {
                 VStack(spacing: 0) {
-                    ForEach(Array(items.prefix(8).enumerated()), id: \.offset) { _, item in
+                    ForEach(Array(displayItems.enumerated()), id: \.offset) { index, item in
                         HStack {
                             Text(item.x.isEmpty ? "(empty)" : item.x)
                                 .font(.subheadline)
@@ -43,17 +44,19 @@ struct WebsiteAudienceTabView: View {
 
                             Text("\(item.y)")
                                 .font(.subheadline)
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                         }
                         .padding()
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel("\(item.x.isEmpty ? "empty" : item.x), \(item.y)")
 
-                        if item.id != items.prefix(8).last?.id {
+                        if index < displayItems.count - 1 {
                             Divider()
                         }
                     }
                 }
                 .background(Color(UIColor.secondarySystemBackground))
-                .cornerRadius(10)
+                .clipShape(RoundedRectangle(cornerRadius: 10))
                 .padding(.horizontal)
             }
         }
@@ -62,15 +65,18 @@ struct WebsiteAudienceTabView: View {
     private func inlineError(_ message: String) -> some View {
         HStack(spacing: 10) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundColor(.orange)
+                .foregroundStyle(.orange)
+                .accessibilityHidden(true)
             Text(message)
                 .font(.footnote)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
             Spacer()
         }
         .padding(12)
         .background(Color(UIColor.secondarySystemBackground))
-        .cornerRadius(10)
+        .clipShape(RoundedRectangle(cornerRadius: 10))
         .padding(.horizontal)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Error: \(message)")
     }
 }
