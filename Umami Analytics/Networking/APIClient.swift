@@ -302,8 +302,12 @@ class APIClient {
             } catch let apiError as APIError {
                 throw apiError
             } catch {
+                if Task.isCancelled || error is CancellationError {
+                    throw CancellationError()
+                }
                 if attempt < maxRetryAttempts {
                     try? await Task.sleep(nanoseconds: retryDelay(for: attempt, retryAfter: nil))
+                    if Task.isCancelled { throw CancellationError() }
                     continue
                 }
                 throw APIError.networkError(error.localizedDescription)
@@ -826,6 +830,7 @@ class APIClient {
 
         var allWebsites = firstPage.data
         for page in 2...totalPages {
+            try Task.checkCancellation()
             let response = try await getWebsitesAsync(page: page, pageSize: pageSize)
             allWebsites.append(contentsOf: response.data)
         }
@@ -845,6 +850,7 @@ class APIClient {
 
             var allWebsites = firstPage.data
             for page in 2...totalPages {
+                try Task.checkCancellation()
                 let response = try await getAccessibleWebsitesAsync(page: page, pageSize: pageSize)
                 allWebsites.append(contentsOf: response.data)
             }

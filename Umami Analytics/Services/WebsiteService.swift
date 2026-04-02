@@ -101,6 +101,7 @@ final class WebsiteService: WebsiteServicing {
 
     private var analyticsCache: [String: CacheEntry] = [:]
     private var realtimeSnapshots: [String: RealtimeData] = [:]
+    private var inFlightCallbacks: [String: [(Result<Any, Error>) -> Void]] = [:]
 
     init(
         apiClientProvider: @escaping @MainActor () -> APIClient? = { AuthManager.shared.apiClient },
@@ -877,6 +878,45 @@ final class WebsiteService: WebsiteServicing {
         analyticsCache[key] = CacheEntry(expiryDate: expiry, value: value)
     }
 
+    private func deduplicatedFetch<T>(key: String, fetch: @MainActor () async throws -> T) async throws -> T {
+        if let cached: T = cachedValue(for: key) { return cached }
+
+        if inFlightCallbacks[key] != nil {
+            return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<T, Error>) in
+                inFlightCallbacks[key]?.append { result in
+                    switch result {
+                    case .success(let value):
+                        if let typed = value as? T {
+                            continuation.resume(returning: typed)
+                        } else {
+                            continuation.resume(throwing: APIError.decodingError)
+                        }
+                    case .failure(let error):
+                        continuation.resume(throwing: error)
+                    }
+                }
+            }
+        }
+
+        inFlightCallbacks[key] = []
+
+        do {
+            let result = try await fetch()
+            setCachedValue(result, for: key)
+            let callbacks = inFlightCallbacks.removeValue(forKey: key) ?? []
+            for callback in callbacks {
+                callback(.success(result))
+            }
+            return result
+        } catch {
+            let callbacks = inFlightCallbacks.removeValue(forKey: key) ?? []
+            for callback in callbacks {
+                callback(.failure(error))
+            }
+            throw error
+        }
+    }
+
     private func realtimeSleepInterval(for interval: TimeInterval) -> UInt64 {
         UInt64(max(interval, 0.05) * 1_000_000_000)
     }
@@ -983,8 +1023,11 @@ extension WebsiteService {
 
     func fetchWebsiteStatsAsync(id: String, period: StatsPeriod, query: AnalyticsQueryOptions = .default) async throws -> WebsiteStatsResponse {
         guard let apiClient = apiClientProvider() else { throw APIError.unauthorized }
-        let dateRange = createDateRange(for: period)
-        let response = try await apiClient.getWebsiteStatsAsync(id: id, dateRange: dateRange, query: query)
+        let cacheKey = makeCacheKey(prefix: "stats", websiteId: id, period: period, extras: [query.cacheKey])
+        let response: WebsiteStatsResponse = try await deduplicatedFetch(key: cacheKey) {
+            let dateRange = self.createDateRange(for: period)
+            return try await apiClient.getWebsiteStatsAsync(id: id, dateRange: dateRange, query: query)
+        }
         saveStatsToCache(websiteId: id, stats: response, period: period)
         return response
     }
@@ -992,18 +1035,21 @@ extension WebsiteService {
     func fetchWebsiteMetricsAsync(id: String, period: StatsPeriod, type: String, query: AnalyticsQueryOptions = .default) async throws -> WebsiteMetricsResponse {
         guard let apiClient = apiClientProvider() else { throw APIError.unauthorized }
         let cacheKey = makeCacheKey(prefix: "metrics", websiteId: id, period: period, extras: [type, query.cacheKey])
-        if let cached: WebsiteMetricsResponse = cachedValue(for: cacheKey) { return cached }
-        let dateRange = createDateRange(for: period)
-        let response = try await apiClient.getWebsiteMetricsAsync(id: id, dateRange: dateRange, type: type, query: query)
+        let response: WebsiteMetricsResponse = try await deduplicatedFetch(key: cacheKey) {
+            let dateRange = self.createDateRange(for: period)
+            return try await apiClient.getWebsiteMetricsAsync(id: id, dateRange: dateRange, type: type, query: query)
+        }
         saveMetricsToCache(websiteId: id, metrics: response, period: period)
-        setCachedValue(response, for: cacheKey)
         return response
     }
 
     func fetchWebsitePageviewsAsync(id: String, period: StatsPeriod, query: AnalyticsQueryOptions = .default) async throws -> PageviewsResponse {
         guard let apiClient = apiClientProvider() else { throw APIError.unauthorized }
-        let dateRange = createDateRange(for: period)
-        return try await apiClient.getWebsitePageviewsAsync(id: id, dateRange: dateRange, query: query)
+        let cacheKey = makeCacheKey(prefix: "pageviews", websiteId: id, period: period, extras: [query.cacheKey])
+        return try await deduplicatedFetch(key: cacheKey) {
+            let dateRange = self.createDateRange(for: period)
+            return try await apiClient.getWebsitePageviewsAsync(id: id, dateRange: dateRange, query: query)
+        }
     }
 
     func fetchActiveUsersAsync(id: String) async throws -> ActiveUsersResponse {
@@ -1021,111 +1067,100 @@ extension WebsiteService {
     func fetchWebsiteEventSeriesAsync(id: String, period: StatsPeriod, eventName: String?, query: AnalyticsQueryOptions = .default) async throws -> [TimeSeriesData] {
         guard let apiClient = apiClientProvider() else { throw APIError.unauthorized }
         let cacheKey = makeCacheKey(prefix: "eventSeries", websiteId: id, period: period, extras: [eventName ?? "", query.cacheKey])
-        if let cached: [TimeSeriesData] = cachedValue(for: cacheKey) { return cached }
-        let dateRange = createDateRange(for: period)
-        let response = try await apiClient.getWebsiteEventSeriesAsync(id: id, dateRange: dateRange, eventName: eventName, query: query)
-        setCachedValue(response, for: cacheKey)
-        return response
+        return try await deduplicatedFetch(key: cacheKey) {
+            let dateRange = self.createDateRange(for: period)
+            return try await apiClient.getWebsiteEventSeriesAsync(id: id, dateRange: dateRange, eventName: eventName, query: query)
+        }
     }
 
     func fetchWebsiteEventsAsync(id: String, period: StatsPeriod, page: Int, pageSize: Int, search: String?, query: AnalyticsQueryOptions = .default) async throws -> PaginatedResponse<AnalyticsRecord> {
         guard let apiClient = apiClientProvider() else { throw APIError.unauthorized }
         let cacheKey = makeCacheKey(prefix: "events", websiteId: id, period: period, extras: ["\(page)", "\(pageSize)", search ?? "", query.cacheKey])
-        if let cached: PaginatedResponse<AnalyticsRecord> = cachedValue(for: cacheKey) { return cached }
-        let dateRange = createDateRange(for: period)
-        let response = try await apiClient.getWebsiteEventsAsync(id: id, dateRange: dateRange, page: page, pageSize: pageSize, search: search, query: query)
-        setCachedValue(response, for: cacheKey)
-        return response
+        return try await deduplicatedFetch(key: cacheKey) {
+            let dateRange = self.createDateRange(for: period)
+            return try await apiClient.getWebsiteEventsAsync(id: id, dateRange: dateRange, page: page, pageSize: pageSize, search: search, query: query)
+        }
     }
 
     func fetchWebsiteValuesAsync(id: String, type: String, period: StatsPeriod, search: String?, query: AnalyticsQueryOptions = .default) async throws -> [FilterValue] {
         guard let apiClient = apiClientProvider() else { throw APIError.unauthorized }
         let cacheKey = makeCacheKey(prefix: "values", websiteId: id, period: period, extras: [type, search ?? "", query.cacheKey])
-        if let cached: [FilterValue] = cachedValue(for: cacheKey) { return cached }
-        let dateRange = createDateRange(for: period)
-        let response = try await apiClient.getWebsiteValuesAsync(id: id, type: type, dateRange: dateRange, search: search, query: query)
-        setCachedValue(response, for: cacheKey)
-        return response
+        return try await deduplicatedFetch(key: cacheKey) {
+            let dateRange = self.createDateRange(for: period)
+            return try await apiClient.getWebsiteValuesAsync(id: id, type: type, dateRange: dateRange, search: search, query: query)
+        }
     }
 
     func fetchEventDataFieldsAsync(id: String, period: StatsPeriod) async throws -> [FilterValue] {
         guard let apiClient = apiClientProvider() else { throw APIError.unauthorized }
         let cacheKey = makeCacheKey(prefix: "eventDataFields", websiteId: id, period: period)
-        if let cached: [FilterValue] = cachedValue(for: cacheKey) { return cached }
-        let dateRange = createDateRange(for: period)
-        let response = try await apiClient.getEventDataFieldsAsync(id: id, dateRange: dateRange)
-        setCachedValue(response, for: cacheKey)
-        return response
+        return try await deduplicatedFetch(key: cacheKey) {
+            let dateRange = self.createDateRange(for: period)
+            return try await apiClient.getEventDataFieldsAsync(id: id, dateRange: dateRange)
+        }
     }
 
     func fetchEventDataPropertiesAsync(id: String, period: StatsPeriod, propertyName: String?) async throws -> [FilterValue] {
         guard let apiClient = apiClientProvider() else { throw APIError.unauthorized }
         let cacheKey = makeCacheKey(prefix: "eventDataProperties", websiteId: id, period: period, extras: [propertyName ?? ""])
-        if let cached: [FilterValue] = cachedValue(for: cacheKey) { return cached }
-        let dateRange = createDateRange(for: period)
-        let response = try await apiClient.getEventDataPropertiesAsync(id: id, dateRange: dateRange, propertyName: propertyName)
-        setCachedValue(response, for: cacheKey)
-        return response
+        return try await deduplicatedFetch(key: cacheKey) {
+            let dateRange = self.createDateRange(for: period)
+            return try await apiClient.getEventDataPropertiesAsync(id: id, dateRange: dateRange, propertyName: propertyName)
+        }
     }
 
     func fetchEventDataEventsAsync(id: String, period: StatsPeriod, event: String?) async throws -> [FilterValue] {
         guard let apiClient = apiClientProvider() else { throw APIError.unauthorized }
         let cacheKey = makeCacheKey(prefix: "eventDataEvents", websiteId: id, period: period, extras: [event ?? ""])
-        if let cached: [FilterValue] = cachedValue(for: cacheKey) { return cached }
-        let dateRange = createDateRange(for: period)
-        let response = try await apiClient.getEventDataEventsAsync(id: id, dateRange: dateRange, event: event)
-        setCachedValue(response, for: cacheKey)
-        return response
+        return try await deduplicatedFetch(key: cacheKey) {
+            let dateRange = self.createDateRange(for: period)
+            return try await apiClient.getEventDataEventsAsync(id: id, dateRange: dateRange, event: event)
+        }
     }
 
     func fetchEventDataStatsAsync(id: String, period: StatsPeriod, query: AnalyticsQueryOptions = .default) async throws -> [String: MetricValue] {
         guard let apiClient = apiClientProvider() else { throw APIError.unauthorized }
         let cacheKey = makeCacheKey(prefix: "eventDataStats", websiteId: id, period: period, extras: [query.cacheKey])
-        if let cached: [String: MetricValue] = cachedValue(for: cacheKey) { return cached }
-        let dateRange = createDateRange(for: period)
-        let response = try await apiClient.getEventDataStatsAsync(id: id, dateRange: dateRange, query: query)
-        setCachedValue(response, for: cacheKey)
-        return response
+        return try await deduplicatedFetch(key: cacheKey) {
+            let dateRange = self.createDateRange(for: period)
+            return try await apiClient.getEventDataStatsAsync(id: id, dateRange: dateRange, query: query)
+        }
     }
 
     func fetchEventDataValuesAsync(id: String, period: StatsPeriod, eventName: String?, propertyName: String?) async throws -> [FilterValue] {
         guard let apiClient = apiClientProvider() else { throw APIError.unauthorized }
         let cacheKey = makeCacheKey(prefix: "eventDataValues", websiteId: id, period: period, extras: [eventName ?? "", propertyName ?? ""])
-        if let cached: [FilterValue] = cachedValue(for: cacheKey) { return cached }
-        let dateRange = createDateRange(for: period)
-        let response = try await apiClient.getEventDataValuesAsync(id: id, dateRange: dateRange, eventName: eventName, propertyName: propertyName)
-        setCachedValue(response, for: cacheKey)
-        return response
+        return try await deduplicatedFetch(key: cacheKey) {
+            let dateRange = self.createDateRange(for: period)
+            return try await apiClient.getEventDataValuesAsync(id: id, dateRange: dateRange, eventName: eventName, propertyName: propertyName)
+        }
     }
 
     func fetchWebsiteSessionStatsAsync(id: String, period: StatsPeriod, query: AnalyticsQueryOptions = .default) async throws -> [String: MetricValue] {
         guard let apiClient = apiClientProvider() else { throw APIError.unauthorized }
         let cacheKey = makeCacheKey(prefix: "sessionStats", websiteId: id, period: period, extras: [query.cacheKey])
-        if let cached: [String: MetricValue] = cachedValue(for: cacheKey) { return cached }
-        let dateRange = createDateRange(for: period)
-        let response = try await apiClient.getWebsiteSessionStatsAsync(id: id, dateRange: dateRange, query: query)
-        setCachedValue(response, for: cacheKey)
-        return response
+        return try await deduplicatedFetch(key: cacheKey) {
+            let dateRange = self.createDateRange(for: period)
+            return try await apiClient.getWebsiteSessionStatsAsync(id: id, dateRange: dateRange, query: query)
+        }
     }
 
     func fetchWebsiteSessionsWeeklyAsync(id: String, period: StatsPeriod, query: AnalyticsQueryOptions = .default) async throws -> [WeeklySessionPoint] {
         guard let apiClient = apiClientProvider() else { throw APIError.unauthorized }
         let cacheKey = makeCacheKey(prefix: "sessionsWeekly", websiteId: id, period: period, extras: [query.cacheKey])
-        if let cached: [WeeklySessionPoint] = cachedValue(for: cacheKey) { return cached }
-        let dateRange = createDateRange(for: period)
-        let response = try await apiClient.getWebsiteSessionsWeeklyAsync(id: id, dateRange: dateRange, query: query)
-        setCachedValue(response, for: cacheKey)
-        return response
+        return try await deduplicatedFetch(key: cacheKey) {
+            let dateRange = self.createDateRange(for: period)
+            return try await apiClient.getWebsiteSessionsWeeklyAsync(id: id, dateRange: dateRange, query: query)
+        }
     }
 
     func fetchWebsiteSessionsAsync(id: String, period: StatsPeriod, page: Int, pageSize: Int, search: String?, query: AnalyticsQueryOptions = .default) async throws -> PaginatedResponse<AnalyticsRecord> {
         guard let apiClient = apiClientProvider() else { throw APIError.unauthorized }
         let cacheKey = makeCacheKey(prefix: "sessions", websiteId: id, period: period, extras: ["\(page)", "\(pageSize)", search ?? "", query.cacheKey])
-        if let cached: PaginatedResponse<AnalyticsRecord> = cachedValue(for: cacheKey) { return cached }
-        let dateRange = createDateRange(for: period)
-        let response = try await apiClient.getWebsiteSessionsAsync(id: id, dateRange: dateRange, page: page, pageSize: pageSize, search: search, query: query)
-        setCachedValue(response, for: cacheKey)
-        return response
+        return try await deduplicatedFetch(key: cacheKey) {
+            let dateRange = self.createDateRange(for: period)
+            return try await apiClient.getWebsiteSessionsAsync(id: id, dateRange: dateRange, page: page, pageSize: pageSize, search: search, query: query)
+        }
     }
 
     func fetchWebsiteSessionAsync(id: String, sessionId: String) async throws -> AnalyticsRecord {

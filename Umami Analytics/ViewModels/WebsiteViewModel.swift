@@ -507,6 +507,7 @@ final class WebsiteViewModel: ObservableObject {
             var statsByWebsite: [String: WebsiteStatsResponse] = [:]
 
             for website in websites {
+                guard !Task.isCancelled else { return }
                 do {
                     statsByWebsite[website.id] = try await service.fetchWebsiteStatsAsync(
                         id: website.id,

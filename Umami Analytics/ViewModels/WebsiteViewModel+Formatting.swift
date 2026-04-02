@@ -61,6 +61,8 @@ extension WebsiteViewModel {
     }
 
     func setRootError(_ error: Error) {
+        if error is CancellationError { return }
+        if (error as? URLError)?.code == .cancelled { return }
         if let apiError = error as? APIError {
             errorMessage = apiError.message
         } else {
@@ -69,6 +71,8 @@ extension WebsiteViewModel {
     }
 
     func setTabError(_ tab: WebsiteDetailTab, error: Error) {
+        if error is CancellationError { return }
+        if (error as? URLError)?.code == .cancelled { return }
         if let apiError = error as? APIError {
             tabErrors[tab] = apiError.message
         } else {
