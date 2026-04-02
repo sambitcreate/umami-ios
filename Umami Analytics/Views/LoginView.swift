@@ -20,19 +20,19 @@ struct LoginView: View {
     @State private var errorMessage: String?
     @State private var showError = false
 
-    @Environment(\.colorScheme) var colorScheme
     @Binding var isAuthenticated: Bool
 
     var body: some View {
         ZStack {
-            (colorScheme == .dark ? Color(UIColor.systemBackground) : Color(UIColor.secondarySystemBackground))
+            Color(UIColor.systemGroupedBackground)
                 .ignoresSafeArea()
 
             VStack(spacing: 30) {
                 VStack(spacing: 10) {
                     Image(systemName: "chart.bar.fill")
                         .font(.system(size: 60))
-                        .foregroundColor(.blue)
+                        .foregroundStyle(.tint)
+                        .accessibilityHidden(true)
 
                     Text("Umami Analytics")
                         .font(.largeTitle)
@@ -40,9 +40,10 @@ struct LoginView: View {
 
                     Text("Privacy-focused web analytics")
                         .font(.subheadline)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
                 .padding(.top, 50)
+                .accessibilityElement(children: .combine)
 
                 VStack(alignment: .leading, spacing: 20) {
                     VStack(alignment: .leading, spacing: 8) {
@@ -61,23 +62,24 @@ struct LoginView: View {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Umami Cloud API Key")
                                 .font(.headline)
-                                .foregroundColor(.primary)
+                                .foregroundStyle(.primary)
 
                             SecureField("umami_live_xxxxx", text: $apiKey)
                                 .textContentType(.password)
                                 .textInputAutocapitalization(.never)
                                 .autocorrectionDisabled()
                                 .padding()
-                                .background(Color(UIColor.systemBackground))
-                                .cornerRadius(10)
+                                .background(Color(UIColor.secondarySystemGroupedBackground))
+                                .clipShape(RoundedRectangle(cornerRadius: 10))
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 10)
-                                        .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                                        .stroke(Color(UIColor.separator), lineWidth: 1)
                                 )
+                                .accessibilityLabel("API Key")
 
                             Text("Your key is available from the Umami Cloud dashboard.")
                                 .font(.caption)
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                         }
 
                         VStack(alignment: .leading, spacing: 8) {
@@ -95,73 +97,77 @@ struct LoginView: View {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Server URL")
                                 .font(.headline)
-                                .foregroundColor(.primary)
+                                .foregroundStyle(.primary)
 
                             TextField("https://analytics.example.com", text: $serverURL)
                                 .textInputAutocapitalization(.never)
                                 .autocorrectionDisabled()
                                 .keyboardType(.URL)
                                 .padding()
-                                .background(Color(UIColor.systemBackground))
-                                .cornerRadius(10)
+                                .background(Color(UIColor.secondarySystemGroupedBackground))
+                                .clipShape(RoundedRectangle(cornerRadius: 10))
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 10)
-                                        .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                                        .stroke(Color(UIColor.separator), lineWidth: 1)
                                 )
+                                .accessibilityLabel("Server URL")
                         }
 
                         if serverType == .publicShare {
                             VStack(alignment: .leading, spacing: 8) {
                                 Text("Share ID")
                                     .font(.headline)
-                                    .foregroundColor(.primary)
+                                    .foregroundStyle(.primary)
 
                                 TextField("share_abcdef", text: $shareID)
                                     .textInputAutocapitalization(.never)
                                     .autocorrectionDisabled()
                                     .padding()
-                                    .background(Color(UIColor.systemBackground))
-                                    .cornerRadius(10)
+                                    .background(Color(UIColor.secondarySystemGroupedBackground))
+                                    .clipShape(RoundedRectangle(cornerRadius: 10))
                                     .overlay(
                                         RoundedRectangle(cornerRadius: 10)
-                                            .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                                            .stroke(Color(UIColor.separator), lineWidth: 1)
                                     )
+                                    .accessibilityLabel("Share ID")
 
                                 Text("Shared dashboards open in read-only mode.")
                                     .font(.caption)
-                                    .foregroundColor(.secondary)
+                                    .foregroundStyle(.secondary)
                             }
                         } else {
                             VStack(alignment: .leading, spacing: 8) {
                                 Text("Username")
                                     .font(.headline)
-                                    .foregroundColor(.primary)
+                                    .foregroundStyle(.primary)
 
                                 TextField("admin", text: $username)
                                     .textInputAutocapitalization(.never)
                                     .autocorrectionDisabled()
                                     .padding()
-                                    .background(Color(UIColor.systemBackground))
-                                    .cornerRadius(10)
+                                    .background(Color(UIColor.secondarySystemGroupedBackground))
+                                    .clipShape(RoundedRectangle(cornerRadius: 10))
                                     .overlay(
                                         RoundedRectangle(cornerRadius: 10)
-                                            .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                                            .stroke(Color(UIColor.separator), lineWidth: 1)
                                     )
+                                    .accessibilityLabel("Username")
                             }
 
                             VStack(alignment: .leading, spacing: 8) {
                                 Text("Password")
                                     .font(.headline)
-                                    .foregroundColor(.primary)
+                                    .foregroundStyle(.primary)
 
                                 SecureField("Password", text: $password)
                                     .padding()
-                                    .background(Color(UIColor.systemBackground))
-                                    .cornerRadius(10)
+                                    .background(Color(UIColor.secondarySystemGroupedBackground))
+                                    .clipShape(RoundedRectangle(cornerRadius: 10))
                                     .overlay(
                                         RoundedRectangle(cornerRadius: 10)
-                                            .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                                            .stroke(Color(UIColor.separator), lineWidth: 1)
                                     )
+                                    .accessibilityLabel("Password")
                             }
                         }
                     }
@@ -170,22 +176,24 @@ struct LoginView: View {
                         if isLoading {
                             ProgressView()
                                 .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                                .frame(maxWidth: .infinity)
+                                .frame(maxWidth: .infinity, minHeight: 44)
                                 .padding()
-                                .background(Color.blue)
-                                .cornerRadius(10)
+                                .background(.tint)
+                                .clipShape(RoundedRectangle(cornerRadius: 10))
                         } else {
                             Text(serverType == .cloud ? "Connect" : "Sign In")
                                 .fontWeight(.bold)
-                                .foregroundColor(.white)
-                                .frame(maxWidth: .infinity)
+                                .foregroundStyle(.white)
+                                .frame(maxWidth: .infinity, minHeight: 44)
                                 .padding()
-                                .background(Color.blue)
-                                .cornerRadius(10)
+                                .background(.tint)
+                                .clipShape(RoundedRectangle(cornerRadius: 10))
                         }
                     }
                     .disabled(isLoading || !isFormValid)
                     .opacity(isFormValid ? 1.0 : 0.6)
+                    .accessibilityLabel(isLoading ? "Signing in" : (serverType == .cloud ? "Connect" : "Sign In"))
+                    .accessibilityHint(isFormValid ? "Double tap to sign in" : "Fill in all required fields first")
                 }
                 .padding(.horizontal, 30)
 
@@ -193,13 +201,11 @@ struct LoginView: View {
             }
             .padding(.vertical, 30)
         }
-        .alert(isPresented: $showError, content: {
-            Alert(
-                title: Text("Login Failed"),
-                message: Text(errorMessage ?? "An unknown error occurred"),
-                dismissButton: .default(Text("OK"))
-            )
-        })
+        .alert("Login Failed", isPresented: $showError) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(errorMessage ?? "An unknown error occurred")
+        }
         .onAppear(perform: loadInitialState)
         .onChange(of: serverType) { _, newType in
             AuthManager.shared.setServerType(newType)
