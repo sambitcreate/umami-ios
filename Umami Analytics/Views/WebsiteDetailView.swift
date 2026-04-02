@@ -50,6 +50,7 @@ struct WebsiteDetailView: View {
                 if viewModel.tabLoading[viewModel.selectedDetailTab] == true || viewModel.isRefreshing {
                     ProgressView()
                         .scaleEffect(0.8)
+                        .accessibilityLabel("Loading")
                 }
             }
         }
@@ -103,6 +104,7 @@ struct WebsiteDetailView: View {
             if let website = viewModel.selectedWebsite {
                 HStack(alignment: .center, spacing: 14) {
                     WebsiteFaviconView(domain: website.domain, size: 40)
+                        .accessibilityHidden(true)
 
                     VStack(alignment: .leading, spacing: 4) {
                         Text(website.name)
@@ -111,11 +113,13 @@ struct WebsiteDetailView: View {
 
                         Text(website.domain)
                             .font(.subheadline)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     }
 
                     Spacer()
                 }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("\(website.name), \(website.domain)")
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -259,7 +263,7 @@ struct WebsiteDetailView: View {
                         Text(tab.title)
                             .font(.subheadline)
                             .fontWeight(.medium)
-                            .foregroundColor(viewModel.selectedDetailTab == tab ? .white : .primary)
+                            .foregroundStyle(viewModel.selectedDetailTab == tab ? .white : .primary)
                             .padding(.horizontal, 14)
                             .padding(.vertical, 8)
                             .background(
@@ -267,6 +271,8 @@ struct WebsiteDetailView: View {
                                     .fill(viewModel.selectedDetailTab == tab ? Color.accentColor : Color(UIColor.secondarySystemBackground))
                             )
                     }
+                    .accessibilityLabel(tab.title)
+                    .accessibilityAddTraits(viewModel.selectedDetailTab == tab ? .isSelected : [])
                 }
             }
             .padding(.horizontal)
