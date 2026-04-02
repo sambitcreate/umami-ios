@@ -95,6 +95,7 @@ final class WebsiteService: WebsiteServicing {
     private let analyticsCacheTTL: TimeInterval
     private let analyticsCacheMaxEntries: Int
     private let coreDataStatsTTL: TimeInterval
+    private let realtimeSnapshotTTL: TimeInterval
     private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "UmamiAnalytics", category: "WebsiteService")
 
     private struct CacheEntry {
@@ -104,7 +105,7 @@ final class WebsiteService: WebsiteServicing {
     }
 
     private var analyticsCache: [String: CacheEntry] = [:]
-    private var realtimeSnapshots: [String: RealtimeData] = [:]
+    private var realtimeSnapshots: [String: CacheEntry] = [:]
     private var inFlightCallbacks: [String: [(Result<Any, Error>) -> Void]] = [:]
 
     init(
@@ -119,6 +120,7 @@ final class WebsiteService: WebsiteServicing {
         self.analyticsCacheTTL = analyticsCacheTTL
         self.analyticsCacheMaxEntries = analyticsCacheMaxEntries
         self.coreDataStatsTTL = coreDataStatsTTL
+        self.realtimeSnapshotTTL = AnalyticsRuntimeConfig.default.realtimeSnapshotTTL
     }
 
     // MARK: - Website Management
@@ -270,13 +272,18 @@ final class WebsiteService: WebsiteServicing {
 
         return apiClient.getRealtime(websiteId: websiteId, timezone: TimeZone.current.identifier)
             .handleEvents(receiveOutput: { [weak self] snapshot in
-                self?.realtimeSnapshots[websiteId] = snapshot
+                self?.setRealtimeSnapshot(snapshot, for: websiteId)
             })
             .eraseToAnyPublisher()
     }
 
     func latestRealtimeSnapshot(for websiteId: String) -> RealtimeData? {
-        realtimeSnapshots[websiteId]
+        guard let entry = realtimeSnapshots[websiteId] else { return nil }
+        if entry.expiryDate < nowProvider() {
+            realtimeSnapshots.removeValue(forKey: websiteId)
+            return nil
+        }
+        return entry.value as? RealtimeData
     }
 
     func fetchWebsiteEvents(
@@ -947,6 +954,12 @@ final class WebsiteService: WebsiteServicing {
         }
     }
 
+    private func setRealtimeSnapshot(_ snapshot: RealtimeData, for websiteId: String) {
+        let now = nowProvider()
+        let expiry = now.addingTimeInterval(realtimeSnapshotTTL)
+        realtimeSnapshots[websiteId] = CacheEntry(expiryDate: expiry, value: snapshot, lastAccessDate: now)
+    }
+
     private func realtimeSleepInterval(for interval: TimeInterval) -> UInt64 {
         UInt64(max(interval, 0.05) * 1_000_000_000)
     }
@@ -1120,7 +1133,7 @@ extension WebsiteService {
     func fetchRealtimeSnapshotAsync(websiteId: String) async throws -> RealtimeData {
         guard let apiClient = apiClientProvider() else { throw APIError.unauthorized }
         let snapshot = try await apiClient.getRealtimeAsync(websiteId: websiteId, timezone: TimeZone.current.identifier)
-        realtimeSnapshots[websiteId] = snapshot
+        setRealtimeSnapshot(snapshot, for: websiteId)
         return snapshot
     }
 

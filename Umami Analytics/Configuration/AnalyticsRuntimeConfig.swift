@@ -14,6 +14,7 @@ struct AnalyticsRuntimeConfig: Sendable {
     let realtimePollInterval: TimeInterval
     let analyticsCacheMaxEntries: Int
     let coreDataStatsTTL: TimeInterval
+    let realtimeSnapshotTTL: TimeInterval
 
     static let `default` = AnalyticsRuntimeConfig(
         dashboardRefreshInterval: 60,
@@ -21,6 +22,7 @@ struct AnalyticsRuntimeConfig: Sendable {
         analyticsCacheTTL: 60,
         realtimePollInterval: 5,
         analyticsCacheMaxEntries: 150,
-        coreDataStatsTTL: 86_400
+        coreDataStatsTTL: 86_400,
+        realtimeSnapshotTTL: 30
     )
 }

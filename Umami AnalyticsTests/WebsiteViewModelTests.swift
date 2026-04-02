@@ -524,7 +524,8 @@ private func testConfig(realtimePollInterval: TimeInterval) -> AnalyticsRuntimeC
         analyticsCacheTTL: 60,
         realtimePollInterval: realtimePollInterval,
         analyticsCacheMaxEntries: 150,
-        coreDataStatsTTL: 86_400
+        coreDataStatsTTL: 86_400,
+        realtimeSnapshotTTL: 30
     )
 }
 
