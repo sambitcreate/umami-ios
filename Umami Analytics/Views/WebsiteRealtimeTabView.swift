@@ -34,18 +34,19 @@ struct WebsiteRealtimeTabView: View {
                 .font(.headline)
 
             Text("\(activeCount)")
-                .font(.system(size: 48, weight: .bold, design: .rounded))
+                .font(.system(.largeTitle, design: .rounded).bold())
                 .monospacedDigit()
 
             Text(activeCount > 0 ? "Traffic is live right now" : "Waiting for live traffic")
                 .font(.footnote)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity)
         .padding()
         .background(Color(UIColor.secondarySystemBackground))
-        .cornerRadius(12)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
         .padding(.horizontal)
+        .accessibilityLabel("Active visitors: \(activeCount)")
     }
 
     private var livePagesSection: some View {
@@ -55,8 +56,9 @@ struct WebsiteRealtimeTabView: View {
                 .padding(.horizontal)
 
             if let pageviews = snapshot?.pageviews, !pageviews.isEmpty {
+                let displayItems = Array(pageviews.prefix(10))
                 VStack(spacing: 0) {
-                    ForEach(Array(pageviews.prefix(10).enumerated()), id: \.offset) { _, page in
+                    ForEach(Array(displayItems.enumerated()), id: \.offset) { index, page in
                         HStack {
                             Text(page.url)
                                 .font(.subheadline)
@@ -65,24 +67,25 @@ struct WebsiteRealtimeTabView: View {
                             if let title = page.title, !title.isEmpty {
                                 Text(title)
                                     .font(.caption)
-                                    .foregroundColor(.secondary)
+                                    .foregroundStyle(.secondary)
                                     .lineLimit(1)
                             }
                         }
                         .padding()
+                        .accessibilityElement(children: .combine)
 
-                        if page.id != pageviews.prefix(10).last?.id {
+                        if index < displayItems.count - 1 {
                             Divider()
                         }
                     }
                 }
                 .background(Color(UIColor.secondarySystemBackground))
-                .cornerRadius(10)
+                .clipShape(RoundedRectangle(cornerRadius: 10))
                 .padding(.horizontal)
             } else {
                 Text("No active pages")
                     .font(.footnote)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .padding(.horizontal)
             }
         }
@@ -95,27 +98,29 @@ struct WebsiteRealtimeTabView: View {
                 .padding(.horizontal)
 
             if let events = snapshot?.events, !events.isEmpty {
+                let displayItems = Array(events.prefix(10))
                 VStack(spacing: 0) {
-                    ForEach(Array(events.prefix(10).enumerated()), id: \.offset) { _, event in
+                    ForEach(Array(displayItems.enumerated()), id: \.offset) { index, event in
                         HStack {
                             Text(event.name)
                                 .font(.subheadline)
                             Spacer()
                         }
                         .padding()
+                        .accessibilityElement(children: .combine)
 
-                        if event.id != events.prefix(10).last?.id {
+                        if index < displayItems.count - 1 {
                             Divider()
                         }
                     }
                 }
                 .background(Color(UIColor.secondarySystemBackground))
-                .cornerRadius(10)
+                .clipShape(RoundedRectangle(cornerRadius: 10))
                 .padding(.horizontal)
             } else {
                 Text("No live events")
                     .font(.footnote)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .padding(.horizontal)
             }
         }
@@ -128,30 +133,32 @@ struct WebsiteRealtimeTabView: View {
                 .padding(.horizontal)
 
             if !countries.isEmpty {
+                let displayItems = Array(countries.prefix(10))
                 VStack(spacing: 0) {
-                    ForEach(Array(countries.prefix(10).enumerated()), id: \.offset) { _, country in
+                    ForEach(Array(displayItems.enumerated()), id: \.offset) { index, country in
                         HStack {
                             Text(country.key)
                                 .font(.subheadline)
                             Spacer()
                             Text("\(country.value)")
                                 .font(.subheadline)
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                         }
                         .padding()
+                        .accessibilityElement(children: .combine)
 
-                        if country.key != countries.prefix(10).last?.key {
+                        if index < displayItems.count - 1 {
                             Divider()
                         }
                     }
                 }
                 .background(Color(UIColor.secondarySystemBackground))
-                .cornerRadius(10)
+                .clipShape(RoundedRectangle(cornerRadius: 10))
                 .padding(.horizontal)
             } else {
                 Text("No country data")
                     .font(.footnote)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .padding(.horizontal)
             }
         }
@@ -160,15 +167,18 @@ struct WebsiteRealtimeTabView: View {
     private func inlineError(_ message: String) -> some View {
         HStack(spacing: 10) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundColor(.orange)
+                .foregroundStyle(.orange)
+                .accessibilityHidden(true)
             Text(message)
                 .font(.footnote)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
             Spacer()
         }
         .padding(12)
         .background(Color(UIColor.secondarySystemBackground))
-        .cornerRadius(10)
+        .clipShape(RoundedRectangle(cornerRadius: 10))
         .padding(.horizontal)
+        .accessibilityLabel("Error: \(message)")
+        .accessibilityElement(children: .combine)
     }
 }

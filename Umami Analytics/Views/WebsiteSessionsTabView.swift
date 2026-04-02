@@ -34,7 +34,7 @@ struct WebsiteSessionsTabView: View {
             if metrics.isEmpty {
                 Text("No session summary available")
                     .font(.footnote)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .padding(.horizontal)
             } else {
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
@@ -42,20 +42,20 @@ struct WebsiteSessionsTabView: View {
                         VStack(alignment: .leading, spacing: 6) {
                             Text(key)
                                 .font(.caption)
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                             Text("\(value.value)")
                                 .font(.title3)
                                 .fontWeight(.semibold)
                             if let prev = value.prev {
                                 Text("Prev: \(prev)")
                                     .font(.caption2)
-                                    .foregroundColor(.secondary)
+                                    .foregroundStyle(.secondary)
                             }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding()
                         .background(Color(UIColor.secondarySystemBackground))
-                        .cornerRadius(10)
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
                     }
                 }
                 .padding(.horizontal)
@@ -72,7 +72,7 @@ struct WebsiteSessionsTabView: View {
             if viewModel.sessionsWeekly.isEmpty {
                 Text("No weekly session data available")
                     .font(.footnote)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .padding(.horizontal)
             } else {
                 Chart(viewModel.sessionsWeekly) { point in
@@ -85,7 +85,7 @@ struct WebsiteSessionsTabView: View {
                 .frame(height: 220)
                 .padding()
                 .background(Color(UIColor.secondarySystemBackground))
-                .cornerRadius(12)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
                 .padding(.horizontal)
             }
         }
@@ -112,11 +112,13 @@ struct WebsiteSessionsTabView: View {
                 .onSubmit {
                     viewModel.applySessionsSearch(draftSearch)
                 }
+                .accessibilityLabel("Search sessions")
 
             Button("Search") {
                 viewModel.applySessionsSearch(draftSearch)
             }
             .buttonStyle(.bordered)
+            .accessibilityLabel("Search")
         }
         .padding(.horizontal)
     }
@@ -124,22 +126,23 @@ struct WebsiteSessionsTabView: View {
     @ViewBuilder
     private var recentSessionsList: some View {
         if let page = viewModel.sessionsPage, !page.data.isEmpty {
+            let displayItems = Array(page.data.prefix(20))
             VStack(spacing: 0) {
-                ForEach(page.data.prefix(20)) { session in
+                ForEach(Array(displayItems.enumerated()), id: \.element.id) { index, session in
                     sessionRow(session)
 
-                    if session.id != page.data.prefix(20).last?.id {
+                    if index < displayItems.count - 1 {
                         Divider()
                     }
                 }
             }
             .background(Color(UIColor.secondarySystemBackground))
-            .cornerRadius(10)
+            .clipShape(RoundedRectangle(cornerRadius: 10))
             .padding(.horizontal)
         } else {
             Text("No sessions available")
                 .font(.footnote)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
                 .padding(.horizontal)
         }
     }
@@ -158,6 +161,8 @@ struct WebsiteSessionsTabView: View {
                 }
             }
             .buttonStyle(.bordered)
+            .frame(minHeight: 44)
+            .accessibilityLabel("Load More")
             .padding(.top, 4)
         }
     }
@@ -187,14 +192,14 @@ struct WebsiteSessionsTabView: View {
                 if let subtitle = session.sessionSecondaryText {
                     Text(subtitle)
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
 
                 if let metric = session.metricValue {
                     Text("Value: \(metric)")
                         .font(.caption2)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -202,6 +207,7 @@ struct WebsiteSessionsTabView: View {
             .background(viewModel.selectedSessionID == session.id ? Color.accentColor.opacity(0.08) : Color.clear)
         }
         .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
     }
 
     private var sessionDetailSection: some View {
@@ -212,10 +218,11 @@ struct WebsiteSessionsTabView: View {
 
             if viewModel.isLoadingSessionDetail {
                 ProgressView()
+                    .accessibilityLabel("Loading session details")
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding()
                     .background(Color(UIColor.secondarySystemBackground))
-                    .cornerRadius(12)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
                     .padding(.horizontal)
             } else if let session = viewModel.selectedSessionRecord {
                 VStack(alignment: .leading, spacing: 12) {
@@ -228,7 +235,7 @@ struct WebsiteSessionsTabView: View {
                             if let subtitle = session.sessionSecondaryText {
                                 Text(subtitle)
                                     .font(.caption)
-                                    .foregroundColor(.secondary)
+                                    .foregroundStyle(.secondary)
                             }
                         }
 
@@ -250,7 +257,7 @@ struct WebsiteSessionsTabView: View {
                             ForEach(viewModel.selectedSessionActivity.prefix(6)) { activity in
                                 Text(activity.eventPrimaryText)
                                     .font(.footnote)
-                                    .foregroundColor(.secondary)
+                                    .foregroundStyle(.secondary)
                             }
                         }
                     }
@@ -269,7 +276,7 @@ struct WebsiteSessionsTabView: View {
                                     Spacer()
                                     Text(viewModel.selectedSessionProperties[key]?.displayText ?? "—")
                                         .font(.footnote)
-                                        .foregroundColor(.secondary)
+                                        .foregroundStyle(.secondary)
                                         .multilineTextAlignment(.trailing)
                                 }
                             }
@@ -278,17 +285,17 @@ struct WebsiteSessionsTabView: View {
                 }
                 .padding()
                 .background(Color(UIColor.secondarySystemBackground))
-                .cornerRadius(12)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
                 .padding(.horizontal)
             } else if let selectedID = viewModel.selectedSessionID {
                 Text("Session \(selectedID) is loading details.")
                     .font(.footnote)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .padding(.horizontal)
             } else {
                 Text("Select a session to inspect its detail, activity, and properties.")
                     .font(.footnote)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .padding(.horizontal)
             }
         }
@@ -297,16 +304,19 @@ struct WebsiteSessionsTabView: View {
     private func inlineError(_ message: String) -> some View {
         HStack(spacing: 10) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundColor(.orange)
+                .foregroundStyle(.orange)
+                .accessibilityHidden(true)
             Text(message)
                 .font(.footnote)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
             Spacer()
         }
         .padding(12)
         .background(Color(UIColor.secondarySystemBackground))
-        .cornerRadius(10)
+        .clipShape(RoundedRectangle(cornerRadius: 10))
         .padding(.horizontal)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Error: \(message)")
     }
 }
 

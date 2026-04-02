@@ -24,6 +24,7 @@ struct WebsiteEventsTabView: View {
 
     private var topEventsSection: some View {
         let topEvents = viewModel.metricsByDimension[.event] ?? []
+        let displayItems = Array(topEvents.prefix(8))
 
         return VStack(alignment: .leading, spacing: 12) {
             Text("Top Events")
@@ -33,11 +34,11 @@ struct WebsiteEventsTabView: View {
             if topEvents.isEmpty {
                 Text("No event metrics available")
                     .font(.footnote)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .padding(.horizontal)
             } else {
                 VStack(spacing: 0) {
-                    ForEach(Array(topEvents.prefix(8).enumerated()), id: \.offset) { _, item in
+                    ForEach(Array(displayItems.enumerated()), id: \.offset) { index, item in
                         HStack {
                             Text(item.x)
                                 .font(.subheadline)
@@ -45,17 +46,18 @@ struct WebsiteEventsTabView: View {
                             Spacer()
                             Text("\(item.y)")
                                 .font(.subheadline)
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                         }
                         .padding()
+                        .accessibilityElement(children: .combine)
 
-                        if item.id != topEvents.prefix(8).last?.id {
+                        if index < displayItems.count - 1 {
                             Divider()
                         }
                     }
                 }
                 .background(Color(UIColor.secondarySystemBackground))
-                .cornerRadius(10)
+                .clipShape(RoundedRectangle(cornerRadius: 10))
                 .padding(.horizontal)
             }
         }
@@ -70,7 +72,7 @@ struct WebsiteEventsTabView: View {
             if viewModel.eventSeries.isEmpty {
                 Text("No time-series data available")
                     .font(.footnote)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .padding(.horizontal)
             } else {
                 Chart(viewModel.eventSeries) { point in
@@ -90,14 +92,17 @@ struct WebsiteEventsTabView: View {
                 .frame(height: 220)
                 .padding()
                 .background(Color(UIColor.secondarySystemBackground))
-                .cornerRadius(12)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
                 .padding(.horizontal)
             }
         }
     }
 
     private var eventDataInspectorSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        let displayFields = Array(viewModel.eventDataState.availableFields.prefix(6))
+        let displayValues = Array(viewModel.eventDataState.availableValues.prefix(6))
+
+        return VStack(alignment: .leading, spacing: 12) {
             Text("Event Data Inspector")
                 .font(.headline)
                 .padding(.horizontal)
@@ -111,10 +116,10 @@ struct WebsiteEventsTabView: View {
                             .font(.subheadline)
                             .fontWeight(.medium)
 
-                        ForEach(viewModel.eventDataState.availableFields.prefix(6)) { field in
+                        ForEach(displayFields) { field in
                             Text(field.displayText)
                                 .font(.footnote)
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                         }
                     }
                 }
@@ -131,9 +136,10 @@ struct WebsiteEventsTabView: View {
                                     Text(key)
                                     Spacer()
                                     Text("\(metric.value)")
-                                        .foregroundColor(.secondary)
+                                        .foregroundStyle(.secondary)
                                 }
                                 .font(.footnote)
+                                .accessibilityElement(children: .combine)
                             }
                         }
                     }
@@ -145,7 +151,7 @@ struct WebsiteEventsTabView: View {
                             .font(.subheadline)
                             .fontWeight(.medium)
 
-                        ForEach(viewModel.eventDataState.availableValues.prefix(6)) { value in
+                        ForEach(displayValues) { value in
                             HStack {
                                 Text(value.displayText)
                                     .font(.footnote)
@@ -153,28 +159,32 @@ struct WebsiteEventsTabView: View {
                                 if let count = value.count {
                                     Text("\(count)")
                                         .font(.footnote)
-                                        .foregroundColor(.secondary)
+                                        .foregroundStyle(.secondary)
                                 }
                             }
+                            .accessibilityElement(children: .combine)
                         }
                     }
                 }
             }
             .padding()
             .background(Color(UIColor.secondarySystemBackground))
-            .cornerRadius(12)
+            .clipShape(RoundedRectangle(cornerRadius: 12))
             .padding(.horizontal)
         }
     }
 
     private var filterMenus: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        let displayEvents = Array(viewModel.eventDataState.availableEvents.prefix(30))
+        let displayProperties = Array(viewModel.eventDataState.availableProperties.prefix(30))
+
+        return VStack(alignment: .leading, spacing: 8) {
             Menu {
                 Button("All events") {
                     viewModel.selectEventDataEvent(nil)
                 }
 
-                ForEach(viewModel.eventDataState.availableEvents.prefix(30)) { event in
+                ForEach(displayEvents) { event in
                     Button(event.displayText) {
                         viewModel.selectEventDataEvent(event.value)
                     }
@@ -188,7 +198,7 @@ struct WebsiteEventsTabView: View {
                     viewModel.selectEventDataProperty(nil)
                 }
 
-                ForEach(viewModel.eventDataState.availableProperties.prefix(30)) { property in
+                ForEach(displayProperties) { property in
                     Button(property.displayText) {
                         viewModel.selectEventDataProperty(property.value)
                     }
@@ -213,17 +223,21 @@ struct WebsiteEventsTabView: View {
                     .onSubmit {
                         viewModel.applyEventsSearch(draftSearch)
                     }
+                    .accessibilityLabel("Search events")
 
                 Button("Search") {
                     viewModel.applyEventsSearch(draftSearch)
                 }
                 .buttonStyle(.bordered)
+                .accessibilityLabel("Search")
             }
             .padding(.horizontal)
 
             if let page = viewModel.eventsPage, !page.data.isEmpty {
+                let displayEvents = Array(page.data.prefix(20))
+
                 VStack(spacing: 0) {
-                    ForEach(page.data.prefix(20)) { event in
+                    ForEach(Array(displayEvents.enumerated()), id: \.offset) { index, event in
                         VStack(alignment: .leading, spacing: 4) {
                             Text(event.eventPrimaryText)
                                 .font(.subheadline)
@@ -232,25 +246,26 @@ struct WebsiteEventsTabView: View {
                             if let subtitle = event.eventSecondaryText {
                                 Text(subtitle)
                                     .font(.caption)
-                                    .foregroundColor(.secondary)
+                                    .foregroundStyle(.secondary)
                                     .lineLimit(1)
                             }
 
                             if let metric = event.metricValue {
                                 Text("Count: \(metric)")
                                     .font(.caption2)
-                                    .foregroundColor(.secondary)
+                                    .foregroundStyle(.secondary)
                             }
                         }
                         .padding()
+                        .accessibilityElement(children: .combine)
 
-                        if event.id != page.data.prefix(20).last?.id {
+                        if index < displayEvents.count - 1 {
                             Divider()
                         }
                     }
                 }
                 .background(Color(UIColor.secondarySystemBackground))
-                .cornerRadius(10)
+                .clipShape(RoundedRectangle(cornerRadius: 10))
                 .padding(.horizontal)
 
                 if viewModel.hasMoreEvents {
@@ -265,12 +280,14 @@ struct WebsiteEventsTabView: View {
                         }
                     }
                     .buttonStyle(.bordered)
+                    .frame(minHeight: 44)
+                    .accessibilityLabel("Load More")
                     .padding(.top, 4)
                 }
             } else {
                 Text("No events available")
                     .font(.footnote)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .padding(.horizontal)
             }
         }
@@ -280,32 +297,34 @@ struct WebsiteEventsTabView: View {
         HStack {
             Text(title)
                 .font(.caption)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
             Spacer()
             Text(value)
                 .font(.caption)
                 .lineLimit(1)
             Image(systemName: "chevron.down")
                 .font(.caption2)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
         }
         .padding(10)
         .background(Color(UIColor.tertiarySystemBackground))
-        .cornerRadius(8)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
     private func inlineError(_ message: String) -> some View {
         HStack(spacing: 10) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundColor(.orange)
+                .foregroundStyle(.orange)
+                .accessibilityHidden(true)
             Text(message)
                 .font(.footnote)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
             Spacer()
         }
         .padding(12)
         .background(Color(UIColor.secondarySystemBackground))
-        .cornerRadius(10)
+        .clipShape(RoundedRectangle(cornerRadius: 10))
         .padding(.horizontal)
+        .accessibilityLabel("Error: \(message)")
     }
 }
