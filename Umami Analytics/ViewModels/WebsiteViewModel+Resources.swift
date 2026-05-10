@@ -8,14 +8,6 @@
 import Foundation
 
 extension WebsiteViewModel {
-    var filteredWebsites: [WebsiteModel] {
-        let selection = AuthManager.shared.selectedWorkspace
-        if let teamId = selection.teamId {
-            return websites.filter { $0.teamId == teamId }
-        }
-        return websites.filter { $0.teamId == nil }
-    }
-
     var currentWorkspaceSelection: WorkspaceSelection {
         AuthManager.shared.selectedWorkspace
     }
@@ -25,7 +17,10 @@ extension WebsiteViewModel {
     }
 
     func applyWorkspaceSelection(_ selection: WorkspaceSelection, reloadResources: Bool = false) {
-        AuthManager.shared.selectWorkspace(selection)
+        if AuthManager.shared.selectedWorkspace != selection {
+            AuthManager.shared.selectWorkspace(selection)
+        }
+        rebuildWebsiteDerivedState()
         syncSelectedWebsiteWithVisibleContext(reloadCurrentTab: true)
         loadDashboardStats()
 

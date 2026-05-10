@@ -9,7 +9,7 @@ import SwiftUI
 
 @MainActor
 struct DashboardView: View {
-    @StateObject private var viewModel = WebsiteViewModel()
+    @ObservedObject var viewModel: WebsiteViewModel
     @ObservedObject private var authManager = AuthManager.shared
 
     var body: some View {
@@ -65,9 +65,6 @@ struct DashboardView: View {
         .onAppear {
             viewModel.loadWebsites()
             viewModel.loadDashboardStats()
-        }
-        .onChange(of: authManager.selectedWorkspace) { _, newSelection in
-            viewModel.applyWorkspaceSelection(newSelection)
         }
     }
 
@@ -242,7 +239,7 @@ struct DashboardView: View {
                 }
             }
 
-            NavigationLink(destination: WebsitesView()) {
+            NavigationLink(destination: WebsitesView(viewModel: viewModel)) {
                 Text("View All Websites")
                     .font(.headline)
                     .foregroundStyle(.blue)
@@ -277,7 +274,7 @@ struct DashboardView: View {
                 .padding(.horizontal, 40)
 
             if !authManager.isReadOnlySession {
-                NavigationLink(destination: WebsitesView()) {
+                NavigationLink(destination: WebsitesView(viewModel: viewModel)) {
                     Text("Go to Websites")
                         .fontWeight(.semibold)
                         .padding(.horizontal, 20)

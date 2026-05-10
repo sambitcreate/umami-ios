@@ -10,16 +10,18 @@ import SwiftUI
 @MainActor
 struct ContentView: View {
     @State private var selectedTab = 0
+    @StateObject private var websiteViewModel = WebsiteViewModel()
+    @ObservedObject private var authManager = AuthManager.shared
 
     var body: some View {
         TabView(selection: $selectedTab) {
-            DashboardView()
+            DashboardView(viewModel: websiteViewModel)
                 .tabItem {
                     Label("Dashboard", systemImage: "chart.bar")
                 }
                 .tag(0)
 
-            WebsitesView()
+            WebsitesView(viewModel: websiteViewModel)
                 .tabItem {
                     Label("Websites", systemImage: "globe")
                 }
@@ -30,6 +32,9 @@ struct ContentView: View {
                     Label("Settings", systemImage: "gear")
                 }
                 .tag(2)
+        }
+        .onChange(of: authManager.selectedWorkspace) { _, newSelection in
+            websiteViewModel.applyWorkspaceSelection(newSelection)
         }
     }
 }

@@ -11,9 +11,18 @@ import Foundation
 
 extension WebsiteViewModel {
 
-    var hasWebsites: Bool {
-        !filteredWebsites.isEmpty
-    }
+    private static let decimalNumberFormatter: NumberFormatter = {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        return formatter
+    }()
+
+    private static let compactNumberFormatter: NumberFormatter = {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.maximumFractionDigits = 1
+        return formatter
+    }()
 
     var formattedPageviews: String {
         guard let stats = websiteStats else { return "--" }
@@ -44,20 +53,15 @@ extension WebsiteViewModel {
     }
 
     func formatNumber(_ number: Int) -> String {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-
         if number >= 1_000_000 {
-            formatter.maximumFractionDigits = 1
-            return (formatter.string(from: NSNumber(value: Double(number) / 1_000_000)) ?? "0") + "M"
+            return (Self.compactNumberFormatter.string(from: NSNumber(value: Double(number) / 1_000_000)) ?? "0") + "M"
         }
 
         if number >= 1_000 {
-            formatter.maximumFractionDigits = 1
-            return (formatter.string(from: NSNumber(value: Double(number) / 1_000)) ?? "0") + "K"
+            return (Self.compactNumberFormatter.string(from: NSNumber(value: Double(number) / 1_000)) ?? "0") + "K"
         }
 
-        return formatter.string(from: NSNumber(value: number)) ?? "0"
+        return Self.decimalNumberFormatter.string(from: NSNumber(value: number)) ?? "0"
     }
 
     func setRootError(_ error: Error) {

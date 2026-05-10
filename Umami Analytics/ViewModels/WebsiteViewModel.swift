@@ -32,7 +32,11 @@ final class WebsiteViewModel: ObservableObject {
 
     // MARK: - Core Published State
 
-    @Published var websites: [WebsiteModel] = []
+    @Published var websites: [WebsiteModel] = [] {
+        didSet {
+            rebuildWebsiteDerivedState()
+        }
+    }
     @Published var isLoading = false
     @Published var isRefreshing = false
     @Published var isPerformingAction = false
@@ -52,8 +56,16 @@ final class WebsiteViewModel: ObservableObject {
     @Published var hasActiveUsersData = false
 
     // Dashboard
-    @Published var starredWebsiteIds: Set<String> = []
+    @Published var starredWebsiteIds: Set<String> = [] {
+        didSet {
+            rebuildWebsiteDerivedState()
+        }
+    }
     @Published var dashboardStats: [String: WebsiteStatsResponse] = [:]
+    @Published private(set) var filteredWebsites: [WebsiteModel] = []
+    @Published private(set) var dashboardWebsites: [WebsiteModel] = []
+    @Published private(set) var hasStarredWebsites = false
+    @Published private(set) var hasWebsites = false
 
     // MARK: - Advanced Analytics State
 
@@ -522,6 +534,24 @@ final class WebsiteViewModel: ObservableObject {
             guard !Task.isCancelled, selectedPeriod == period else { return }
             dashboardStats = statsByWebsite
         }
+    }
+
+    func rebuildWebsiteDerivedState() {
+        let selection = AuthManager.shared.selectedWorkspace
+        let visibleWebsites: [WebsiteModel]
+
+        if let teamId = selection.teamId {
+            visibleWebsites = websites.filter { $0.teamId == teamId }
+        } else {
+            visibleWebsites = websites.filter { $0.teamId == nil }
+        }
+
+        let starred = visibleWebsites.filter { starredWebsiteIds.contains($0.id) }
+
+        filteredWebsites = visibleWebsites
+        dashboardWebsites = Array((starred.isEmpty ? visibleWebsites : starred).prefix(3))
+        hasStarredWebsites = !starred.isEmpty
+        hasWebsites = !visibleWebsites.isEmpty
     }
 
     func contextMatches(websiteId: String, period: StatsPeriod) -> Bool {

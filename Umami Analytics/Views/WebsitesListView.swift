@@ -9,7 +9,7 @@ import SwiftUI
 
 @MainActor
 struct WebsitesView: View {
-    @StateObject private var viewModel = WebsiteViewModel()
+    @ObservedObject var viewModel: WebsiteViewModel
     @ObservedObject private var authManager = AuthManager.shared
     @State private var showingAddWebsite = false
     @State private var websiteToEdit: WebsiteModel?
@@ -196,9 +196,6 @@ struct WebsitesView: View {
         }
         .onAppear {
             viewModel.loadWebsites()
-        }
-        .onChange(of: authManager.selectedWorkspace) { _, newSelection in
-            viewModel.applyWorkspaceSelection(newSelection)
         }
         .sheet(isPresented: $showingAddWebsite) {
             WebsiteFormView(mode: .create, viewModel: viewModel)
