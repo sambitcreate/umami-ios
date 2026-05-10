@@ -297,9 +297,9 @@ struct FilterValue: Decodable, Identifiable, Equatable, Sendable {
 
         let container = try decoder.container(keyedBy: DynamicCodingKey.self)
 
-        let valueKeys = ["value", "x", "name", "id", "event", "property", "label"]
-        let labelKeys = ["label", "name", "title"]
-        let countKeys = ["count", "y", "valueCount", "visitors", "sessions", "pageviews"]
+        let valueKeys = ["value", "x", "name", "id", "eventName", "propertyName", "dataKey", "event", "property", "label"]
+        let labelKeys = ["label", "name", "title", "eventName", "propertyName", "dataKey"]
+        let countKeys = ["count", "total", "y", "valueCount", "visitors", "sessions", "pageviews"]
 
         let decodedValue = Self.decodeString(container: container, keys: valueKeys) ?? ""
         self.value = decodedValue
@@ -628,6 +628,12 @@ struct WeeklySessionsResponse: Decodable, Sendable {
     }
 
     init(from decoder: Decoder) throws {
+        if var weeklyMatrix = try? decoder.unkeyedContainer(),
+           let matrix = try? weeklyMatrix.decode([[Int]].self) {
+            data = Self.points(from: matrix)
+            return
+        }
+
         if let singleValue = try? decoder.singleValueContainer(),
            let array = try? singleValue.decode([WeeklySessionPoint].self) {
             data = array
@@ -647,6 +653,148 @@ struct WeeklySessionsResponse: Decodable, Sendable {
         } else {
             data = []
         }
+    }
+
+    private static func points(from matrix: [[Int]]) -> [WeeklySessionPoint] {
+        let calendar = Calendar(identifier: .gregorian)
+        let baseDate = calendar.date(from: DateComponents(timeZone: TimeZone(secondsFromGMT: 0), year: 1970, month: 1, day: 4)) ?? Date(timeIntervalSince1970: 0)
+
+        return matrix.enumerated().flatMap { dayIndex, hours in
+            hours.enumerated().map { hourIndex, value in
+                let date = calendar.date(byAdding: .hour, value: dayIndex * 24 + hourIndex, to: baseDate) ?? baseDate
+                return WeeklySessionPoint(date: date, value: value)
+            }
+        }
+    }
+}
+
+struct MetricMapResponse: Decodable, Sendable {
+    let metrics: [String: MetricValue]
+
+    init(from decoder: Decoder) throws {
+        if let dictionary = try? [String: MetricValue](from: decoder) {
+            metrics = dictionary
+            return
+        }
+
+        if let records = try? [AnalyticsRecord](from: decoder),
+           let first = records.first {
+            metrics = first.fields.compactMapValues { value in
+                switch value {
+                case .number(let number):
+                    return MetricValue(value: Int(number.rounded()))
+                case .string(let string):
+                    guard let intValue = Int(string) else { return nil }
+                    return MetricValue(value: intValue)
+                default:
+                    return nil
+                }
+            }
+            return
+        }
+
+        if let paginated = try? PaginatedResponse<AnalyticsRecord>(from: decoder),
+           let first = paginated.data.first {
+            metrics = first.fields.compactMapValues { value in
+                switch value {
+                case .number(let number):
+                    return MetricValue(value: Int(number.rounded()))
+                case .string(let string):
+                    guard let intValue = Int(string) else { return nil }
+                    return MetricValue(value: intValue)
+                default:
+                    return nil
+                }
+            }
+            return
+        }
+
+        metrics = [:]
+    }
+}
+
+struct EventStatsResponse: Decodable, Sendable {
+    let data: [String: MetricValue]
+    let comparison: [String: MetricValue]?
+
+    private enum CodingKeys: String, CodingKey {
+        case data
+        case comparison
+    }
+
+    init(from decoder: Decoder) throws {
+        if let container = try? decoder.container(keyedBy: CodingKeys.self),
+           container.contains(.data) {
+            if let nestedValues = try? container.decode([String: JSONValue].self, forKey: .data) {
+                data = Self.metricValues(from: nestedValues.filter { $0.key != "comparison" })
+                if case .object(let comparisonValues) = nestedValues["comparison"] {
+                    comparison = Self.metricValues(from: comparisonValues)
+                } else {
+                    comparison = try? container.decode(MetricMapResponse.self, forKey: .comparison).metrics
+                }
+            } else {
+                let nested = try container.decode(MetricMapResponse.self, forKey: .data)
+                data = nested.metrics
+                comparison = try? container.decode(MetricMapResponse.self, forKey: .comparison).metrics
+            }
+        } else {
+            let direct = try MetricMapResponse(from: decoder)
+            data = direct.metrics
+            comparison = nil
+        }
+    }
+
+    private static func metricValues(from values: [String: JSONValue]) -> [String: MetricValue] {
+        values.compactMapValues { value in
+            switch value {
+            case .number(let number):
+                return MetricValue(value: Int(number.rounded()))
+            case .string(let string):
+                guard let intValue = Int(string) else { return nil }
+                return MetricValue(value: intValue)
+            case .object(let object):
+                if let metric = object["value"]?.intValue {
+                    return MetricValue(value: metric, prev: object["prev"]?.intValue)
+                }
+                return nil
+            default:
+                return nil
+            }
+        }
+    }
+}
+
+struct SessionPropertiesResponse: Decodable, Sendable {
+    let properties: [String: JSONValue]
+
+    init(from decoder: Decoder) throws {
+        if let dictionary = try? [String: JSONValue](from: decoder) {
+            properties = dictionary
+            return
+        }
+
+        let records = (try? [AnalyticsRecord](from: decoder)) ?? []
+        var decoded: [String: JSONValue] = [:]
+
+        for record in records {
+            guard let key = record.stringValue(for: ["dataKey", "propertyName", "key", "name"]) else {
+                continue
+            }
+
+            if let value = record.fields["stringValue"], value != .null {
+                decoded[key] = value
+            } else if let value = record.fields["numberValue"], value != .null {
+                decoded[key] = value
+            } else if let value = record.fields["dateValue"], value != .null {
+                decoded[key] = value
+            } else if let value = record.fields["booleanValue"], value != .null {
+                decoded[key] = value
+            } else if let value = record.fields["value"], value != .null {
+                decoded[key] = value
+            }
+        }
+
+        properties = decoded
     }
 }
 
