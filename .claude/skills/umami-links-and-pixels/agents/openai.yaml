@@ -1,0 +1,4 @@
+interface:
+  display_name: "Umami Links and Pixels"
+  short_description: "Tracked links and pixels for Umami apps"
+  default_prompt: "Use $umami-links-and-pixels to build tracked link and pixel management flows for Umami, including team-scoped listing, min-8 slug validation, create-vs-update slug quirks, and operational setup screens."

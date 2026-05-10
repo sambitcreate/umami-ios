@@ -1,0 +1,4 @@
+interface:
+  display_name: "Umami Workspaces and Sharing"
+  short_description: "Teams, shares, and workspace flows for Umami"
+  default_prompt: "Use $umami-workspaces-and-sharing to build team CRUD, membership, workspace switching, combined personal-team website pickers, and share-mode flows for Umami, while distinguishing this checkout's legacy share bootstrap from the newer managed share APIs in current docs."

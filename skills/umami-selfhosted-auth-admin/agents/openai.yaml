@@ -1,0 +1,4 @@
+interface:
+  display_name: "Umami Self-Hosted Auth and Admin"
+  short_description: "Self-hosted auth and admin flows for Umami"
+  default_prompt: "Use $umami-selfhosted-auth-admin to implement self-hosted login, verify, config probing, account bootstrap, /users and /admin management flows, and clear caveats around deployment-specific SSO behavior."

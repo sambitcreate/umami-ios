@@ -1,0 +1,4 @@
+interface:
+  display_name: "Umami Reports API"
+  short_description: "Saved reports and report runners for Umami"
+  default_prompt: "Use $umami-reports-api to build saved reports and request-body report-runner flows for the current Umami server, including docs-vs-checkout drift such as performance support and checkout filter limits."

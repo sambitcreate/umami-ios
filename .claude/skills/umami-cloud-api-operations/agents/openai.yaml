@@ -1,0 +1,4 @@
+interface:
+  display_name: "Umami Cloud API Operations"
+  short_description: "Cloud transport, keys, and limits for Umami"
+  default_prompt: "Use $umami-cloud-api-operations to handle Umami Cloud base URLs, API-key auth, rate limits, Cloud-vs-checkout route differences, and native-app safety constraints."

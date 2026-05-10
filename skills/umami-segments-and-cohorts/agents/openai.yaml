@@ -1,0 +1,4 @@
+interface:
+  display_name: "Umami Segments and Cohorts"
+  short_description: "Saved filters and cohorts for Umami analytics"
+  default_prompt: "Use $umami-segments-and-cohorts to build saved segment and cohort workflows for Umami, including native management screens, downstream UUID-based filter application, and the checkout's unsupported /values segment lookups."

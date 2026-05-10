@@ -1,0 +1,4 @@
+interface:
+  display_name: "Umami SwiftUI Dashboards"
+  short_description: "SwiftUI dashboards for Umami analytics"
+  default_prompt: "Use $umami-swiftui-dashboards to turn Umami route families into a strong mobile analytics UI with overview, compare-friendly trends, realtime, session and trait drilldowns, and share-mode behavior."

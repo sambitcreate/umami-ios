@@ -1,0 +1,4 @@
+interface:
+  display_name: "Umami Swift Core"
+  short_description: "Swift transport and models for Umami APIs"
+  default_prompt: "Use $umami-swift-core to build a shared Swift client for Umami self-hosted, Cloud, and share-token flows with correct auth, multi-instance session partitioning, and route modeling."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Umami Website Management"
+  short_description: "Website settings and lifecycle flows for Umami"
+  default_prompt: "Use $umami-website-management to build website creation, settings, reset, checkout-specific shareId editing, and transfer flows for the checked-out Umami server."

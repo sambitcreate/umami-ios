@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "skills": {
+    "spm-build-analysis": {
+      "source": "avdlee/xcode-build-optimization-agent-skill",
+      "sourceType": "github",
+      "computedHash": "7cf68215192c6553baa5f8b11a2726f937c91d9e99e3b7f07a64b947026e2930"
+    },
+    "xcode-build-benchmark": {
+      "source": "avdlee/xcode-build-optimization-agent-skill",
+      "sourceType": "github",
+      "computedHash": "3a2350043af13f767b27a62db7656047b0c1fd81a971d083668d3b31aaac6fd4"
+    },
+    "xcode-build-fixer": {
+      "source": "avdlee/xcode-build-optimization-agent-skill",
+      "sourceType": "github",
+      "computedHash": "fbf31a0c2a59332b9cdb5365f8da312d4bc42c113ebb6b7f6811bcf7db4107fd"
+    },
+    "xcode-build-orchestrator": {
+      "source": "avdlee/xcode-build-optimization-agent-skill",
+      "sourceType": "github",
+      "computedHash": "3067700bd9f4b08bee944c9e670ca89a0da21e5a1872f95a11f049e4fdd73ade"
+    },
+    "xcode-compilation-analyzer": {
+      "source": "avdlee/xcode-build-optimization-agent-skill",
+      "sourceType": "github",
+      "computedHash": "92be7f253135e90d9b964daa552ab83db4eb6e83eba738645cbd68e35caef00d"
+    },
+    "xcode-project-analyzer": {
+      "source": "avdlee/xcode-build-optimization-agent-skill",
+      "sourceType": "github",
+      "computedHash": "085bb496e7911091cbcad12fb4f1b59b0a4c5f2bcdc0d8cc5984c39b3688837c"
+    }
+  }
+}

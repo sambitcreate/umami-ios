@@ -1,0 +1,4 @@
+interface:
+  display_name: "Umami iOS Querying"
+  short_description: "Read Umami analytics into a native iOS app"
+  default_prompt: "Use $umami-ios-querying to build iOS analytics screens for this checked-out Umami route surface, including pageviews compare flows, sessions, session-data and event-data drilldowns, and docs-vs-checkout endpoint drift."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Umami iOS Tracking"
+  short_description: "Native iOS event delivery for Umami"
+  default_prompt: "Use $umami-ios-tracking to implement native iOS event collection, identify payloads, x-umami-cache continuity, and offline replay with the correct timestamp semantics."
