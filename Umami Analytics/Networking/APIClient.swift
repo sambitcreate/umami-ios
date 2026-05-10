@@ -9,13 +9,16 @@ import Foundation
 import Combine
 import OSLog
 
-class APIClient {
-    private var baseURL: URL
-    private var authToken: String?
-    private var apiKey: String?
-    private var shareToken: String?
-    private let jsonDecoder: JSONDecoder
-    private let jsonEncoder: JSONEncoder
+class APIClient: @unchecked Sendable {
+    private struct RequestState {
+        var baseURL: URL
+        var authToken: String? = nil
+        var apiKey: String? = nil
+        var shareToken: String? = nil
+    }
+
+    private let stateLock = NSLock()
+    private var requestState: RequestState
     private let serverType: ServerType
     private let cloudRegion: CloudRegion
     private let urlSession: URLSession
@@ -31,46 +34,41 @@ class APIClient {
         guard let url = URL(string: serverURL) else {
             throw AuthError.invalidURL
         }
-        self.baseURL = url
+        self.requestState = RequestState(baseURL: url)
         self.serverType = serverType
         self.cloudRegion = cloudRegion
         self.urlSession = urlSession
-
-        self.jsonDecoder = JSONDecoder()
-        self.jsonDecoder.keyDecodingStrategy = .convertFromSnakeCase
-
-        self.jsonEncoder = JSONEncoder()
     }
 
     func setBaseURL(_ urlString: String) throws {
         guard let url = URL(string: urlString) else {
             throw AuthError.invalidURL
         }
-        self.baseURL = url
+        updateRequestState { $0.baseURL = url }
     }
 
     func setAuthToken(_ token: String) {
-        self.authToken = token
+        updateRequestState { $0.authToken = token }
     }
 
     func clearAuthToken() {
-        self.authToken = nil
+        updateRequestState { $0.authToken = nil }
     }
 
     func setAPIKey(_ key: String) {
-        self.apiKey = key
+        updateRequestState { $0.apiKey = key }
     }
 
     func clearAPIKey() {
-        self.apiKey = nil
+        updateRequestState { $0.apiKey = nil }
     }
 
     func setShareToken(_ token: String) {
-        self.shareToken = token
+        updateRequestState { $0.shareToken = token }
     }
 
     func clearShareToken() {
-        self.shareToken = nil
+        updateRequestState { $0.shareToken = nil }
     }
 
     // MARK: - Helper Methods
@@ -109,13 +107,40 @@ class APIClient {
         logDebug("📄 Response Body: \(truncatedBody)")
     }
 
+    private func snapshotRequestState() -> RequestState {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return requestState
+    }
+
+    private func updateRequestState(_ update: (inout RequestState) -> Void) {
+        stateLock.lock()
+        update(&requestState)
+        stateLock.unlock()
+    }
+
+    private func hasAuthToken() -> Bool {
+        snapshotRequestState().authToken != nil
+    }
+
+    private func makeJSONDecoder() -> JSONDecoder {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        return decoder
+    }
+
+    private func makeJSONEncoder() -> JSONEncoder {
+        JSONEncoder()
+    }
+
     private func createRequest(path: String, method: String, body: Encodable? = nil) -> URLRequest {
+        let state = snapshotRequestState()
         let normalizedPath = normalize(path: path)
         let apiURL: URL
         if normalizedPath.contains("?") {
-            apiURL = URL(string: normalizedPath, relativeTo: baseURL) ?? baseURL.appendingPathComponent(normalizedPath)
+            apiURL = URL(string: normalizedPath, relativeTo: state.baseURL) ?? state.baseURL.appendingPathComponent(normalizedPath)
         } else {
-            apiURL = baseURL.appendingPathComponent(normalizedPath)
+            apiURL = state.baseURL.appendingPathComponent(normalizedPath)
         }
 
         var request = URLRequest(url: apiURL)
@@ -124,22 +149,22 @@ class APIClient {
 
         switch serverType {
         case .selfHosted:
-            if let token = authToken {
+            if let token = state.authToken {
                 request.addValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
             }
         case .cloud:
-            if let apiKey = apiKey {
+            if let apiKey = state.apiKey {
                 request.addValue(apiKey, forHTTPHeaderField: "x-umami-api-key")
             }
         case .publicShare:
-            if let shareToken = shareToken {
+            if let shareToken = state.shareToken {
                 request.addValue(shareToken, forHTTPHeaderField: "x-umami-share-token")
             }
         }
 
         if let body = body {
             do {
-                request.httpBody = try jsonEncoder.encode(body)
+                request.httpBody = try makeJSONEncoder().encode(body)
             } catch {
                 logDebug("Error encoding request body: \(error)")
             }
@@ -149,35 +174,15 @@ class APIClient {
     }
 
     private func performRequest<T: Decodable & Sendable>(request: URLRequest) -> AnyPublisher<T, Error> {
-        Deferred {
-            Future { promise in
-                Task {
-                    do {
-                        let value: T = try await self.performRequestAsync(request: request)
-                        promise(.success(value))
-                    } catch {
-                        promise(.failure(error))
-                    }
-                }
-            }
+        asyncPublisher {
+            try await self.performRequestAsync(request: request)
         }
-        .eraseToAnyPublisher()
     }
 
     private func performVoidRequest(request: URLRequest) -> AnyPublisher<Void, Error> {
-        Deferred {
-            Future { promise in
-                Task {
-                    do {
-                        try await self.performVoidRequestAsync(request: request)
-                        promise(.success(()))
-                    } catch {
-                        promise(.failure(error))
-                    }
-                }
-            }
+        asyncPublisher {
+            try await self.performVoidRequestAsync(request: request)
         }
-        .eraseToAnyPublisher()
     }
 
     private func normalize(path: String) -> String {
@@ -285,7 +290,7 @@ class APIClient {
                     }
 
                     do {
-                        return try jsonDecoder.decode(T.self, from: data)
+                        return try makeJSONDecoder().decode(T.self, from: data)
                     } catch {
                         logDebug("Decoding error: \(error)")
                         throw APIError.decodingError
@@ -382,15 +387,27 @@ class APIClient {
 
     private func asyncPublisher<T: Sendable>(_ operation: @escaping @Sendable () async throws -> T) -> AnyPublisher<T, Error> {
         Deferred {
-            Future { promise in
-                Task {
-                    do {
-                        promise(.success(try await operation()))
-                    } catch {
-                        promise(.failure(error))
-                    }
+            let bridge = AsyncPublisherBridge<T>()
+            let task = Task {
+                do {
+                    let value = try await operation()
+                    guard !Task.isCancelled else { return }
+                    bridge.send(value)
+                    bridge.finish()
+                } catch is CancellationError {
+                    guard !Task.isCancelled else { return }
+                    bridge.fail(CancellationError())
+                } catch {
+                    guard !Task.isCancelled else { return }
+                    bridge.fail(error)
                 }
             }
+
+            return bridge.publisher
+                .handleEvents(receiveCancel: {
+                    task.cancel()
+                })
+                .eraseToAnyPublisher()
         }
         .eraseToAnyPublisher()
     }
@@ -844,13 +861,13 @@ class APIClient {
     }
 
     func verifyTokenAsync() async throws -> User {
-        guard authToken != nil else { throw APIError.unauthorized }
+        guard hasAuthToken() else { throw APIError.unauthorized }
         let request = createRequest(path: "/api/auth/verify", method: "POST")
         return try await performRequestAsync(request: request)
     }
 
     func logoutAsync() async throws {
-        guard authToken != nil else { return }
+        guard hasAuthToken() else { return }
         let request = createRequest(path: "/api/auth/logout", method: "POST")
         try await performVoidRequestAsync(request: request)
     }
@@ -1447,6 +1464,27 @@ class APIClient {
         }
         let request = createRequest(path: path, method: "GET")
         return try await performRequestAsync(request: request)
+    }
+}
+
+private final class AsyncPublisherBridge<Output: Sendable>: @unchecked Sendable {
+    let publisher: AnyPublisher<Output, Error>
+    private let subject = PassthroughSubject<Output, Error>()
+
+    init() {
+        publisher = subject.eraseToAnyPublisher()
+    }
+
+    func send(_ value: Output) {
+        subject.send(value)
+    }
+
+    func finish() {
+        subject.send(completion: .finished)
+    }
+
+    func fail(_ error: Error) {
+        subject.send(completion: .failure(error))
     }
 }
 
