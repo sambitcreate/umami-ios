@@ -515,6 +515,17 @@ class APIClient {
         }
     }
 
+    func getWebsiteExpandedMetrics(
+        id: String,
+        dateRange: DateRange,
+        type: String = "path",
+        query: AnalyticsQueryOptions = .default
+    ) -> AnyPublisher<[ExpandedMetricItem], Error> {
+        asyncPublisher {
+            try await self.getWebsiteExpandedMetricsAsync(id: id, dateRange: dateRange, type: type, query: query)
+        }
+    }
+
     func getWebsitePageviews(
         id: String,
         dateRange: DateRange,
@@ -522,6 +533,18 @@ class APIClient {
     ) -> AnyPublisher<PageviewsResponse, Error> {
         asyncPublisher {
             try await self.getWebsitePageviewsAsync(id: id, dateRange: dateRange, query: query)
+        }
+    }
+
+    func getWebsiteDateRange(id: String) -> AnyPublisher<WebsiteDateRangeResponse, Error> {
+        asyncPublisher {
+            try await self.getWebsiteDateRangeAsync(id: id)
+        }
+    }
+
+    func exportWebsite(id: String) -> AnyPublisher<WebsiteExportResponse, Error> {
+        asyncPublisher {
+            try await self.exportWebsiteAsync(id: id)
         }
     }
 
@@ -572,6 +595,16 @@ class APIClient {
         }
     }
 
+    func getWebsiteEventStats(
+        id: String,
+        dateRange: DateRange,
+        query: AnalyticsQueryOptions = .default
+    ) -> AnyPublisher<EventStatsResponse, Error> {
+        asyncPublisher {
+            try await self.getWebsiteEventStatsAsync(id: id, dateRange: dateRange, query: query)
+        }
+    }
+
     func getWebsiteValues(
         id: String,
         type: String,
@@ -594,6 +627,37 @@ class APIClient {
     ) -> AnyPublisher<[FilterValue], Error> {
         asyncPublisher {
             try await self.getEventDataEventsAsync(id: id, dateRange: dateRange, event: event, query: query)
+        }
+    }
+
+    func getEventData(
+        id: String,
+        dateRange: DateRange,
+        page: Int,
+        pageSize: Int,
+        query: AnalyticsQueryOptions = .default
+    ) -> AnyPublisher<PaginatedResponse<AnalyticsRecord>, Error> {
+        asyncPublisher {
+            try await self.getEventDataAsync(id: id, dateRange: dateRange, page: page, pageSize: pageSize, query: query)
+        }
+    }
+
+    func getEventDataDetail(id: String, eventId: String) -> AnyPublisher<[AnalyticsRecord], Error> {
+        asyncPublisher {
+            try await self.getEventDataDetailAsync(id: id, eventId: eventId)
+        }
+    }
+
+    func getEventDataPivot(
+        id: String,
+        dateRange: DateRange,
+        eventName: String,
+        page: Int,
+        pageSize: Int,
+        query: AnalyticsQueryOptions = .default
+    ) -> AnyPublisher<PaginatedResponse<AnalyticsRecord>, Error> {
+        asyncPublisher {
+            try await self.getEventDataPivotAsync(id: id, dateRange: dateRange, eventName: eventName, page: page, pageSize: pageSize, query: query)
         }
     }
 
@@ -651,6 +715,30 @@ class APIClient {
     ) -> AnyPublisher<[FilterValue], Error> {
         asyncPublisher {
             try await self.getSessionDataValuesAsync(id: id, dateRange: dateRange, propertyName: propertyName)
+        }
+    }
+
+    func getSessionDataPivot(
+        id: String,
+        dateRange: DateRange,
+        propertyName: String,
+        page: Int,
+        pageSize: Int,
+        query: AnalyticsQueryOptions = .default
+    ) -> AnyPublisher<PaginatedResponse<AnalyticsRecord>, Error> {
+        asyncPublisher {
+            try await self.getSessionDataPivotAsync(id: id, dateRange: dateRange, propertyName: propertyName, page: page, pageSize: pageSize, query: query)
+        }
+    }
+
+    func getSessionDataStats(
+        id: String,
+        dateRange: DateRange,
+        propertyName: String,
+        query: AnalyticsQueryOptions = .default
+    ) -> AnyPublisher<[AnalyticsRecord], Error> {
+        asyncPublisher {
+            try await self.getSessionDataStatsAsync(id: id, dateRange: dateRange, propertyName: propertyName, query: query)
         }
     }
 
@@ -774,7 +862,8 @@ class APIClient {
 
     func getCurrentUserAsync() async throws -> User {
         let request = createRequest(path: "/api/me", method: "GET")
-        return try await performRequestAsync(request: request)
+        let response: CurrentUserResponse = try await performRequestAsync(request: request)
+        return response.user
     }
 
     func getMyTeamsAsync(page: Int = 1, pageSize: Int = 100) async throws -> [WorkspaceTeam] {
@@ -923,6 +1012,24 @@ class APIClient {
         return try await performRequestAsync(request: request)
     }
 
+    func getWebsiteExpandedMetricsAsync(
+        id: String,
+        dateRange: DateRange,
+        type: String = "path",
+        query: AnalyticsQueryOptions = .default
+    ) async throws -> [ExpandedMetricItem] {
+        let items = filteredQueryItems(
+            dateRange: dateRange,
+            query: query,
+            extraItems: [URLQueryItem(name: "type", value: type)]
+        )
+        guard let path = buildPath(path: "/api/websites/\(id)/metrics/expanded", queryItems: items) else {
+            throw APIError.invalidURL
+        }
+        let request = createRequest(path: path, method: "GET")
+        return try await performRequestAsync(request: request)
+    }
+
     func getWebsitePageviewsAsync(
         id: String,
         dateRange: DateRange,
@@ -935,6 +1042,16 @@ class APIClient {
             throw APIError.invalidURL
         }
         let request = createRequest(path: path, method: "GET")
+        return try await performRequestAsync(request: request)
+    }
+
+    func getWebsiteDateRangeAsync(id: String) async throws -> WebsiteDateRangeResponse {
+        let request = createRequest(path: "/api/websites/\(id)/daterange", method: "GET")
+        return try await performRequestAsync(request: request)
+    }
+
+    func exportWebsiteAsync(id: String) async throws -> WebsiteExportResponse {
+        let request = createRequest(path: "/api/websites/\(id)/export", method: "GET")
         return try await performRequestAsync(request: request)
     }
 
@@ -990,9 +1107,21 @@ class APIClient {
             dateRange: dateRange,
             query: query,
             includeUnit: true,
-            extraItems: [URLQueryItem(name: "eventName", value: eventName)]
+            extraItems: [URLQueryItem(name: "event", value: eventName)]
         )
         guard let path = buildPath(path: "/api/websites/\(id)/events/series", queryItems: items) else {
+            throw APIError.invalidURL
+        }
+        let request = createRequest(path: path, method: "GET")
+        return try await performRequestAsync(request: request)
+    }
+
+    func getWebsiteEventStatsAsync(
+        id: String,
+        dateRange: DateRange,
+        query: AnalyticsQueryOptions = .default
+    ) async throws -> EventStatsResponse {
+        guard let path = buildPath(path: "/api/websites/\(id)/events/stats", queryItems: filteredQueryItems(dateRange: dateRange, query: query)) else {
             throw APIError.invalidURL
         }
         let request = createRequest(path: path, method: "GET")
@@ -1022,6 +1151,57 @@ class APIClient {
     }
 
     // MARK: - Async Event Data
+
+    func getEventDataAsync(
+        id: String,
+        dateRange: DateRange,
+        page: Int,
+        pageSize: Int,
+        query: AnalyticsQueryOptions = .default
+    ) async throws -> PaginatedResponse<AnalyticsRecord> {
+        let items = filteredQueryItems(
+            dateRange: dateRange,
+            query: query,
+            extraItems: [
+                URLQueryItem(name: "page", value: "\(page)"),
+                URLQueryItem(name: "pageSize", value: "\(pageSize)")
+            ]
+        )
+        guard let path = buildPath(path: "/api/websites/\(id)/event-data", queryItems: items) else {
+            throw APIError.invalidURL
+        }
+        let request = createRequest(path: path, method: "GET")
+        return try await performRequestAsync(request: request)
+    }
+
+    func getEventDataDetailAsync(id: String, eventId: String) async throws -> [AnalyticsRecord] {
+        let request = createRequest(path: "/api/websites/\(id)/event-data/\(eventId)", method: "GET")
+        return try await performRequestAsync(request: request)
+    }
+
+    func getEventDataPivotAsync(
+        id: String,
+        dateRange: DateRange,
+        eventName: String,
+        page: Int,
+        pageSize: Int,
+        query: AnalyticsQueryOptions = .default
+    ) async throws -> PaginatedResponse<AnalyticsRecord> {
+        let items = filteredQueryItems(
+            dateRange: dateRange,
+            query: query,
+            extraItems: [
+                URLQueryItem(name: "eventName", value: eventName),
+                URLQueryItem(name: "page", value: "\(page)"),
+                URLQueryItem(name: "pageSize", value: "\(pageSize)")
+            ]
+        )
+        guard let path = buildPath(path: "/api/websites/\(id)/event-data-pivot", queryItems: items) else {
+            throw APIError.invalidURL
+        }
+        let request = createRequest(path: path, method: "GET")
+        return try await performRequestAsync(request: request)
+    }
 
     func getEventDataEventsAsync(
         id: String,
@@ -1069,12 +1249,13 @@ class APIClient {
             throw APIError.invalidURL
         }
         let request = createRequest(path: path, method: "GET")
-        return try await performRequestAsync(request: request)
+        let response: MetricMapResponse = try await performRequestAsync(request: request)
+        return response.metrics
     }
 
     func getEventDataValuesAsync(id: String, dateRange: DateRange, eventName: String?, propertyName: String?) async throws -> [FilterValue] {
         let items = dateRangeQueryItems(dateRange) + [
-            URLQueryItem(name: "eventName", value: eventName),
+            URLQueryItem(name: "event", value: eventName),
             URLQueryItem(name: "propertyName", value: propertyName)
         ]
         guard let path = buildPath(path: "/api/websites/\(id)/event-data/values", queryItems: items) else {
@@ -1102,6 +1283,48 @@ class APIClient {
             path: "/api/websites/\(id)/session-data/values",
             queryItems: dateRangeQueryItems(dateRange) + [URLQueryItem(name: "propertyName", value: propertyName)]
         ) else {
+            throw APIError.invalidURL
+        }
+        let request = createRequest(path: path, method: "GET")
+        return try await performRequestAsync(request: request)
+    }
+
+    func getSessionDataPivotAsync(
+        id: String,
+        dateRange: DateRange,
+        propertyName: String,
+        page: Int,
+        pageSize: Int,
+        query: AnalyticsQueryOptions = .default
+    ) async throws -> PaginatedResponse<AnalyticsRecord> {
+        let items = filteredQueryItems(
+            dateRange: dateRange,
+            query: query,
+            extraItems: [
+                URLQueryItem(name: "propertyName", value: propertyName),
+                URLQueryItem(name: "page", value: "\(page)"),
+                URLQueryItem(name: "pageSize", value: "\(pageSize)")
+            ]
+        )
+        guard let path = buildPath(path: "/api/websites/\(id)/session-data-pivot", queryItems: items) else {
+            throw APIError.invalidURL
+        }
+        let request = createRequest(path: path, method: "GET")
+        return try await performRequestAsync(request: request)
+    }
+
+    func getSessionDataStatsAsync(
+        id: String,
+        dateRange: DateRange,
+        propertyName: String,
+        query: AnalyticsQueryOptions = .default
+    ) async throws -> [AnalyticsRecord] {
+        let items = filteredQueryItems(
+            dateRange: dateRange,
+            query: query,
+            extraItems: [URLQueryItem(name: "propertyName", value: propertyName)]
+        )
+        guard let path = buildPath(path: "/api/websites/\(id)/session-data/stats", queryItems: items) else {
             throw APIError.invalidURL
         }
         let request = createRequest(path: path, method: "GET")
@@ -1174,7 +1397,8 @@ class APIClient {
 
     func getWebsiteSessionPropertiesAsync(id: String, sessionId: String) async throws -> [String: JSONValue] {
         let request = createRequest(path: "/api/websites/\(id)/sessions/\(sessionId)/properties", method: "GET")
-        return try await performRequestAsync(request: request)
+        let response: SessionPropertiesResponse = try await performRequestAsync(request: request)
+        return response.properties
     }
 
     // MARK: - Async Reports, Segments, Assets
@@ -1200,26 +1424,28 @@ class APIClient {
     }
 
     func getLinksAsync(page: Int = 1, pageSize: Int = 50, search: String? = nil, teamId: String? = nil) async throws -> PaginatedResponse<TrackedAsset> {
-        var components = URLComponents(string: "/api/links")
-        components?.queryItems = [
+        guard let path = buildPath(path: "/api/links", queryItems: [
             URLQueryItem(name: "page", value: "\(page)"),
             URLQueryItem(name: "pageSize", value: "\(pageSize)"),
             URLQueryItem(name: "search", value: search),
             URLQueryItem(name: "teamId", value: teamId)
-        ]
-        let request = createRequest(path: components?.string ?? "/api/links", method: "GET")
+        ]) else {
+            throw APIError.invalidURL
+        }
+        let request = createRequest(path: path, method: "GET")
         return try await performRequestAsync(request: request)
     }
 
     func getPixelsAsync(page: Int = 1, pageSize: Int = 50, search: String? = nil, teamId: String? = nil) async throws -> PaginatedResponse<TrackedAsset> {
-        var components = URLComponents(string: "/api/pixels")
-        components?.queryItems = [
+        guard let path = buildPath(path: "/api/pixels", queryItems: [
             URLQueryItem(name: "page", value: "\(page)"),
             URLQueryItem(name: "pageSize", value: "\(pageSize)"),
             URLQueryItem(name: "search", value: search),
             URLQueryItem(name: "teamId", value: teamId)
-        ]
-        let request = createRequest(path: components?.string ?? "/api/pixels", method: "GET")
+        ]) else {
+            throw APIError.invalidURL
+        }
+        let request = createRequest(path: path, method: "GET")
         return try await performRequestAsync(request: request)
     }
 }
