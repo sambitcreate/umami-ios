@@ -413,7 +413,8 @@
 				PRODUCT_BUNDLE_IDENTIFIER = "sbtbiswas.Umami-Analytics";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_VERSION = 5.0;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 5.9;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
@@ -441,7 +442,8 @@
 				PRODUCT_BUNDLE_IDENTIFIER = "sbtbiswas.Umami-Analytics";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_VERSION = 5.0;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 5.9;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;
@@ -459,7 +461,8 @@
 				PRODUCT_BUNDLE_IDENTIFIER = "sbtbiswas.Umami-AnalyticsTests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_VERSION = 5.0;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 5.9;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Umami Analytics.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Umami Analytics";
 			};
@@ -478,7 +481,8 @@
 				PRODUCT_BUNDLE_IDENTIFIER = "sbtbiswas.Umami-AnalyticsTests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_VERSION = 5.0;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 5.9;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Umami Analytics.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Umami Analytics";
 			};
@@ -495,7 +499,8 @@
 				PRODUCT_BUNDLE_IDENTIFIER = "sbtbiswas.Umami-AnalyticsUITests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_VERSION = 5.0;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 5.9;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_TARGET_NAME = "Umami Analytics";
 			};
@@ -512,7 +517,8 @@
 				PRODUCT_BUNDLE_IDENTIFIER = "sbtbiswas.Umami-AnalyticsUITests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_VERSION = 5.0;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 5.9;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_TARGET_NAME = "Umami Analytics";
 			};
