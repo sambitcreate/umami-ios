@@ -9,6 +9,11 @@ import SwiftUI
 
 @MainActor
 struct LoginView: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @FocusState private var focusedField: LoginField?
+    @ScaledMetric(relativeTo: .body) private var horizontalPadding: CGFloat = 30
+    @ScaledMetric(relativeTo: .body) private var verticalSpacing: CGFloat = 20
+
     @State private var serverType: ServerType = AuthManager.shared.serverType
     @State private var serverURL = AuthManager.shared.savedSelfHostedServerURL ?? ""
     @State private var username = ""
@@ -23,184 +28,22 @@ struct LoginView: View {
     @Binding var isAuthenticated: Bool
 
     var body: some View {
-        ZStack {
-            Color(UIColor.systemGroupedBackground)
-                .ignoresSafeArea()
+        ScrollView {
+            VStack(spacing: dynamicTypeSize.isAccessibilitySize ? 24 : 30) {
+                header
+                    .padding(.top, dynamicTypeSize.isAccessibilitySize ? 24 : 50)
 
-            VStack(spacing: 30) {
-                VStack(spacing: 10) {
-                    Image(systemName: "chart.bar.fill")
-                        .font(.system(size: 60))
-                        .foregroundStyle(.tint)
-                        .accessibilityHidden(true)
+                formContent
+                    .padding(.horizontal, horizontalPadding)
 
-                    Text("Umami Analytics")
-                        .font(.largeTitle)
-                        .fontWeight(.bold)
-
-                    Text("Privacy-focused web analytics")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-                .padding(.top, 50)
-                .accessibilityElement(children: .combine)
-
-                VStack(alignment: .leading, spacing: 20) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Server Type")
-                            .font(.headline)
-
-                        Picker("Server Type", selection: $serverType) {
-                            ForEach(ServerType.allCases, id: \.self) { type in
-                                Text(type.displayName).tag(type)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-                    }
-
-                    if serverType == .cloud {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Umami Cloud API Key")
-                                .font(.headline)
-                                .foregroundStyle(.primary)
-
-                            SecureField("umami_live_xxxxx", text: $apiKey)
-                                .textContentType(.password)
-                                .textInputAutocapitalization(.never)
-                                .autocorrectionDisabled()
-                                .padding()
-                                .background(Color(UIColor.secondarySystemGroupedBackground))
-                                .clipShape(RoundedRectangle(cornerRadius: 10))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 10)
-                                        .stroke(Color(UIColor.separator), lineWidth: 1)
-                                )
-                                .accessibilityLabel("API Key")
-
-                            Text("Your key is available from the Umami Cloud dashboard.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Cloud Region")
-                                .font(.headline)
-
-                            Picker("Cloud Region", selection: $cloudRegion) {
-                                ForEach(CloudRegion.allCases) { region in
-                                    Text(region.displayName).tag(region)
-                                }
-                            }
-                            .pickerStyle(.segmented)
-                        }
-                    } else {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Server URL")
-                                .font(.headline)
-                                .foregroundStyle(.primary)
-
-                            TextField("https://analytics.example.com", text: $serverURL)
-                                .textInputAutocapitalization(.never)
-                                .autocorrectionDisabled()
-                                .keyboardType(.URL)
-                                .padding()
-                                .background(Color(UIColor.secondarySystemGroupedBackground))
-                                .clipShape(RoundedRectangle(cornerRadius: 10))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 10)
-                                        .stroke(Color(UIColor.separator), lineWidth: 1)
-                                )
-                                .accessibilityLabel("Server URL")
-                        }
-
-                        if serverType == .publicShare {
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text("Share ID")
-                                    .font(.headline)
-                                    .foregroundStyle(.primary)
-
-                                TextField("share_abcdef", text: $shareID)
-                                    .textInputAutocapitalization(.never)
-                                    .autocorrectionDisabled()
-                                    .padding()
-                                    .background(Color(UIColor.secondarySystemGroupedBackground))
-                                    .clipShape(RoundedRectangle(cornerRadius: 10))
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 10)
-                                            .stroke(Color(UIColor.separator), lineWidth: 1)
-                                    )
-                                    .accessibilityLabel("Share ID")
-
-                                Text("Shared dashboards open in read-only mode.")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                        } else {
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text("Username")
-                                    .font(.headline)
-                                    .foregroundStyle(.primary)
-
-                                TextField("admin", text: $username)
-                                    .textInputAutocapitalization(.never)
-                                    .autocorrectionDisabled()
-                                    .padding()
-                                    .background(Color(UIColor.secondarySystemGroupedBackground))
-                                    .clipShape(RoundedRectangle(cornerRadius: 10))
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 10)
-                                            .stroke(Color(UIColor.separator), lineWidth: 1)
-                                    )
-                                    .accessibilityLabel("Username")
-                            }
-
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text("Password")
-                                    .font(.headline)
-                                    .foregroundStyle(.primary)
-
-                                SecureField("Password", text: $password)
-                                    .padding()
-                                    .background(Color(UIColor.secondarySystemGroupedBackground))
-                                    .clipShape(RoundedRectangle(cornerRadius: 10))
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 10)
-                                            .stroke(Color(UIColor.separator), lineWidth: 1)
-                                    )
-                                    .accessibilityLabel("Password")
-                            }
-                        }
-                    }
-
-                    Button(action: login) {
-                        if isLoading {
-                            ProgressView()
-                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                                .frame(maxWidth: .infinity, minHeight: 44)
-                                .padding()
-                                .background(.tint)
-                                .clipShape(RoundedRectangle(cornerRadius: 10))
-                        } else {
-                            Text(serverType == .cloud ? "Connect" : "Sign In")
-                                .fontWeight(.bold)
-                                .foregroundStyle(.white)
-                                .frame(maxWidth: .infinity, minHeight: 44)
-                                .padding()
-                                .background(.tint)
-                                .clipShape(RoundedRectangle(cornerRadius: 10))
-                        }
-                    }
-                    .disabled(isLoading || !isFormValid)
-                    .opacity(isFormValid ? 1.0 : 0.6)
-                    .accessibilityLabel(isLoading ? "Signing in" : (serverType == .cloud ? "Connect" : "Sign In"))
-                    .accessibilityHint(isFormValid ? "Double tap to sign in" : "Fill in all required fields first")
-                }
-                .padding(.horizontal, 30)
-
-                Spacer()
+                Spacer(minLength: 24)
             }
             .padding(.vertical, 30)
+            .frame(maxWidth: 520)
+            .frame(maxWidth: .infinity)
         }
+        .background(Color(UIColor.systemGroupedBackground).ignoresSafeArea())
+        .scrollDismissesKeyboard(.interactively)
         .alert("Login Failed", isPresented: $showError) {
             Button("OK", role: .cancel) { }
         } message: {
@@ -213,6 +56,172 @@ struct LoginView: View {
                 serverURL = AuthManager.shared.savedSelfHostedServerURL ?? serverURL
             }
         }
+    }
+
+    private var header: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "chart.bar.fill")
+                .font(.system(.largeTitle, design: .rounded).weight(.semibold))
+                .foregroundStyle(.tint)
+                .imageScale(.large)
+                .accessibilityHidden(true)
+
+            Text("Umami Analytics")
+                .font(.largeTitle.bold())
+                .multilineTextAlignment(.center)
+
+            Text("Privacy-focused web analytics")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .padding(.horizontal, horizontalPadding)
+        .accessibilityElement(children: .combine)
+    }
+
+    private var formContent: some View {
+        VStack(alignment: .leading, spacing: verticalSpacing) {
+            pickerSection("Server Type") {
+                Picker("Server Type", selection: $serverType) {
+                    ForEach(ServerType.allCases, id: \.self) { type in
+                        Text(type.displayName).tag(type)
+                    }
+                }
+            }
+
+            if serverType == .cloud {
+                inputSection(
+                    title: "Umami Cloud API Key",
+                    help: "Your key is available from the Umami Cloud dashboard."
+                ) {
+                    SecureField("umami_live_xxxxx", text: $apiKey)
+                        .textContentType(.password)
+                        .focused($focusedField, equals: .apiKey)
+                        .submitLabel(.go)
+                        .onSubmit(loginIfPossible)
+                        .accessibilityLabel("API Key")
+                }
+
+                pickerSection("Cloud Region") {
+                    Picker("Cloud Region", selection: $cloudRegion) {
+                        ForEach(CloudRegion.allCases) { region in
+                            Text(region.displayName).tag(region)
+                        }
+                    }
+                }
+            } else {
+                inputSection(title: "Server URL") {
+                    TextField("https://analytics.example.com", text: $serverURL)
+                        .textContentType(.URL)
+                        .keyboardType(.URL)
+                        .focused($focusedField, equals: .serverURL)
+                        .submitLabel(.next)
+                        .onSubmit {
+                            focusedField = serverType == .publicShare ? .shareID : .username
+                        }
+                        .accessibilityLabel("Server URL")
+                }
+
+                if serverType == .publicShare {
+                    inputSection(title: "Share ID", help: "Shared dashboards open in read-only mode.") {
+                        TextField("share_abcdef", text: $shareID)
+                            .focused($focusedField, equals: .shareID)
+                            .submitLabel(.go)
+                            .onSubmit(loginIfPossible)
+                            .accessibilityLabel("Share ID")
+                    }
+                } else {
+                    inputSection(title: "Username") {
+                        TextField("admin", text: $username)
+                            .textContentType(.username)
+                            .focused($focusedField, equals: .username)
+                            .submitLabel(.next)
+                            .onSubmit { focusedField = .password }
+                            .accessibilityLabel("Username")
+                    }
+
+                    inputSection(title: "Password") {
+                        SecureField("Password", text: $password)
+                            .textContentType(.password)
+                            .focused($focusedField, equals: .password)
+                            .submitLabel(.go)
+                            .onSubmit(loginIfPossible)
+                            .accessibilityLabel("Password")
+                    }
+                }
+            }
+
+            Button(action: login) {
+                ZStack {
+                    Text(serverType == .cloud ? "Connect" : "Sign In")
+                        .fontWeight(.bold)
+                        .opacity(isLoading ? 0 : 1)
+
+                    if isLoading {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                    }
+                }
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .padding(.vertical, 12)
+                .background(.tint)
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+            }
+            .disabled(isLoading || !isFormValid)
+            .opacity(isFormValid ? 1.0 : 0.6)
+            .accessibilityLabel(isLoading ? "Signing in" : (serverType == .cloud ? "Connect" : "Sign In"))
+            .accessibilityHint(isFormValid ? "Double tap to sign in" : "Fill in all required fields first")
+        }
+    }
+
+    private func pickerSection<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.headline)
+
+            if dynamicTypeSize.isAccessibilitySize {
+                content()
+                    .pickerStyle(.menu)
+            } else {
+                content()
+                    .pickerStyle(.segmented)
+            }
+        }
+    }
+
+    private func inputSection<Content: View>(
+        title: String,
+        help: String? = nil,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.headline)
+                .foregroundStyle(.primary)
+
+            content()
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .padding()
+                .background(Color(UIColor.secondarySystemGroupedBackground))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(Color(UIColor.separator), lineWidth: 1)
+                )
+
+            if let help {
+                Text(help)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func loginIfPossible() {
+        guard isFormValid, !isLoading else { return }
+        login()
     }
 
     private var isFormValid: Bool {
@@ -278,6 +287,14 @@ struct LoginView: View {
 
 #Preview {
     LoginView(isAuthenticated: .constant(false))
+}
+
+private enum LoginField: Hashable {
+    case serverURL
+    case username
+    case password
+    case apiKey
+    case shareID
 }
 
 private extension AuthManager {

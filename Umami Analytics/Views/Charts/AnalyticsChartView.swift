@@ -110,8 +110,10 @@ struct AnalyticsChartView: View {
     }
 
     private var chartView: some View {
-        Chart {
-            ForEach(currentDataSet) { item in
+        let dataSet = currentDataSet
+
+        return Chart {
+            ForEach(dataSet) { item in
                 AreaMark(
                     x: .value("Date", item.date),
                     y: .value(selectedChartType.rawValue, item.value)
@@ -160,7 +162,7 @@ struct AnalyticsChartView: View {
                 AxisGridLine()
                 AxisTick()
                 if let dateValue = value.as(Date.self) {
-                    AxisValueLabel(formatChartDate(dateValue))
+                    AxisValueLabel(ChartFormatters.chartDateFormatter(for: period).string(from: dateValue))
                 }
             }
         }
@@ -220,7 +222,30 @@ struct AnalyticsChartView: View {
     private func nearestDataPoint(to date: Date) -> TimeSeriesData? {
         let data = currentDataSet
         guard !data.isEmpty else { return nil }
-        return data.min(by: { abs($0.date.timeIntervalSince(date)) < abs($1.date.timeIntervalSince(date)) })
+
+        var lowerBound = 0
+        var upperBound = data.count
+
+        while lowerBound < upperBound {
+            let midpoint = (lowerBound + upperBound) / 2
+            if data[midpoint].date < date {
+                lowerBound = midpoint + 1
+            } else {
+                upperBound = midpoint
+            }
+        }
+
+        if lowerBound == 0 {
+            return data[0]
+        }
+
+        if lowerBound == data.count {
+            return data[data.count - 1]
+        }
+
+        let previous = data[lowerBound - 1]
+        let next = data[lowerBound]
+        return abs(previous.date.timeIntervalSince(date)) <= abs(next.date.timeIntervalSince(date)) ? previous : next
     }
 
     private var gradientColors: (primary: Color, opacityGradient: [Color]) {
@@ -250,41 +275,15 @@ struct AnalyticsChartView: View {
     }
 
     private func formatChartDate(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.locale = Locale.current
-
-        switch period {
-        case .day:
-            formatter.dateFormat = "HH:mm"
-        case .week, .month:
-            formatter.dateFormat = "MMM d"
-        case .year:
-            formatter.dateFormat = "MMM yyyy"
-        }
-
-        return formatter.string(from: date)
+        ChartFormatters.chartDateFormatter(for: period).string(from: date)
     }
 
     private func formatDate(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.locale = Locale.current
-
-        switch period {
-        case .day:
-            formatter.dateFormat = "MMM d, h:mm a"
-        case .week, .month:
-            formatter.dateFormat = "EEEE, MMM d"
-        case .year:
-            formatter.dateFormat = "MMM yyyy"
-        }
-
-        return formatter.string(from: date)
+        ChartFormatters.detailDateFormatter(for: period).string(from: date)
     }
 
     private func formatValue(_ value: Int) -> String {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        return formatter.string(from: NSNumber(value: value)) ?? "\(value)"
+        ChartFormatters.decimalNumberFormatter.string(from: NSNumber(value: value)) ?? "\(value)"
     }
 }
 
@@ -330,4 +329,48 @@ struct ChartPlaceholderView: View {
 private struct SelectedDataPoint {
     let date: Date
     let value: Int
+}
+
+private enum ChartFormatters {
+    static let decimalNumberFormatter: NumberFormatter = {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        return formatter
+    }()
+
+    private static let chartDayFormatter = makeDateFormatter("HH:mm")
+    private static let chartMonthFormatter = makeDateFormatter("MMM d")
+    private static let chartYearFormatter = makeDateFormatter("MMM yyyy")
+    private static let detailDayFormatter = makeDateFormatter("MMM d, h:mm a")
+    private static let detailMonthFormatter = makeDateFormatter("EEEE, MMM d")
+    private static let detailYearFormatter = makeDateFormatter("MMM yyyy")
+
+    static func chartDateFormatter(for period: StatsPeriod) -> DateFormatter {
+        switch period {
+        case .day:
+            return chartDayFormatter
+        case .week, .month:
+            return chartMonthFormatter
+        case .year:
+            return chartYearFormatter
+        }
+    }
+
+    static func detailDateFormatter(for period: StatsPeriod) -> DateFormatter {
+        switch period {
+        case .day:
+            return detailDayFormatter
+        case .week, .month:
+            return detailMonthFormatter
+        case .year:
+            return detailYearFormatter
+        }
+    }
+
+    private static func makeDateFormatter(_ dateFormat: String) -> DateFormatter {
+        let formatter = DateFormatter()
+        formatter.locale = Locale.current
+        formatter.dateFormat = dateFormat
+        return formatter
+    }
 }

@@ -2,6 +2,7 @@ import SwiftUI
 import Charts
 
 struct WebsiteSessionsTabView: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ObservedObject var viewModel: WebsiteViewModel
 
     @State private var draftSearch = ""
@@ -37,19 +38,23 @@ struct WebsiteSessionsTabView: View {
                     .foregroundStyle(.secondary)
                     .padding(.horizontal)
             } else {
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                LazyVGrid(columns: sessionSummaryColumns, spacing: 12) {
                     ForEach(Array(metrics.prefix(6)), id: \.key) { key, value in
                         VStack(alignment: .leading, spacing: 6) {
                             Text(key)
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
+                                .lineLimit(2)
+                                .fixedSize(horizontal: false, vertical: true)
                             Text("\(value.value)")
                                 .font(.title3)
                                 .fontWeight(.semibold)
+                                .monospacedDigit()
                             if let prev = value.prev {
                                 Text("Prev: \(prev)")
-                                    .font(.caption2)
+                                    .font(.caption)
                                     .foregroundStyle(.secondary)
+                                    .monospacedDigit()
                             }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -61,6 +66,13 @@ struct WebsiteSessionsTabView: View {
                 .padding(.horizontal)
             }
         }
+    }
+
+    private var sessionSummaryColumns: [GridItem] {
+        Array(
+            repeating: GridItem(.flexible(), spacing: 12),
+            count: dynamicTypeSize.isAccessibilitySize ? 1 : 2
+        )
     }
 
     private var weeklySessionsSection: some View {
@@ -104,23 +116,42 @@ struct WebsiteSessionsTabView: View {
     }
 
     private var sessionSearchBar: some View {
-        HStack(spacing: 8) {
-            TextField("Search sessions", text: $draftSearch)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .textFieldStyle(.roundedBorder)
-                .onSubmit {
-                    viewModel.applySessionsSearch(draftSearch)
-                }
-                .accessibilityLabel("Search sessions")
+        ViewThatFits(in: .horizontal) {
+            sessionSearchControls
 
-            Button("Search") {
-                viewModel.applySessionsSearch(draftSearch)
+            VStack(alignment: .leading, spacing: 8) {
+                sessionSearchField
+                sessionSearchButton
             }
-            .buttonStyle(.bordered)
-            .accessibilityLabel("Search")
         }
         .padding(.horizontal)
+    }
+
+    private var sessionSearchControls: some View {
+        HStack(spacing: 8) {
+            sessionSearchField
+            sessionSearchButton
+        }
+    }
+
+    private var sessionSearchField: some View {
+        TextField("Search sessions", text: $draftSearch)
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
+            .textFieldStyle(.roundedBorder)
+            .onSubmit {
+                viewModel.applySessionsSearch(draftSearch)
+            }
+            .accessibilityLabel("Search sessions")
+    }
+
+    private var sessionSearchButton: some View {
+        Button("Search") {
+            viewModel.applySessionsSearch(draftSearch)
+        }
+        .buttonStyle(.bordered)
+        .controlSize(dynamicTypeSize.isAccessibilitySize ? .regular : .small)
+        .accessibilityLabel("Search")
     }
 
     @ViewBuilder
@@ -176,6 +207,9 @@ struct WebsiteSessionsTabView: View {
                     Text(session.sessionPrimaryText)
                         .font(.subheadline)
                         .fontWeight(.medium)
+                        .lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .layoutPriority(1)
 
                     Spacer()
 
@@ -193,12 +227,13 @@ struct WebsiteSessionsTabView: View {
                     Text(subtitle)
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
                 if let metric = session.metricValue {
                     Text("Value: \(metric)")
-                        .font(.caption2)
+                        .font(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -231,13 +266,18 @@ struct WebsiteSessionsTabView: View {
                             Text(session.sessionPrimaryText)
                                 .font(.subheadline)
                                 .fontWeight(.semibold)
+                                .lineLimit(3)
+                                .fixedSize(horizontal: false, vertical: true)
 
                             if let subtitle = session.sessionSecondaryText {
                                 Text(subtitle)
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
+                                    .lineLimit(2)
+                                    .fixedSize(horizontal: false, vertical: true)
                             }
                         }
+                        .layoutPriority(1)
 
                         Spacer()
 
@@ -245,6 +285,7 @@ struct WebsiteSessionsTabView: View {
                             Text("\(metric)")
                                 .font(.title3)
                                 .fontWeight(.semibold)
+                                .monospacedDigit()
                         }
                     }
 
@@ -269,15 +310,20 @@ struct WebsiteSessionsTabView: View {
                                 .fontWeight(.medium)
 
                             ForEach(viewModel.selectedSessionProperties.keys.sorted(), id: \.self) { key in
-                                HStack(alignment: .top) {
+                                HStack(alignment: .top, spacing: 12) {
                                     Text(key)
                                         .font(.footnote)
                                         .fontWeight(.medium)
+                                        .lineLimit(3)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                        .layoutPriority(1)
                                     Spacer()
                                     Text(viewModel.selectedSessionProperties[key]?.displayText ?? "—")
                                         .font(.footnote)
                                         .foregroundStyle(.secondary)
                                         .multilineTextAlignment(.trailing)
+                                        .lineLimit(3)
+                                        .fixedSize(horizontal: false, vertical: true)
                                 }
                             }
                         }

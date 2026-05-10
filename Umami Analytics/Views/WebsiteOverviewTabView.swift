@@ -109,16 +109,19 @@ struct WebsiteOverviewTabView: View {
 
             VStack(spacing: 0) {
                 ForEach(Array(displayItems.enumerated()), id: \.offset) { index, item in
-                    HStack {
+                    HStack(alignment: .top, spacing: 12) {
                         Text(item.x.isEmpty ? "(empty)" : item.x)
                             .font(.subheadline)
-                            .lineLimit(1)
+                            .lineLimit(3)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .layoutPriority(1)
 
                         Spacer()
 
                         Text("\(item.y)")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
+                            .monospacedDigit()
                     }
                     .padding()
                     .accessibilityElement(children: .combine)

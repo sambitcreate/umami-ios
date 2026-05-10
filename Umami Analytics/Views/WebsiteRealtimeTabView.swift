@@ -59,18 +59,21 @@ struct WebsiteRealtimeTabView: View {
                 let displayItems = Array(pageviews.prefix(10))
                 VStack(spacing: 0) {
                     ForEach(Array(displayItems.enumerated()), id: \.offset) { index, page in
-                        HStack {
-                            Text(page.url)
-                                .font(.subheadline)
-                                .lineLimit(1)
-                            Spacer()
+                        VStack(alignment: .leading, spacing: 4) {
                             if let title = page.title, !title.isEmpty {
                                 Text(title)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(1)
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
+                                    .lineLimit(2)
+                                    .fixedSize(horizontal: false, vertical: true)
                             }
+                            Text(page.url)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(3)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                         .padding()
                         .accessibilityElement(children: .combine)
 
@@ -101,9 +104,12 @@ struct WebsiteRealtimeTabView: View {
                 let displayItems = Array(events.prefix(10))
                 VStack(spacing: 0) {
                     ForEach(Array(displayItems.enumerated()), id: \.offset) { index, event in
-                        HStack {
+                        HStack(alignment: .top, spacing: 12) {
                             Text(event.name)
                                 .font(.subheadline)
+                                .lineLimit(3)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .layoutPriority(1)
                             Spacer()
                         }
                         .padding()
@@ -136,13 +142,17 @@ struct WebsiteRealtimeTabView: View {
                 let displayItems = Array(countries.prefix(10))
                 VStack(spacing: 0) {
                     ForEach(Array(displayItems.enumerated()), id: \.offset) { index, country in
-                        HStack {
+                        HStack(alignment: .top, spacing: 12) {
                             Text(country.key)
                                 .font(.subheadline)
+                                .lineLimit(2)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .layoutPriority(1)
                             Spacer()
                             Text("\(country.value)")
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
+                                .monospacedDigit()
                         }
                         .padding()
                         .accessibilityElement(children: .combine)

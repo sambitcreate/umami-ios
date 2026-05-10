@@ -6,10 +6,13 @@
 //
 
 import SwiftUI
+import UIKit
+@preconcurrency import Combine
 
 struct WebsiteFaviconView: View {
     var domain: String
     var size: CGFloat = 36
+    @StateObject private var loader = FaviconImageLoader()
 
     private var faviconURL: URL? {
         var trimmedDomain = domain.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -28,26 +31,28 @@ struct WebsiteFaviconView: View {
     }
 
     var body: some View {
-        AsyncImage(url: faviconURL) { phase in
-            switch phase {
-            case .success(let image):
-                image
+        Group {
+            if let image = loader.image {
+                Image(uiImage: image)
                     .resizable()
                     .scaledToFit()
-                    .frame(width: size, height: size)
                     .clipShape(RoundedRectangle(cornerRadius: size / 4, style: .continuous))
-            case .failure:
-                placeholder
-            case .empty:
+            } else if loader.isLoading {
                 placeholder.overlay(
                     ProgressView()
                         .scaleEffect(0.6)
                 )
-            @unknown default:
+            } else {
                 placeholder
             }
         }
         .frame(width: size, height: size)
+        .onAppear {
+            loader.load(from: faviconURL)
+        }
+        .onChange(of: faviconURL) { _, newURL in
+            loader.load(from: newURL)
+        }
     }
 
     private var placeholder: some View {
@@ -59,4 +64,54 @@ struct WebsiteFaviconView: View {
                     .foregroundStyle(.secondary)
             )
     }
+}
+
+@MainActor
+private final class FaviconImageLoader: ObservableObject {
+    @Published var image: UIImage?
+    @Published var isLoading = false
+
+    private static let cache = NSCache<NSURL, UIImage>()
+    private var activeURL: URL?
+    private var cancellable: AnyCancellable?
+
+    func load(from url: URL?) {
+        cancellable?.cancel()
+        activeURL = url
+
+        guard let url else {
+            image = nil
+            isLoading = false
+            return
+        }
+
+        if let cachedImage = Self.cache.object(forKey: url as NSURL) {
+            image = cachedImage
+            isLoading = false
+            return
+        }
+
+        image = nil
+        isLoading = true
+
+        let request = URLRequest(
+            url: url,
+            cachePolicy: .returnCacheDataElseLoad,
+            timeoutInterval: 15
+        )
+
+        cancellable = URLSession.shared.dataTaskPublisher(for: request)
+            .compactMap { UIImage(data: $0.data) }
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard self?.activeURL == url else { return }
+                self?.isLoading = false
+            } receiveValue: { [weak self] downloadedImage in
+                guard self?.activeURL == url else { return }
+                Self.cache.setObject(downloadedImage, forKey: url as NSURL)
+                self?.image = downloadedImage
+                self?.isLoading = false
+            }
+    }
+
 }

@@ -628,8 +628,8 @@ struct WeeklySessionsResponse: Decodable, Sendable {
     }
 
     init(from decoder: Decoder) throws {
-        if var weeklyMatrix = try? decoder.unkeyedContainer(),
-           let matrix = try? weeklyMatrix.decode([[Int]].self) {
+        if let singleValue = try? decoder.singleValueContainer(),
+           let matrix = try? singleValue.decode([[Int]].self) {
             data = Self.points(from: matrix)
             return
         }

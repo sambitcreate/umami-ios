@@ -2,6 +2,7 @@ import SwiftUI
 import Charts
 
 struct WebsiteEventsTabView: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ObservedObject var viewModel: WebsiteViewModel
 
     @State private var draftSearch = ""
@@ -39,14 +40,17 @@ struct WebsiteEventsTabView: View {
             } else {
                 VStack(spacing: 0) {
                     ForEach(Array(displayItems.enumerated()), id: \.offset) { index, item in
-                        HStack {
+                        HStack(alignment: .top, spacing: 12) {
                             Text(item.x)
                                 .font(.subheadline)
-                                .lineLimit(1)
+                                .lineLimit(3)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .layoutPriority(1)
                             Spacer()
                             Text("\(item.y)")
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
+                                .monospacedDigit()
                         }
                         .padding()
                         .accessibilityElement(children: .combine)
@@ -132,11 +136,15 @@ struct WebsiteEventsTabView: View {
 
                         ForEach(viewModel.eventDataState.stats.keys.sorted(), id: \.self) { key in
                             if let metric = viewModel.eventDataState.stats[key] {
-                                HStack {
+                                HStack(alignment: .top, spacing: 12) {
                                     Text(key)
+                                        .lineLimit(3)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                        .layoutPriority(1)
                                     Spacer()
                                     Text("\(metric.value)")
                                         .foregroundStyle(.secondary)
+                                        .monospacedDigit()
                                 }
                                 .font(.footnote)
                                 .accessibilityElement(children: .combine)
@@ -152,14 +160,18 @@ struct WebsiteEventsTabView: View {
                             .fontWeight(.medium)
 
                         ForEach(displayValues) { value in
-                            HStack {
+                            HStack(alignment: .top, spacing: 12) {
                                 Text(value.displayText)
                                     .font(.footnote)
+                                    .lineLimit(3)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .layoutPriority(1)
                                 Spacer()
                                 if let count = value.count {
                                     Text("\(count)")
                                         .font(.footnote)
                                         .foregroundStyle(.secondary)
+                                        .monospacedDigit()
                                 }
                             }
                             .accessibilityElement(children: .combine)
@@ -215,21 +227,13 @@ struct WebsiteEventsTabView: View {
                 .font(.headline)
                 .padding(.horizontal)
 
-            HStack(spacing: 8) {
-                TextField("Search events", text: $draftSearch)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .textFieldStyle(.roundedBorder)
-                    .onSubmit {
-                        viewModel.applyEventsSearch(draftSearch)
-                    }
-                    .accessibilityLabel("Search events")
+            ViewThatFits(in: .horizontal) {
+                eventSearchControls
 
-                Button("Search") {
-                    viewModel.applyEventsSearch(draftSearch)
+                VStack(alignment: .leading, spacing: 8) {
+                    eventSearchField
+                    eventSearchButton
                 }
-                .buttonStyle(.bordered)
-                .accessibilityLabel("Search")
             }
             .padding(.horizontal)
 
@@ -247,12 +251,13 @@ struct WebsiteEventsTabView: View {
                                 Text(subtitle)
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
-                                    .lineLimit(1)
+                                    .lineLimit(2)
+                                    .fixedSize(horizontal: false, vertical: true)
                             }
 
                             if let metric = event.metricValue {
                                 Text("Count: \(metric)")
-                                    .font(.caption2)
+                                    .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
                         }
@@ -293,6 +298,33 @@ struct WebsiteEventsTabView: View {
         }
     }
 
+    private var eventSearchControls: some View {
+        HStack(spacing: 8) {
+            eventSearchField
+            eventSearchButton
+        }
+    }
+
+    private var eventSearchField: some View {
+        TextField("Search events", text: $draftSearch)
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
+            .textFieldStyle(.roundedBorder)
+            .onSubmit {
+                viewModel.applyEventsSearch(draftSearch)
+            }
+            .accessibilityLabel("Search events")
+    }
+
+    private var eventSearchButton: some View {
+        Button("Search") {
+            viewModel.applyEventsSearch(draftSearch)
+        }
+        .buttonStyle(.bordered)
+        .controlSize(dynamicTypeSize.isAccessibilitySize ? .regular : .small)
+        .accessibilityLabel("Search")
+    }
+
     private func labelPill(title: String, value: String) -> some View {
         HStack {
             Text(title)
@@ -301,7 +333,8 @@ struct WebsiteEventsTabView: View {
             Spacer()
             Text(value)
                 .font(.caption)
-                .lineLimit(1)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
             Image(systemName: "chevron.down")
                 .font(.caption2)
                 .foregroundStyle(.secondary)

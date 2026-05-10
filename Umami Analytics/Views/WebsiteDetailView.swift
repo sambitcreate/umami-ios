@@ -27,6 +27,7 @@ struct WebsiteDetailContainerView: View {
 
 @MainActor
 struct WebsiteDetailView: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ObservedObject var viewModel: WebsiteViewModel
 
     var body: some View {
@@ -127,47 +128,48 @@ struct WebsiteDetailView: View {
     }
 
     private var periodSelector: some View {
-        HStack {
-            Text("Period:")
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Period")
                 .font(.headline)
 
-            Picker("Period", selection: $viewModel.selectedPeriod) {
-                Text("Today").tag(StatsPeriod.day)
-                Text("This Week").tag(StatsPeriod.week)
-                Text("This Month").tag(StatsPeriod.month)
-                Text("This Year").tag(StatsPeriod.year)
-            }
-            .pickerStyle(.segmented)
-            .onChange(of: viewModel.selectedPeriod) { _, newValue in
-                viewModel.changePeriod(newValue)
+            if dynamicTypeSize.isAccessibilitySize {
+                Menu {
+                    periodButtons
+                } label: {
+                    queryPill(title: "Selected", value: viewModel.selectedPeriod.displayName)
+                }
+            } else {
+                Picker("Period", selection: $viewModel.selectedPeriod) {
+                    Text("Today").tag(StatsPeriod.day)
+                    Text("This Week").tag(StatsPeriod.week)
+                    Text("This Month").tag(StatsPeriod.month)
+                    Text("This Year").tag(StatsPeriod.year)
+                }
+                .pickerStyle(.segmented)
+                .onChange(of: viewModel.selectedPeriod) { _, newValue in
+                    viewModel.changePeriod(newValue)
+                }
             }
         }
         .padding(.horizontal)
     }
 
+    @ViewBuilder
+    private var periodButtons: some View {
+        Button("Today") { viewModel.changePeriod(.day) }
+        Button("This Week") { viewModel.changePeriod(.week) }
+        Button("This Month") { viewModel.changePeriod(.month) }
+        Button("This Year") { viewModel.changePeriod(.year) }
+    }
+
     private var queryControls: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 12) {
-                Menu {
-                    ForEach(AnalyticsComparison.allCases) { comparison in
-                        Button(comparison.displayName) {
-                            viewModel.updateComparison(comparison)
-                        }
-                    }
-                } label: {
-                    queryPill(title: "Compare", value: viewModel.queryOptions.compare.displayName)
-                }
+            ViewThatFits(in: .horizontal) {
+                queryPrimaryControls
 
-                if viewModel.queryOptions.hasActiveSelections {
-                    Button("Clear Filters") {
-                        viewModel.clearQuerySelections()
-                    }
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                    .buttonStyle(.bordered)
+                VStack(alignment: .leading, spacing: 10) {
+                    queryPrimaryControls
                 }
-
-                Spacer(minLength: 0)
             }
 
             if !filterMenus.isEmpty {
@@ -207,6 +209,8 @@ struct WebsiteDetailView: View {
                                     .foregroundStyle(.secondary)
                             }
                             .font(.caption)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
                             .padding(.horizontal, 12)
                             .padding(.vertical, 8)
                             .background(Color(UIColor.secondarySystemBackground))
@@ -218,6 +222,32 @@ struct WebsiteDetailView: View {
             }
         }
         .padding(.horizontal)
+    }
+
+    private var queryPrimaryControls: some View {
+        HStack(spacing: 12) {
+            Menu {
+                ForEach(AnalyticsComparison.allCases) { comparison in
+                    Button(comparison.displayName) {
+                        viewModel.updateComparison(comparison)
+                    }
+                }
+            } label: {
+                queryPill(title: "Compare", value: viewModel.queryOptions.compare.displayName)
+            }
+
+            if viewModel.queryOptions.hasActiveSelections {
+                Button("Clear Filters") {
+                    viewModel.clearQuerySelections()
+                }
+                .font(.subheadline)
+                .fontWeight(.medium)
+                .buttonStyle(.bordered)
+                .controlSize(dynamicTypeSize.isAccessibilitySize ? .regular : .small)
+            }
+
+            Spacer(minLength: 0)
+        }
     }
 
     private var filterMenus: [QueryMenu] {
@@ -247,6 +277,8 @@ struct WebsiteDetailView: View {
                 .foregroundStyle(.secondary)
         }
         .font(.subheadline)
+        .lineLimit(2)
+        .fixedSize(horizontal: false, vertical: true)
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .background(Color(UIColor.secondarySystemBackground))
