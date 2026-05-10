@@ -27,6 +27,41 @@ struct User: Codable, Sendable {
     enum CodingKeys: String, CodingKey {
         case id, username, role, createdAt, isAdmin
     }
+
+    init(id: String, username: String, role: String, createdAt: String? = nil, isAdmin: Bool? = nil) {
+        self.id = id
+        self.username = username
+        self.role = role
+        self.createdAt = createdAt
+        self.isAdmin = isAdmin ?? (role == "admin")
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        username = try container.decode(String.self, forKey: .username)
+        role = (try? container.decode(String.self, forKey: .role)) ?? "user"
+        createdAt = try? container.decode(String.self, forKey: .createdAt)
+        isAdmin = (try? container.decode(Bool.self, forKey: .isAdmin)) ?? (role == "admin")
+    }
+}
+
+struct CurrentUserResponse: Decodable, Sendable {
+    let user: User
+
+    private enum CodingKeys: String, CodingKey {
+        case user
+    }
+
+    init(from decoder: Decoder) throws {
+        if let directUser = try? User(from: decoder) {
+            user = directUser
+            return
+        }
+
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        user = try container.decode(User.self, forKey: .user)
+    }
 }
 
 struct ServerInfo: Codable, Sendable {
