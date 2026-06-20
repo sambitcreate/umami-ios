@@ -50,7 +50,7 @@ struct WebsiteFaviconView: View {
         .onAppear {
             loader.load(from: faviconURL)
         }
-        .onChange(of: faviconURL) { _, newURL in
+        .onChange(of: faviconURL) { newURL in
             loader.load(from: newURL)
         }
     }

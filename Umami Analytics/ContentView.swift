@@ -15,7 +15,7 @@ struct ContentView: View {
 
     var body: some View {
         TabView(selection: $selectedTab) {
-            DashboardView(viewModel: websiteViewModel)
+            DashboardView(viewModel: websiteViewModel, selectedTab: $selectedTab)
                 .tabItem {
                     Label("Dashboard", systemImage: "chart.bar")
                 }
@@ -33,7 +33,7 @@ struct ContentView: View {
                 }
                 .tag(2)
         }
-        .onChange(of: authManager.selectedWorkspace) { _, newSelection in
+        .onChange(of: authManager.selectedWorkspace) { newSelection in
             websiteViewModel.applyWorkspaceSelection(newSelection)
         }
     }

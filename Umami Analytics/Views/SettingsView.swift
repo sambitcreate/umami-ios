@@ -186,11 +186,11 @@ struct SettingsView: View {
                 selectedWorkspaceID = authManager.selectedWorkspace.id
                 resourceViewModel.loadWebsites()
             }
-            .onChange(of: authManager.selectedWorkspace) { _, newSelection in
+            .onChange(of: authManager.selectedWorkspace) { newSelection in
                 selectedWorkspaceID = newSelection.id
                 resourceViewModel.applyWorkspaceSelection(newSelection, reloadResources: true)
             }
-            .onChange(of: resourceViewModel.filteredWebsites.map(\.id)) { _, _ in
+            .onChange(of: resourceViewModel.filteredWebsites.map(\.id)) { _ in
                 refreshWorkspaceResources()
             }
             .alert("Sign Out", isPresented: $showingLogoutConfirmation) {

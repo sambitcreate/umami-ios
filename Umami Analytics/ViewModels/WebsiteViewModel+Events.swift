@@ -101,6 +101,14 @@ extension WebsiteViewModel {
         reloadEventDataValues()
     }
 
+    func selectEventDataProperty(_ property: FilterValue?) {
+        eventDataState.selectedProperty = property?.value
+        if let eventName = property?.eventName, !eventName.isEmpty {
+            eventDataState.selectedEvent = eventName
+        }
+        reloadEventDataValues()
+    }
+
     func loadEventsPage(
         reset: Bool,
         websiteId: String? = nil,
@@ -115,6 +123,10 @@ extension WebsiteViewModel {
 
         let page = reset ? 1 : nextEventsPage
         isLoadingMoreEvents = !reset
+        if reset {
+            eventsPage = nil
+            hasMoreEvents = false
+        }
 
         defer {
             if contextMatches(websiteId: websiteId, period: period), requestID == eventsPageRequestID {
@@ -153,6 +165,7 @@ extension WebsiteViewModel {
             nextEventsPage = page + 1
         case .failure(let error):
             if reset {
+                eventsPage = nil
                 hasMoreEvents = false
             }
             setTabError(.events, error: error)
@@ -236,9 +249,11 @@ extension WebsiteViewModel {
     func reloadEventDataValues(websiteId: String, period: StatsPeriod, requestID: UUID? = nil) async {
         let requestID = requestID ?? UUID()
         eventDataValuesRequestID = requestID
+        let selectedEvent = eventDataState.selectedEvent?.trimmingCharacters(in: .whitespacesAndNewlines)
         let selectedProperty = eventDataState.selectedProperty?.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        guard let propertyName = selectedProperty, !propertyName.isEmpty else {
+        guard let eventName = selectedEvent, !eventName.isEmpty,
+              let propertyName = selectedProperty, !propertyName.isEmpty else {
             if contextMatches(websiteId: websiteId, period: period), requestID == eventDataValuesRequestID {
                 eventDataState.availableValues = []
             }
@@ -249,7 +264,7 @@ extension WebsiteViewModel {
             try await service.fetchEventDataValuesAsync(
                 id: websiteId,
                 period: period,
-                eventName: eventDataState.selectedEvent,
+                eventName: eventName,
                 propertyName: propertyName
             )
         }

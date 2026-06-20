@@ -119,6 +119,10 @@ extension WebsiteViewModel {
 
         let page = reset ? 1 : nextSessionsPage
         isLoadingMoreSessions = !reset
+        if reset {
+            sessionsPage = nil
+            hasMoreSessions = false
+        }
 
         defer {
             if contextMatches(websiteId: websiteId, period: period), requestID == sessionsPageRequestID {
@@ -157,6 +161,7 @@ extension WebsiteViewModel {
             nextSessionsPage = page + 1
         case .failure(let error):
             if reset {
+                sessionsPage = nil
                 hasMoreSessions = false
             }
             setTabError(.sessions, error: error)

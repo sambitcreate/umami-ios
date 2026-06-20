@@ -16,12 +16,16 @@ final class WebsiteViewModel: ObservableObject {
     var refreshTask: Task<Void, Never>?
     var realtimeSnapshotTask: Task<Void, Never>?
     var activeUsersTask: Task<Void, Never>?
+    var filterValuesTask: Task<Void, Never>?
+    var resourcesTask: Task<Void, Never>?
     var tabTasks: [WebsiteDetailTab: Task<Void, Never>] = [:]
     var tabLoadTokens: [WebsiteDetailTab: UUID] = [:]
     var eventsPageRequestID = UUID()
     var sessionsPageRequestID = UUID()
     var eventDataInspectorRequestID = UUID()
     var eventDataValuesRequestID = UUID()
+    var filterValuesRequestID = UUID()
+    var resourcesRequestID = UUID()
 
     let refreshInterval: TimeInterval
     let pageSize: Int
@@ -130,9 +134,6 @@ final class WebsiteViewModel: ObservableObject {
             startBackgroundRefresh()
         }
 
-        if let initialWebsite {
-            selectWebsite(initialWebsite)
-        }
     }
 
     // MARK: - Data Loading
@@ -144,7 +145,7 @@ final class WebsiteViewModel: ObservableObject {
         }
     }
 
-    private func loadWebsitesAsync() async {
+    func loadWebsitesAsync() async {
         isLoading = true
         errorMessage = nil
 
@@ -245,6 +246,22 @@ final class WebsiteViewModel: ObservableObject {
         service.invalidateAnalyticsCache(for: websiteId)
         loadedTabs.remove(selectedDetailTab)
         loadTabIfNeeded(selectedDetailTab, force: true)
+    }
+
+    func refreshCurrentTabAsync() async {
+        guard let website = selectedWebsite else { return }
+        let tab = selectedDetailTab
+        let period = selectedPeriod
+        let token = UUID()
+
+        service.invalidateAnalyticsCache(for: website.id)
+        loadedTabs.remove(tab)
+        tabTasks[tab]?.cancel()
+        tabLoadTokens[tab] = token
+        setTabLoading(tab, true)
+        tabErrors[tab] = nil
+
+        await performTabLoad(tab, websiteId: website.id, period: period, token: token)
     }
 
     func loadWebsiteData(website: WebsiteModel) {
@@ -611,8 +628,18 @@ final class WebsiteViewModel: ObservableObject {
 
     private func cancelTabLoads() {
         tabTasks.values.forEach { $0.cancel() }
+        filterValuesTask?.cancel()
+        resourcesTask?.cancel()
         tabTasks.removeAll()
         tabLoadTokens.removeAll()
+    }
+
+    func cancelDetailLoads() {
+        cancelTabLoads()
+        refreshRequestTracking()
+        tabLoading.removeAll()
+        isLoadingFilterValues = false
+        isLoadingResources = false
     }
 
     private func isCurrentTabLoad(tab: WebsiteDetailTab, token: UUID, websiteId: String, period: StatsPeriod) -> Bool {
@@ -638,6 +665,8 @@ final class WebsiteViewModel: ObservableObject {
         sessionsPageRequestID = UUID()
         eventDataInspectorRequestID = UUID()
         eventDataValuesRequestID = UUID()
+        filterValuesRequestID = UUID()
+        resourcesRequestID = UUID()
     }
 
     // MARK: - Cleanup
@@ -648,6 +677,8 @@ final class WebsiteViewModel: ObservableObject {
         refreshTask?.cancel()
         realtimeSnapshotTask?.cancel()
         activeUsersTask?.cancel()
+        filterValuesTask?.cancel()
+        resourcesTask?.cancel()
         tabTasks.values.forEach { $0.cancel() }
     }
 }

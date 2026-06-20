@@ -260,8 +260,12 @@ struct FilterValue: Decodable, Identifiable, Equatable, Sendable {
     let value: String
     let label: String?
     let count: Int?
+    let eventName: String?
 
     var id: String {
+        if let eventName {
+            return "\(eventName)|\(value)|\(label ?? "")"
+        }
         if let label {
             return "\(value)|\(label)"
         }
@@ -272,10 +276,11 @@ struct FilterValue: Decodable, Identifiable, Equatable, Sendable {
         label ?? value
     }
 
-    init(value: String, label: String? = nil, count: Int? = nil) {
+    init(value: String, label: String? = nil, count: Int? = nil, eventName: String? = nil) {
         self.value = value
         self.label = label
         self.count = count
+        self.eventName = eventName
     }
 
     init(from decoder: Decoder) throws {
@@ -284,6 +289,7 @@ struct FilterValue: Decodable, Identifiable, Equatable, Sendable {
                 self.value = stringValue
                 self.label = nil
                 self.count = nil
+                self.eventName = nil
                 return
             }
 
@@ -291,18 +297,20 @@ struct FilterValue: Decodable, Identifiable, Equatable, Sendable {
                 self.value = String(intValue)
                 self.label = nil
                 self.count = nil
+                self.eventName = nil
                 return
             }
         }
 
         let container = try decoder.container(keyedBy: DynamicCodingKey.self)
 
-        let valueKeys = ["value", "x", "name", "id", "eventName", "propertyName", "dataKey", "event", "property", "label"]
+        let valueKeys = ["value", "x", "name", "id", "event", "eventName", "propertyName", "property", "dataKey", "label"]
         let labelKeys = ["label", "name", "title", "eventName", "propertyName", "dataKey"]
         let countKeys = ["count", "total", "y", "valueCount", "visitors", "sessions", "pageviews"]
 
         let decodedValue = Self.decodeString(container: container, keys: valueKeys) ?? ""
         self.value = decodedValue
+        self.eventName = Self.decodeString(container: container, keys: ["eventName", "event"])
 
         let decodedLabel = Self.decodeString(container: container, keys: labelKeys)
         self.label = decodedLabel == decodedValue ? nil : decodedLabel
@@ -338,6 +346,62 @@ struct FilterValue: Decodable, Identifiable, Equatable, Sendable {
             if let value = try? container.decode(String.self, forKey: codingKey),
                let intValue = Int(value) {
                 return intValue
+            }
+        }
+        return nil
+    }
+}
+
+struct EventDataPropertyValue: Decodable, Sendable {
+    let filterValue: FilterValue
+
+    private enum CodingKeys: String, CodingKey {
+        case eventName
+        case propertyName
+        case total
+        case count
+        case y
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let propertyName = Self.decodeString(container: container, forKey: .propertyName) ?? ""
+        let eventName = Self.decodeString(container: container, forKey: .eventName)
+        let label = eventName
+            .flatMap { $0.isEmpty ? nil : "\($0) - \(propertyName)" }
+
+        filterValue = FilterValue(
+            value: propertyName,
+            label: label == propertyName ? nil : label,
+            count: Self.decodeInt(container: container, keys: [.total, .count, .y]),
+            eventName: eventName
+        )
+    }
+
+    private static func decodeString(container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) -> String? {
+        if let value = try? container.decode(String.self, forKey: key) {
+            return value
+        }
+        if let value = try? container.decode(Int.self, forKey: key) {
+            return String(value)
+        }
+        if let value = try? container.decode(Double.self, forKey: key) {
+            return String(value)
+        }
+        return nil
+    }
+
+    private static func decodeInt(container: KeyedDecodingContainer<CodingKeys>, keys: [CodingKeys]) -> Int? {
+        for key in keys {
+            if let value = try? container.decode(Int.self, forKey: key) {
+                return value
+            }
+            if let value = try? container.decode(Double.self, forKey: key) {
+                return Int(value.rounded())
+            }
+            if let value = try? container.decode(String.self, forKey: key),
+               let numeric = Double(value) {
+                return Int(numeric.rounded())
             }
         }
         return nil
@@ -405,7 +469,7 @@ enum JSONValue: Decodable, Equatable, Sendable {
         case .number(let value):
             return Int(value.rounded())
         case .string(let value):
-            return Int(value)
+            return Double(value).map { Int($0.rounded()) }
         default:
             return nil
         }
@@ -657,12 +721,13 @@ struct WeeklySessionsResponse: Decodable, Sendable {
 
     private static func points(from matrix: [[Int]]) -> [WeeklySessionPoint] {
         let calendar = Calendar(identifier: .gregorian)
-        let baseDate = calendar.date(from: DateComponents(timeZone: TimeZone(secondsFromGMT: 0), year: 1970, month: 1, day: 4)) ?? Date(timeIntervalSince1970: 0)
+        let baseDate = calendar.startOfDay(for: Date(timeIntervalSince1970: 0))
 
-        return matrix.enumerated().flatMap { dayIndex, hours in
-            hours.enumerated().map { hourIndex, value in
-                let date = calendar.date(byAdding: .hour, value: dayIndex * 24 + hourIndex, to: baseDate) ?? baseDate
-                return WeeklySessionPoint(date: date, value: value)
+        return matrix.enumerated().flatMap { dayOffset, hourlyValues in
+            hourlyValues.enumerated().map { hourOffset, value in
+                let dayDate = calendar.date(byAdding: .day, value: dayOffset, to: baseDate) ?? baseDate
+                let hourDate = calendar.date(byAdding: .hour, value: hourOffset, to: dayDate) ?? dayDate
+                return WeeklySessionPoint(date: hourDate, value: value)
             }
         }
     }
@@ -764,37 +829,89 @@ struct EventStatsResponse: Decodable, Sendable {
     }
 }
 
-struct SessionPropertiesResponse: Decodable, Sendable {
-    let properties: [String: JSONValue]
+struct EventDataStatsResponse: Decodable, Sendable {
+    let values: [String: MetricValue]
 
     init(from decoder: Decoder) throws {
-        if let dictionary = try? [String: JSONValue](from: decoder) {
-            properties = dictionary
+        if let singleValue = try? decoder.singleValueContainer(),
+           let dictionary = try? singleValue.decode([String: MetricValue].self) {
+            values = dictionary
             return
         }
 
-        let records = (try? [AnalyticsRecord](from: decoder)) ?? []
-        var decoded: [String: JSONValue] = [:]
-
-        for record in records {
-            guard let key = record.stringValue(for: ["dataKey", "propertyName", "key", "name"]) else {
-                continue
-            }
-
-            if let value = record.fields["stringValue"], value != .null {
-                decoded[key] = value
-            } else if let value = record.fields["numberValue"], value != .null {
-                decoded[key] = value
-            } else if let value = record.fields["dateValue"], value != .null {
-                decoded[key] = value
-            } else if let value = record.fields["booleanValue"], value != .null {
-                decoded[key] = value
-            } else if let value = record.fields["value"], value != .null {
-                decoded[key] = value
-            }
+        if let singleValue = try? decoder.singleValueContainer(),
+           let rows = try? singleValue.decode([[String: MetricValue]].self) {
+            values = rows.first ?? [:]
+            return
         }
 
-        properties = decoded
+        if let singleValue = try? decoder.singleValueContainer(),
+           let rows = try? singleValue.decode([[String: Int]].self) {
+            values = rows.first?.mapValues { MetricValue(value: $0) } ?? [:]
+            return
+        }
+
+        values = [:]
+    }
+}
+
+struct SessionPropertiesResponse: Decodable, Sendable {
+    let values: [String: JSONValue]
+
+    init(from decoder: Decoder) throws {
+        if let singleValue = try? decoder.singleValueContainer(),
+           let dictionary = try? singleValue.decode([String: JSONValue].self) {
+            values = dictionary
+            return
+        }
+
+        if let singleValue = try? decoder.singleValueContainer(),
+           let rows = try? singleValue.decode([SessionPropertyRow].self) {
+            values = rows.reduce(into: [String: JSONValue]()) { result, row in
+                guard let key = row.key, !key.isEmpty else { return }
+                result[key] = row.value
+            }
+            return
+        }
+
+        values = [:]
+    }
+}
+
+private struct SessionPropertyRow: Decodable {
+    let key: String?
+    let value: JSONValue
+
+    private enum CodingKeys: String, CodingKey {
+        case dataKey
+        case propertyName
+        case name
+        case stringValue
+        case numberValue
+        case dateValue
+        case booleanValue
+        case value
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        key = (try? container.decode(String.self, forKey: .dataKey))
+            ?? (try? container.decode(String.self, forKey: .propertyName))
+            ?? (try? container.decode(String.self, forKey: .name))
+
+        if let stringValue = try? container.decodeIfPresent(String.self, forKey: .stringValue) {
+            value = .string(stringValue)
+        } else if let numberValue = try? container.decodeIfPresent(Double.self, forKey: .numberValue) {
+            value = .number(numberValue)
+        } else if let dateValue = try? container.decodeIfPresent(String.self, forKey: .dateValue) {
+            value = .string(dateValue)
+        } else if let booleanValue = try? container.decodeIfPresent(Bool.self, forKey: .booleanValue) {
+            value = .bool(booleanValue)
+        } else if let decodedValue = try? container.decodeIfPresent(JSONValue.self, forKey: .value) {
+            value = decodedValue
+        } else {
+            value = .null
+        }
     }
 }
 

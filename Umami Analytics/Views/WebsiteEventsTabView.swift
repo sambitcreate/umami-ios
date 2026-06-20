@@ -207,12 +207,12 @@ struct WebsiteEventsTabView: View {
 
             Menu {
                 Button("All properties") {
-                    viewModel.selectEventDataProperty(nil)
+                    viewModel.selectEventDataProperty(nil as String?)
                 }
 
                 ForEach(displayProperties) { property in
                     Button(property.displayText) {
-                        viewModel.selectEventDataProperty(property.value)
+                        viewModel.selectEventDataProperty(property)
                     }
                 }
             } label: {

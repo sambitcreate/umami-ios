@@ -85,5 +85,6 @@ extension WebsiteViewModel {
     func handleDetailDisappear() {
         stopRealtimeSnapshotPolling()
         stopRealtimeUpdates()
+        cancelDetailLoads()
     }
 }

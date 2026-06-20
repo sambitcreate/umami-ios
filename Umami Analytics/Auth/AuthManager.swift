@@ -468,6 +468,37 @@ final class AuthManager: ObservableObject {
         }
     }
 
+#if DEBUG
+    func configureUITestSession() {
+        let baseURL = "https://ui-test.umami.local"
+        let session = UmamiSession(
+            serverType: .selfHosted,
+            baseURL: baseURL,
+            normalizedBaseURL: baseURL,
+            cloudRegion: nil,
+            trackerBaseURL: baseURL,
+            shareId: nil,
+            sharedWebsiteId: nil
+        )
+
+        currentSession = session
+        apiClient = try? APIClient(serverURL: baseURL, serverType: .selfHosted)
+        serverType = .selfHosted
+        serverURL = baseURL
+        isAuthenticated = true
+        currentUser = User(
+            id: "ui-test-user",
+            username: "UITest",
+            role: "admin",
+            createdAt: nil,
+            isAdmin: true
+        )
+        availableTeams = []
+        selectedWorkspace = .personal
+        serverConfig = ServerConfig()
+    }
+#endif
+
     // MARK: - Persistence Helpers
 
     private func persistSession(_ session: UmamiSession) {
@@ -538,20 +569,38 @@ final class AuthManager: ObservableObject {
             throw AuthError.invalidURL
         }
 
-        var normalized = trimmed
-        if !normalized.lowercased().hasPrefix("http") {
-            normalized = "https://\(normalized)"
-        }
-
-        while normalized.hasSuffix("/") {
-            normalized.removeLast()
-        }
-
-        guard URL(string: normalized) != nil else {
+        let candidate = trimmed.contains("://") ? trimmed : "https://\(trimmed)"
+        guard var components = URLComponents(string: candidate),
+              let scheme = components.scheme?.lowercased(),
+              scheme == "http" || scheme == "https",
+              let host = components.host,
+              !host.isEmpty else {
             throw AuthError.invalidURL
         }
 
-        return normalized
+        components.scheme = scheme
+        components.host = host.lowercased()
+        components.query = nil
+        components.fragment = nil
+
+        if (scheme == "https" && components.port == 443) || (scheme == "http" && components.port == 80) {
+            components.port = nil
+        }
+
+        var path = components.path
+        while path.hasSuffix("/") {
+            path.removeLast()
+        }
+        if path == "/api" || path.hasSuffix("/api") {
+            path.removeLast(4)
+        }
+        components.path = path
+
+        guard let url = components.url else {
+            throw AuthError.invalidURL
+        }
+
+        return url.absoluteString
     }
 
     // MARK: - Namespaced Storage

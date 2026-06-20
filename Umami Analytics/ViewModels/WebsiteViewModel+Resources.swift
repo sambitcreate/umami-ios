@@ -51,41 +51,65 @@ extension WebsiteViewModel {
     func loadFilterValues() {
         guard let websiteId = selectedWebsite?.id else { return }
         let period = selectedPeriod
+        let query = queryOptions
+        let requestID = UUID()
+        filterValuesRequestID = requestID
+        filterValuesTask?.cancel()
         isLoadingFilterValues = true
 
-        Task { @MainActor [weak self] in
+        filterValuesTask = Task { @MainActor [weak self] in
             guard let self else { return }
-            defer { isLoadingFilterValues = false }
+            defer {
+                if contextMatches(websiteId: websiteId, period: period), queryOptions == query, filterValuesRequestID == requestID {
+                    isLoadingFilterValues = false
+                    filterValuesTask = nil
+                }
+            }
 
             var nextValues: [AnalyticsFilterKey: [FilterValue]] = [:]
 
             for key in [AnalyticsFilterKey.path, .referrer, .browser, .os, .device, .country, .event] {
+                guard !Task.isCancelled else { return }
                 let type = key == .path ? "path" : key.rawValue
-                if let values = try? await service.fetchWebsiteValuesAsync(id: websiteId, type: type, period: period, search: nil, query: queryOptions) {
+                if let values = try? await service.fetchWebsiteValuesAsync(id: websiteId, type: type, period: period, search: nil, query: query) {
                     nextValues[key] = Array(values.prefix(20))
                 }
             }
 
+            guard !Task.isCancelled else { return }
             if let segmentValues = try? await service.fetchWebsiteSegmentsAsync(websiteId: websiteId, type: .segment) {
                 nextValues[.segment] = segmentValues.map { FilterValue(value: $0.id, label: $0.name) }
             }
 
+            guard !Task.isCancelled else { return }
             if let cohortValues = try? await service.fetchWebsiteSegmentsAsync(websiteId: websiteId, type: .cohort) {
                 nextValues[.cohort] = cohortValues.map { FilterValue(value: $0.id, label: $0.name) }
             }
 
+            guard contextMatches(websiteId: websiteId, period: period),
+                  queryOptions == query,
+                  filterValuesRequestID == requestID else { return }
             availableFilterValues = nextValues
         }
     }
 
     func loadWorkspaceResources() {
-        isLoadingResources = true
         let selectedWebsiteID = selectedWebsite?.id ?? filteredWebsites.first?.id
-        let teamId = AuthManager.shared.selectedWorkspace.teamId
+        let workspace = AuthManager.shared.selectedWorkspace
+        let teamId = workspace.teamId
+        let requestID = UUID()
+        resourcesRequestID = requestID
+        resourcesTask?.cancel()
+        isLoadingResources = true
 
-        Task { @MainActor [weak self] in
+        resourcesTask = Task { @MainActor [weak self] in
             guard let self else { return }
-            defer { isLoadingResources = false }
+            defer {
+                if resourcesRequestID == requestID, AuthManager.shared.selectedWorkspace == workspace {
+                    isLoadingResources = false
+                    resourcesTask = nil
+                }
+            }
 
             async let linkResult = captureResult {
                 try await self.service.fetchLinksAsync(teamId: teamId)
@@ -96,6 +120,10 @@ extension WebsiteViewModel {
 
             let linksResult = await linkResult
             let pixelsResult = await pixelResult
+
+            guard !Task.isCancelled,
+                  resourcesRequestID == requestID,
+                  AuthManager.shared.selectedWorkspace == workspace else { return }
 
             switch linksResult {
             case .success(let links):
@@ -128,21 +156,30 @@ extension WebsiteViewModel {
                 try await self.service.fetchWebsiteSegmentsAsync(websiteId: selectedWebsiteID, type: .cohort)
             }
 
-            switch await reportsResult {
+            let resolvedReports = await reportsResult
+            let resolvedSegments = await segmentsResult
+            let resolvedCohorts = await cohortsResult
+
+            guard !Task.isCancelled,
+                  resourcesRequestID == requestID,
+                  AuthManager.shared.selectedWorkspace == workspace,
+                  selectedWebsite?.id == selectedWebsiteID || selectedWebsite == nil else { return }
+
+            switch resolvedReports {
             case .success(let reports):
                 self.reports = reports
             case .failure(let error):
                 setRootError(error)
             }
 
-            switch await segmentsResult {
+            switch resolvedSegments {
             case .success(let segments):
                 self.segments = segments
             case .failure(let error):
                 setRootError(error)
             }
 
-            switch await cohortsResult {
+            switch resolvedCohorts {
             case .success(let cohorts):
                 self.cohorts = cohorts
             case .failure(let error):

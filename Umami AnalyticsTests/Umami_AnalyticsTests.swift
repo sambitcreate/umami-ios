@@ -10,6 +10,11 @@ import Testing
 @testable import Umami_Analytics
 
 struct Umami_AnalyticsTests {
+    private var productionDecoder: JSONDecoder {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        return decoder
+    }
 
     @Test func websiteStatsDecodesFlatPayload() throws {
         let json = """
@@ -177,6 +182,196 @@ struct Umami_AnalyticsTests {
         #expect(matrixResponse.data.map(\.value) == [0, 1, 2, 3, 4, 5])
     }
 
+    @Test func weeklySessionsResponseDecodesUmamiMatrix() throws {
+        let matrixJSON = """
+        [
+          [0, 1, 2],
+          [3, 4, 5]
+        ]
+        """.data(using: .utf8)!
+
+        let decoded = try productionDecoder.decode(WeeklySessionsResponse.self, from: matrixJSON)
+
+        #expect(decoded.data.count == 6)
+        #expect(decoded.data.map(\.value) == [0, 1, 2, 3, 4, 5])
+    }
+
+    @Test func metricItemDecodesNullAndStringValues() throws {
+        let json = """
+        [
+          { "x": null, "y": "12" },
+          { "x": 42, "y": 3.6 }
+        ]
+        """.data(using: .utf8)!
+
+        let decoded = try productionDecoder.decode([MetricItem].self, from: json)
+
+        #expect(decoded[0].x == "")
+        #expect(decoded[0].y == 12)
+        #expect(decoded[1].x == "42")
+        #expect(decoded[1].y == 4)
+    }
+
+    @Test func pageviewsResponseDefaultsMissingAndNullArrays() throws {
+        let missingJSON = """
+        { "pageviews": [{ "x": "2025-10-21T23:45:00Z", "y": "6" }] }
+        """.data(using: .utf8)!
+        let nullJSON = """
+        { "pageviews": null, "sessions": null }
+        """.data(using: .utf8)!
+
+        let missing = try productionDecoder.decode(PageviewsResponse.self, from: missingJSON)
+        let null = try productionDecoder.decode(PageviewsResponse.self, from: nullJSON)
+
+        #expect(missing.pageviews.first?.value == 6)
+        #expect(missing.sessions.isEmpty)
+        #expect(null.pageviews.isEmpty)
+        #expect(null.sessions.isEmpty)
+    }
+
+    @Test func pageviewsResponseSkipsOnlyMalformedRows() throws {
+        let json = """
+        {
+          "pageviews": [
+            { "x": "2025-10-21T23:45:00Z", "y": "6" },
+            { "x": "not-a-date", "y": 99 },
+            { "x": "2025-10-22T00:45:00Z", "y": 3.0 }
+          ],
+          "sessions": [
+            { "x": "2025-10-21T23:45:00Z", "y": null },
+            { "x": "2025-10-22T00:45:00Z", "y": "2" }
+          ]
+        }
+        """.data(using: .utf8)!
+
+        let decoded = try productionDecoder.decode(PageviewsResponse.self, from: json)
+
+        #expect(decoded.pageviews.map(\.value) == [6, 3])
+        #expect(decoded.sessions.map(\.value) == [2])
+    }
+
+    @Test func eventDataStatsDecodesArrayPayload() throws {
+        let json = """
+        [
+          { "events": 16, "properties": 13, "records": 26 }
+        ]
+        """.data(using: .utf8)!
+
+        let decoded = try productionDecoder.decode(EventDataStatsResponse.self, from: json)
+
+        #expect(decoded.values["events"]?.value == 16)
+        #expect(decoded.values["properties"]?.value == 13)
+        #expect(decoded.values["records"]?.value == 26)
+    }
+
+    @Test func eventSeriesPointDecodesUmamiShape() throws {
+        let json = """
+        { "x": "get-started-button", "t": "2023-04-12T22:00:00Z", "y": "5" }
+        """.data(using: .utf8)!
+
+        let decoded = try productionDecoder.decode(EventSeriesPoint.self, from: json)
+
+        #expect(decoded.eventName == "get-started-button")
+        #expect(decoded.value == 5)
+        #expect(decoded.date.timeIntervalSince1970 > 0)
+    }
+
+    @Test func filterValueDecodesEventDataRows() throws {
+        let json = """
+        { "event_name": "button-click", "property_name": "plan", "total": 4 }
+        """.data(using: .utf8)!
+
+        let decoded = try productionDecoder.decode(FilterValue.self, from: json)
+
+        #expect(decoded.value == "button-click")
+        #expect(decoded.eventName == "button-click")
+        #expect(decoded.count == 4)
+    }
+
+    @Test func eventDataPropertyValuePrefersPropertyName() throws {
+        let json = """
+        { "event_name": "button-click", "property_name": "plan", "total": "4" }
+        """.data(using: .utf8)!
+
+        let decoded = try productionDecoder.decode(EventDataPropertyValue.self, from: json).filterValue
+
+        #expect(decoded.value == "plan")
+        #expect(decoded.label == "button-click - plan")
+        #expect(decoded.eventName == "button-click")
+        #expect(decoded.count == 4)
+    }
+
+    @Test func realtimeDataDecodesCurrentUmamiShape() throws {
+        let json = """
+        {
+          "countries": { "US": 9, "FI": 3 },
+          "urls": { "/": 43, "/docs": 4 },
+          "referrers": { "umami.is": 31 },
+          "totals": { "visitors": 12, "pageviews": 47, "events": 2 },
+          "events": [
+            {
+              "__type": "pageview",
+              "session_id": "session-1",
+              "event_name": "",
+              "created_at": "2025-10-22T00:15:29Z",
+              "url_path": "/docs/attribution",
+              "data": { "rank": 1 }
+            }
+          ],
+          "timestamp": "1761092129000"
+        }
+        """.data(using: .utf8)!
+
+        let decoded = try productionDecoder.decode(RealtimeData.self, from: json)
+
+        #expect(decoded.sessions == 12)
+        #expect(decoded.pageviews.first?.url == "/")
+        #expect(decoded.events.first?.name == "/docs/attribution")
+        #expect(decoded.events.first?.data?["rank"]?.intValue == 1)
+        #expect(decoded.referrers["umami.is"] == 31)
+    }
+
+    @Test func activeAndRealtimeCountsDecodeStringAndDoubleNumbers() throws {
+        let activeJSON = """
+        { "visitors": "12.0" }
+        """.data(using: .utf8)!
+        let realtimeJSON = """
+        {
+          "countries": { "US": "9", "FI": 3.0 },
+          "urls": { "/": "43.0", "/docs": 4.0 },
+          "referrers": { "umami.is": "31" },
+          "totals": { "visitors": "12.0", "pageviews": 47.0, "events": "2" },
+          "sessions": "12.0",
+          "activeVisitors": 12.0
+        }
+        """.data(using: .utf8)!
+
+        let active = try productionDecoder.decode(ActiveUsersResponse.self, from: activeJSON)
+        let realtime = try productionDecoder.decode(RealtimeData.self, from: realtimeJSON)
+
+        #expect(active.visitors == 12)
+        #expect(realtime.sessions == 12)
+        #expect(realtime.totals?.visitors == 12)
+        #expect(realtime.totals?.pageviews == 47)
+        #expect(realtime.countries["US"] == 9)
+        #expect(realtime.urls["/"] == 43)
+        #expect(realtime.referrers["umami.is"] == 31)
+    }
+
+    @Test func sessionPropertiesDecodeArrayRows() throws {
+        let json = """
+        [
+          { "data_key": "plan", "string_value": "pro", "number_value": null },
+          { "data_key": "score", "number_value": 42, "string_value": null }
+        ]
+        """.data(using: .utf8)!
+
+        let decoded = try productionDecoder.decode(SessionPropertiesResponse.self, from: json)
+
+        #expect(decoded.values["plan"]?.stringValue == "pro")
+        #expect(decoded.values["score"]?.intValue == 42)
+    }
+
     @Test func analyticsRecordUsesDeterministicDisplayFields() throws {
         let json = """
         {
@@ -232,7 +427,7 @@ struct Umami_AnalyticsTests {
         #expect(decoded.sessions == 42)
         #expect(decoded.pageviews.first?.url == "/")
         #expect(decoded.pageviews.first?.count == 43)
-        #expect(decoded.events.map(\.name) == ["pageview", "signup"])
+        #expect(decoded.events.map(\.name) == ["/docs/attribution", "signup"])
         #expect(decoded.events.allSatisfy { $0.timestamp > 0 })
         #expect(decoded.series?.views.first?.value == 5)
         #expect(decoded.referrers["umami.is"] == 31)
@@ -301,8 +496,8 @@ struct Umami_AnalyticsTests {
 
         let decoded = try JSONDecoder().decode(SessionPropertiesResponse.self, from: json)
 
-        #expect(decoded.properties["email"] == .string("member@example.com"))
-        #expect(decoded.properties["score"] == .number(42))
+        #expect(decoded.values["email"] == .string("member@example.com"))
+        #expect(decoded.values["score"] == .number(42))
     }
 
     @Test func currentUserResponseDecodesWrappedAndDirectPayloads() throws {

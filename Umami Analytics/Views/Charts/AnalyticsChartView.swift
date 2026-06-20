@@ -98,13 +98,13 @@ struct AnalyticsChartView: View {
         .onAppear {
             updateSelectedDataPoint()
         }
-        .onChange(of: selectedChartType) { _, _ in
+        .onChange(of: selectedChartType) { _ in
             updateSelectedDataPoint()
         }
-        .onChange(of: pageviews) { _, _ in
+        .onChange(of: pageviews) { _ in
             updateSelectedDataPoint()
         }
-        .onChange(of: visitors) { _, _ in
+        .onChange(of: visitors) { _ in
             updateSelectedDataPoint()
         }
     }
@@ -183,11 +183,7 @@ struct AnalyticsChartView: View {
                     .gesture(
                         DragGesture(minimumDistance: 0)
                             .onChanged { value in
-                                guard let plotFrame = proxy.plotFrame else {
-                                    return
-                                }
-
-                                let plotAreaFrame = geometry[plotFrame]
+                                let plotAreaFrame = geometry[proxy.plotAreaFrame]
                                 let plotLocation = CGPoint(
                                     x: value.location.x - plotAreaFrame.origin.x,
                                     y: value.location.y - plotAreaFrame.origin.y

@@ -50,7 +50,7 @@ struct LoginView: View {
             Text(errorMessage ?? "An unknown error occurred")
         }
         .onAppear(perform: loadInitialState)
-        .onChange(of: serverType) { _, newType in
+        .onChange(of: serverType) { newType in
             AuthManager.shared.setServerType(newType)
             if newType == .selfHosted {
                 serverURL = AuthManager.shared.savedSelfHostedServerURL ?? serverURL

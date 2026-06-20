@@ -53,8 +53,8 @@ struct WebsiteFormView: View {
             _name = State(initialValue: "")
             _domain = State(initialValue: "")
             _shareId = State(initialValue: "")
-            _teamId = State(initialValue: "")
-            _transferTargetID = State(initialValue: WorkspaceSelection.personal.id)
+            _teamId = State(initialValue: AuthManager.shared.selectedWorkspace.teamId ?? "")
+            _transferTargetID = State(initialValue: AuthManager.shared.selectedWorkspace.id)
         case .edit(let website):
             _name = State(initialValue: website.name)
             _domain = State(initialValue: website.domain)

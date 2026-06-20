@@ -265,6 +265,40 @@ struct MetricItem: Codable, Identifiable, Sendable {
     var id: String { x }
     let x: String  // The metric value (URL, browser, etc.)
     let y: Int     // The count
+
+    private enum CodingKeys: String, CodingKey {
+        case x
+        case y
+    }
+
+    init(x: String, y: Int) {
+        self.x = x
+        self.y = y
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        if let stringValue = try? container.decode(String.self, forKey: .x) {
+            x = stringValue
+        } else if let intValue = try? container.decode(Int.self, forKey: .x) {
+            x = String(intValue)
+        } else if let doubleValue = try? container.decode(Double.self, forKey: .x) {
+            x = String(doubleValue)
+        } else {
+            x = ""
+        }
+
+        if let intValue = try? container.decode(Int.self, forKey: .y) {
+            y = intValue
+        } else if let doubleValue = try? container.decode(Double.self, forKey: .y) {
+            y = Int(doubleValue.rounded())
+        } else if let stringValue = try? container.decode(String.self, forKey: .y),
+                  let numeric = Double(stringValue) {
+            y = Int(numeric.rounded())
+        } else {
+            y = 0
+        }
+    }
 }
 
 struct ExpandedMetricItem: Codable, Identifiable, Sendable {
@@ -302,6 +336,22 @@ struct WebsiteExportResponse: Decodable, Sendable {
 struct PageviewsResponse: Codable, Sendable {
     let pageviews: [TimeSeriesData]
     let sessions: [TimeSeriesData]
+
+    private enum CodingKeys: String, CodingKey {
+        case pageviews
+        case sessions
+    }
+
+    init(pageviews: [TimeSeriesData], sessions: [TimeSeriesData]) {
+        self.pageviews = pageviews
+        self.sessions = sessions
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        pageviews = (try? container.decodeIfPresent(LossyArray<TimeSeriesData>.self, forKey: .pageviews)?.elements) ?? []
+        sessions = (try? container.decodeIfPresent(LossyArray<TimeSeriesData>.self, forKey: .sessions)?.elements) ?? []
+    }
 }
 
 struct TimeSeriesData: Codable, Identifiable, Equatable, Sendable {
@@ -327,6 +377,9 @@ struct TimeSeriesData: Codable, Identifiable, Equatable, Sendable {
             self.value = intValue
         } else if let doubleValue = try? container.decode(Double.self, forKey: .y) {
             self.value = Int(doubleValue.rounded())
+        } else if let stringValue = try? container.decode(String.self, forKey: .y),
+                  let numeric = Double(stringValue) {
+            self.value = Int(numeric.rounded())
         } else {
             throw DecodingError.dataCorruptedError(
                 forKey: .y,
@@ -412,9 +465,71 @@ struct TimeSeriesData: Codable, Identifiable, Equatable, Sendable {
     }
 }
 
+struct EventSeriesPoint: Decodable, Sendable {
+    let eventName: String
+    let date: Date
+    let value: Int
+
+    private enum CodingKeys: String, CodingKey {
+        case x
+        case t
+        case y
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        eventName = (try? container.decode(String.self, forKey: .x)) ?? ""
+
+        if let intValue = try? container.decode(Int.self, forKey: .y) {
+            value = intValue
+        } else if let doubleValue = try? container.decode(Double.self, forKey: .y) {
+            value = Int(doubleValue.rounded())
+        } else if let stringValue = try? container.decode(String.self, forKey: .y),
+                  let intValue = Int(stringValue) {
+            value = intValue
+        } else {
+            value = 0
+        }
+
+        if let epochValue = try? container.decode(Int64.self, forKey: .t) {
+            date = TimeSeriesData.dateFromEventSeriesEpoch(Double(epochValue))
+        } else if let epochValue = try? container.decode(Double.self, forKey: .t) {
+            date = TimeSeriesData.dateFromEventSeriesEpoch(epochValue)
+        } else if let stringValue = try? container.decode(String.self, forKey: .t),
+                  let parsedDate = TimeSeriesData.parseEventSeriesDate(stringValue) {
+            date = parsedDate
+        } else {
+            date = Date(timeIntervalSince1970: 0)
+        }
+    }
+}
+
+extension TimeSeriesData {
+    static func dateFromEventSeriesEpoch(_ value: Double) -> Date {
+        dateFromEpochValue(value)
+    }
+
+    static func parseEventSeriesDate(_ value: String) -> Date? {
+        parseDateString(value)
+    }
+}
+
 // Active users endpoint response
 struct ActiveUsersResponse: Codable, Sendable {
     let visitors: Int  // Number of active users
+
+    private enum CodingKeys: String, CodingKey {
+        case visitors
+    }
+
+    init(visitors: Int) {
+        self.visitors = visitors
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        visitors = container.decodeFlexibleInt(forKey: .visitors) ?? 0
+    }
 }
 
 // MARK: - Real-time Data Models
@@ -423,12 +538,13 @@ struct RealtimeData: Decodable, Sendable {
     let websiteId: String?
     let timestamp: Int64?
     let pageviews: [RealtimePageview]
-    let referrers: [String: Int]
-    let series: RealtimeSeries?
-    let totals: RealtimeTotals?
     let sessions: Int
     let events: [RealtimeEvent]
     let countries: [String: Int]
+    let urls: [String: Int]
+    let referrers: [String: Int]
+    let series: RealtimeSeries?
+    let totals: RealtimeTotals?
 
     enum CodingKeys: String, CodingKey {
         case websiteId
@@ -436,122 +552,174 @@ struct RealtimeData: Decodable, Sendable {
         case pageviews
         case urls
         case referrers
-        case series
-        case totals
         case sessions
         case events
         case countries
         case visitors
         case activeVisitors
+        case series
+        case totals
     }
 
     init(
         websiteId: String? = nil,
         timestamp: Int64? = nil,
         pageviews: [RealtimePageview] = [],
-        referrers: [String: Int] = [:],
-        series: RealtimeSeries? = nil,
-        totals: RealtimeTotals? = nil,
         sessions: Int = 0,
         events: [RealtimeEvent] = [],
-        countries: [String: Int] = [:]
+        countries: [String: Int] = [:],
+        urls: [String: Int] = [:],
+        referrers: [String: Int] = [:],
+        series: RealtimeSeries? = nil,
+        totals: RealtimeTotals? = nil
     ) {
         self.websiteId = websiteId
         self.timestamp = timestamp
         self.pageviews = pageviews
-        self.referrers = referrers
-        self.series = series
-        self.totals = totals
         self.sessions = sessions
         self.events = events
         self.countries = countries
+        self.urls = urls
+        self.referrers = referrers
+        self.series = series
+        self.totals = totals
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         websiteId = try? container.decode(String.self, forKey: .websiteId)
-        timestamp = try? container.decode(Int64.self, forKey: .timestamp)
-        if let pageviewRows = try? container.decode([RealtimePageview].self, forKey: .pageviews) {
-            pageviews = pageviewRows
-        } else if let urlCounts = try? container.decode([String: Int].self, forKey: .urls) {
-            let responseTimestamp = timestamp ?? 0
-            pageviews = urlCounts
-                .sorted { $0.value > $1.value }
-                .map { RealtimePageview(url: $0.key, title: "\($0.value)", timestamp: responseTimestamp, count: $0.value) }
-        } else {
-            pageviews = []
-        }
-        events = (try? container.decode([RealtimeEvent].self, forKey: .events)) ?? []
-        countries = (try? container.decode([String: Int].self, forKey: .countries)) ?? [:]
-        referrers = (try? container.decode([String: Int].self, forKey: .referrers)) ?? [:]
+        let decodedTimestamp = Self.decodeTimestamp(container: container, forKey: .timestamp)
+        timestamp = decodedTimestamp
+        urls = container.decodeFlexibleIntDictionary(forKey: .urls)
+        referrers = container.decodeFlexibleIntDictionary(forKey: .referrers)
         series = try? container.decode(RealtimeSeries.self, forKey: .series)
         totals = try? container.decode(RealtimeTotals.self, forKey: .totals)
 
-        if let totalVisitors = totals?.visitors {
-            sessions = totalVisitors
-        } else if let sessionCount = try? container.decode(Int.self, forKey: .sessions) {
+        let decodedPageviews = (try? container.decode(LossyArray<RealtimePageview>.self, forKey: .pageviews).elements) ?? []
+        if decodedPageviews.isEmpty, !urls.isEmpty {
+            pageviews = urls
+                .sorted { $0.value > $1.value }
+                .map { RealtimePageview(url: $0.key, title: "\($0.value) views", timestamp: decodedTimestamp ?? 0, count: $0.value) }
+        } else {
+            pageviews = decodedPageviews
+        }
+
+        events = (try? container.decode(LossyArray<RealtimeEvent>.self, forKey: .events).elements) ?? []
+        countries = container.decodeFlexibleIntDictionary(forKey: .countries)
+
+        if let sessionCount = container.decodeFlexibleInt(forKey: .sessions) {
             sessions = sessionCount
-        } else if let visitors = try? container.decode(Int.self, forKey: .visitors) {
+        } else if let totalVisitors = totals?.visitors {
+            sessions = totalVisitors
+        } else if let visitors = container.decodeFlexibleInt(forKey: .visitors) {
             sessions = visitors
-        } else if let visitors = try? container.decode(Int.self, forKey: .activeVisitors) {
+        } else if let visitors = container.decodeFlexibleInt(forKey: .activeVisitors) {
             sessions = visitors
         } else {
-            sessions = 0
+            sessions = countries.values.reduce(0, +)
         }
+    }
+
+    private static func decodeTimestamp(container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) -> Int64? {
+        if let value = try? container.decode(Int64.self, forKey: key) {
+            return value
+        }
+        if let value = try? container.decode(Double.self, forKey: key) {
+            return Int64(value.rounded())
+        }
+        if let value = try? container.decode(String.self, forKey: key) {
+            if let numeric = Double(value) {
+                return Int64(numeric.rounded())
+            }
+            if let date = ISO8601DateFormatter().date(from: value) {
+                return Int64(date.timeIntervalSince1970 * 1000)
+            }
+        }
+        return nil
     }
 }
 
-struct RealtimePageview: Codable, Identifiable, Sendable {
+struct RealtimeTotals: Decodable, Sendable {
+    let views: Int?
+    let visitors: Int?
+    let visits: Int?
+    let pageviews: Int?
+    let events: Int?
+    let countries: Int?
+
+    private enum CodingKeys: String, CodingKey {
+        case views
+        case visitors
+        case visits
+        case pageviews
+        case events
+        case countries
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        views = container.decodeFlexibleInt(forKey: .views)
+        visitors = container.decodeFlexibleInt(forKey: .visitors)
+        visits = container.decodeFlexibleInt(forKey: .visits)
+        pageviews = container.decodeFlexibleInt(forKey: .pageviews)
+        events = container.decodeFlexibleInt(forKey: .events)
+        countries = container.decodeFlexibleInt(forKey: .countries)
+    }
+}
+
+struct RealtimePageview: Decodable, Identifiable, Sendable {
     var id: String { url }
     let url: String
     let title: String?
     let timestamp: Int64
     let count: Int?
 
-    init(url: String, title: String? = nil, timestamp: Int64 = 0, count: Int? = nil) {
+    private enum CodingKeys: String, CodingKey {
+        case url
+        case urlPath
+        case path
+        case title
+        case pageTitle
+        case timestamp
+        case createdAt
+        case count
+    }
+
+    init(url: String, title: String?, timestamp: Int64, count: Int? = nil) {
         self.url = url
         self.title = title
         self.timestamp = timestamp
         self.count = count
     }
-}
-
-struct RealtimeEvent: Decodable, Identifiable, Sendable {
-    var id: String { "\(name)-\(timestamp)" }
-    let name: String
-    let timestamp: Int64
-    let data: [String: String]?
-
-    private enum CodingKeys: String, CodingKey {
-        case name
-        case eventName
-        case timestamp
-        case createdAt
-        case data
-    }
-
-    init(name: String, timestamp: Int64, data: [String: String]? = nil) {
-        self.name = name
-        self.timestamp = timestamp
-        self.data = data
-    }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        let decodedName = (try? container.decode(String.self, forKey: .name))
-            ?? (try? container.decode(String.self, forKey: .eventName))
-            ?? "pageview"
-        name = decodedName.isEmpty ? "pageview" : decodedName
-        data = try? container.decode([String: String].self, forKey: .data)
+        url = (try? container.decode(String.self, forKey: .url))
+            ?? (try? container.decode(String.self, forKey: .urlPath))
+            ?? (try? container.decode(String.self, forKey: .path))
+            ?? ""
+        title = (try? container.decode(String.self, forKey: .title))
+            ?? (try? container.decode(String.self, forKey: .pageTitle))
+        timestamp = Self.decodeTimestamp(container: container) ?? 0
+        count = container.decodeFlexibleInt(forKey: .count)
+    }
 
-        if let millis = try? container.decode(Int64.self, forKey: .timestamp) {
-            timestamp = millis
-        } else if let createdAt = try? container.decode(String.self, forKey: .createdAt),
-                  let date = TimeSeriesData.parseDateStringForRealtime(createdAt) {
-            timestamp = Int64(date.timeIntervalSince1970 * 1000)
-        } else {
-            timestamp = 0
+    private static func decodeTimestamp(container: KeyedDecodingContainer<CodingKeys>) -> Int64? {
+        if let value = try? container.decode(Int64.self, forKey: .timestamp) {
+            return value
         }
+        if let value = try? container.decode(Double.self, forKey: .timestamp) {
+            return Int64(value.rounded())
+        }
+        if let value = try? container.decode(String.self, forKey: .timestamp),
+           let numeric = Double(value) {
+            return Int64(numeric.rounded())
+        }
+        if let createdAt = try? container.decode(String.self, forKey: .createdAt),
+           let date = ISO8601DateFormatter().date(from: createdAt) {
+            return Int64(date.timeIntervalSince1970 * 1000)
+        }
+        return nil
     }
 }
 
@@ -560,22 +728,117 @@ struct RealtimeSeries: Decodable, Sendable {
     let visitors: [TimeSeriesData]
 }
 
-struct RealtimeTotals: Decodable, Sendable {
-    let views: Int?
-    let visitors: Int?
-    let events: Int?
-    let countries: Int?
+struct RealtimeEvent: Decodable, Identifiable, Sendable {
+    var id: String { "\(name)-\(timestamp)" }
+    let name: String
+    let timestamp: Int64
+    let data: [String: JSONValue]?
+
+    private enum CodingKeys: String, CodingKey {
+        case type = "__type"
+        case name
+        case eventName
+        case timestamp
+        case createdAt
+        case data
+        case urlPath
+        case referrerDomain
+    }
+
+    init(name: String, timestamp: Int64, data: [String: JSONValue]? = nil) {
+        self.name = name
+        self.timestamp = timestamp
+        self.data = data
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let eventName = (try? container.decode(String.self, forKey: .eventName)) ?? ""
+        let type = (try? container.decode(String.self, forKey: .type)) ?? ""
+        let path = (try? container.decode(String.self, forKey: .urlPath)) ?? ""
+        name = (try? container.decode(String.self, forKey: .name))
+            ?? (!eventName.isEmpty ? eventName : nil)
+            ?? (type == "pageview" && !path.isEmpty ? path : nil)
+            ?? (!type.isEmpty ? type : nil)
+            ?? (!path.isEmpty ? path : nil)
+            ?? "Event"
+        timestamp = Self.decodeTimestamp(container: container) ?? 0
+        data = try? container.decode([String: JSONValue].self, forKey: .data)
+    }
+
+    private static func decodeTimestamp(container: KeyedDecodingContainer<CodingKeys>) -> Int64? {
+        if let value = try? container.decode(Int64.self, forKey: .timestamp) {
+            return value
+        }
+        if let value = try? container.decode(Double.self, forKey: .timestamp) {
+            return Int64(value.rounded())
+        }
+        if let value = try? container.decode(String.self, forKey: .timestamp) {
+            if let numeric = Double(value) {
+                return Int64(numeric.rounded())
+            }
+            if let date = ISO8601DateFormatter().date(from: value) {
+                return Int64(date.timeIntervalSince1970 * 1000)
+            }
+        }
+        if let createdAt = try? container.decode(String.self, forKey: .createdAt),
+           let date = ISO8601DateFormatter().date(from: createdAt) {
+            return Int64(date.timeIntervalSince1970 * 1000)
+        }
+        return nil
+    }
 }
 
-private extension TimeSeriesData {
-    static func parseDateStringForRealtime(_ value: String) -> Date? {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = formatter.date(from: value) {
-            return date
+private struct LossyArray<Element: Decodable>: Decodable {
+    let elements: [Element]
+
+    init(from decoder: Decoder) throws {
+        var container = try decoder.unkeyedContainer()
+        var values: [Element] = []
+
+        while !container.isAtEnd {
+            if let value = try? container.decode(Element.self) {
+                values.append(value)
+            } else {
+                _ = try? container.decode(JSONValue.self)
+            }
         }
 
-        formatter.formatOptions = [.withInternetDateTime]
-        return formatter.date(from: value)
+        elements = values
+    }
+}
+
+private extension KeyedDecodingContainer {
+    func decodeFlexibleInt(forKey key: Key) -> Int? {
+        if let value = try? decode(Int.self, forKey: key) {
+            return value
+        }
+        if let value = try? decode(Double.self, forKey: key) {
+            return Int(value.rounded())
+        }
+        if let value = try? decode(String.self, forKey: key),
+           let numeric = Double(value) {
+            return Int(numeric.rounded())
+        }
+        if let value = try? decode(JSONValue.self, forKey: key) {
+            return value.intValue
+        }
+        return nil
+    }
+
+    func decodeFlexibleIntDictionary(forKey key: Key) -> [String: Int] {
+        if let values = try? decode([String: Int].self, forKey: key) {
+            return values
+        }
+        if let values = try? decode([String: Double].self, forKey: key) {
+            return values.mapValues { Int($0.rounded()) }
+        }
+        if let values = try? decode([String: String].self, forKey: key) {
+            return values.compactMapValues { Double($0).map { Int($0.rounded()) } }
+        }
+        if let values = try? decode([String: JSONValue].self, forKey: key) {
+            return values.compactMapValues(\.intValue)
+        }
+        return [:]
     }
 }

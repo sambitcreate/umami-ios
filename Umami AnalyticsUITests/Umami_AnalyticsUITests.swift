@@ -16,6 +16,26 @@ final class Umami_AnalyticsUITests: XCTestCase {
     override func tearDownWithError() throws {
     }
 
+    private func launchAuthenticatedFixture() -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments.append("-uiTestingAuthenticated")
+        app.launch()
+        return app
+    }
+
+    private func tapDetailTab(_ title: String, in app: XCUIApplication) {
+        if title == "Realtime" {
+            let tabPicker = app.scrollViews["detail-tab-picker"]
+            XCTAssertTrue(tabPicker.waitForExistence(timeout: 5), "Missing detail tab picker")
+            tabPicker.swipeLeft()
+            tabPicker.swipeLeft()
+        }
+
+        let button = app.buttons[title]
+        XCTAssertTrue(button.waitForExistence(timeout: 5), "Missing detail tab button: \(title)")
+        button.tap()
+    }
+
     @MainActor
     func testAppLaunchesAndShowsPrimarySurface() throws {
         let app = XCUIApplication()
@@ -29,53 +49,36 @@ final class Umami_AnalyticsUITests: XCTestCase {
 
     @MainActor
     func testWebsiteDetailTabSmokeWhenDataAvailable() throws {
-        let app = XCUIApplication()
-        app.launch()
+        let app = launchAuthenticatedFixture()
 
         let websitesTab = app.tabBars.buttons["Websites"]
-        guard websitesTab.waitForExistence(timeout: 5) else {
-            throw XCTSkip("Websites tab not available in current launch state.")
-        }
+        XCTAssertTrue(websitesTab.waitForExistence(timeout: 5))
         websitesTab.tap()
 
         let websiteCell = app.cells.firstMatch
-        guard websiteCell.waitForExistence(timeout: 5) else {
-            throw XCTSkip("No website list item available for detail smoke test.")
-        }
+        XCTAssertTrue(websiteCell.waitForExistence(timeout: 5))
         websiteCell.tap()
 
         let tabs = ["Overview", "Audience", "Events", "Sessions", "Realtime"]
         for tab in tabs {
-            let button = app.buttons[tab]
-            if button.waitForExistence(timeout: 5) {
-                button.tap()
-            } else {
-                XCTFail("Missing detail tab button: \(tab)")
-            }
+            tapDetailTab(tab, in: app)
         }
     }
 
     @MainActor
     func testDetailRefreshSmokeWhenDetailAccessible() throws {
-        let app = XCUIApplication()
-        app.launch()
+        let app = launchAuthenticatedFixture()
 
         let websitesTab = app.tabBars.buttons["Websites"]
-        guard websitesTab.waitForExistence(timeout: 5) else {
-            throw XCTSkip("Websites tab not available in current launch state.")
-        }
+        XCTAssertTrue(websitesTab.waitForExistence(timeout: 5))
         websitesTab.tap()
 
         let websiteCell = app.cells.firstMatch
-        guard websiteCell.waitForExistence(timeout: 5) else {
-            throw XCTSkip("No website list item available for detail refresh smoke test.")
-        }
+        XCTAssertTrue(websiteCell.waitForExistence(timeout: 5))
         websiteCell.tap()
 
         let firstElement = app.scrollViews.firstMatch
-        guard firstElement.waitForExistence(timeout: 5) else {
-            throw XCTSkip("Detail scroll view is not available.")
-        }
+        XCTAssertTrue(firstElement.waitForExistence(timeout: 5))
 
         firstElement.swipeDown()
     }

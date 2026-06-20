@@ -22,6 +22,7 @@ class APIClient: @unchecked Sendable {
     private let serverType: ServerType
     private let cloudRegion: CloudRegion
     private let urlSession: URLSession
+    private let cloudRateLimiter: CloudRateLimiter?
     private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "UmamiAnalytics", category: "APIClient")
     private let maxRetryAttempts = 3
 
@@ -38,13 +39,21 @@ class APIClient: @unchecked Sendable {
         self.serverType = serverType
         self.cloudRegion = cloudRegion
         self.urlSession = urlSession
+        self.cloudRateLimiter = serverType == .cloud ? CloudRateLimiter() : nil
     }
 
     func setBaseURL(_ urlString: String) throws {
         guard let url = URL(string: urlString) else {
             throw AuthError.invalidURL
         }
-        updateRequestState { $0.baseURL = url }
+        updateRequestState { state in
+            if state.baseURL != url {
+                state.authToken = nil
+                state.apiKey = nil
+                state.shareToken = nil
+            }
+            state.baseURL = url
+        }
     }
 
     func setAuthToken(_ token: String) {
@@ -76,7 +85,7 @@ class APIClient: @unchecked Sendable {
     private func logDebug(_ message: @autoclosure () -> String) {
 #if DEBUG
         let resolvedMessage = message()
-        logger.debug("\(resolvedMessage, privacy: .public)")
+        logger.debug("\(resolvedMessage, privacy: .private)")
 #endif
     }
 
@@ -98,12 +107,35 @@ class APIClient: @unchecked Sendable {
         return sanitized
     }
 
-    private func logResponseBody(_ data: Data) {
+    private func sanitizedResponseBody(from data: Data) -> String? {
         guard let responseString = String(data: data, encoding: .utf8), !responseString.isEmpty else {
-            return
+            return nil
         }
 
-        let truncatedBody = responseString.count > 2_000 ? String(responseString.prefix(2_000)) + "…" : responseString
+        let sensitiveKeys = Set(["token", "apikey", "sharetoken", "authorization", "password"])
+        if let jsonObject = try? JSONSerialization.jsonObject(with: data),
+           JSONSerialization.isValidJSONObject(jsonObject) {
+            let redacted = Self.redactSensitiveValues(in: jsonObject, sensitiveKeys: sensitiveKeys)
+            if let redactedData = try? JSONSerialization.data(withJSONObject: redacted),
+               let redactedString = String(data: redactedData, encoding: .utf8) {
+                return redactedString
+            }
+        }
+
+        var sanitized = responseString
+        for key in sensitiveKeys {
+            sanitized = sanitized.replacingOccurrences(
+                of: "\"\(key)\"\\s*:\\s*\"[^\"]*\"",
+                with: "\"\(key)\":\"<redacted>\"",
+                options: [.regularExpression, .caseInsensitive]
+            )
+        }
+        return sanitized
+    }
+
+    private func logResponseBody(_ data: Data) {
+        guard let sanitized = sanitizedResponseBody(from: data) else { return }
+        let truncatedBody = sanitized.count > 2_000 ? String(sanitized.prefix(2_000)) + "…" : sanitized
         logDebug("📄 Response Body: \(truncatedBody)")
     }
 
@@ -136,12 +168,7 @@ class APIClient: @unchecked Sendable {
     private func createRequest(path: String, method: String, body: Encodable? = nil) -> URLRequest {
         let state = snapshotRequestState()
         let normalizedPath = normalize(path: path)
-        let apiURL: URL
-        if normalizedPath.contains("?") {
-            apiURL = URL(string: normalizedPath, relativeTo: state.baseURL) ?? state.baseURL.appendingPathComponent(normalizedPath)
-        } else {
-            apiURL = state.baseURL.appendingPathComponent(normalizedPath)
-        }
+        let apiURL = url(for: normalizedPath, baseURL: state.baseURL) ?? state.baseURL
 
         var request = URLRequest(url: apiURL)
         request.httpMethod = method
@@ -171,6 +198,52 @@ class APIClient: @unchecked Sendable {
         }
 
         return request
+    }
+
+    private static func redactSensitiveValues(in value: Any, sensitiveKeys: Set<String>) -> Any {
+        if let dictionary = value as? [String: Any] {
+            return dictionary.reduce(into: [String: Any]()) { result, pair in
+                if sensitiveKeys.contains(pair.key.lowercased()) {
+                    result[pair.key] = "<redacted>"
+                } else {
+                    result[pair.key] = redactSensitiveValues(in: pair.value, sensitiveKeys: sensitiveKeys)
+                }
+            }
+        }
+
+        if let array = value as? [Any] {
+            return array.map { redactSensitiveValues(in: $0, sensitiveKeys: sensitiveKeys) }
+        }
+
+        return value
+    }
+
+    private func url(for path: String, baseURL: URL) -> URL? {
+        guard var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false) else {
+            return nil
+        }
+
+        let parts = path.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false)
+        let rawPath = parts.first.map(String.init) ?? ""
+        let basePath = components.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let requestPath = rawPath.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let combinedPath: String
+
+        if basePath.isEmpty {
+            combinedPath = "/" + requestPath
+        } else if requestPath.isEmpty {
+            combinedPath = "/" + basePath
+        } else {
+            combinedPath = "/" + basePath + "/" + requestPath
+        }
+
+        components.path = combinedPath
+
+        if parts.count > 1 {
+            components.percentEncodedQuery = String(parts[1])
+        }
+
+        return components.url
     }
 
     private func performRequest<T: Decodable & Sendable>(request: URLRequest) -> AnyPublisher<T, Error> {
@@ -277,6 +350,7 @@ class APIClient: @unchecked Sendable {
             logRequest(request)
 
             do {
+                try await cloudRateLimiter?.waitForSlot()
                 let (data, response) = try await urlSession.data(for: request)
                 guard let httpResponse = response as? HTTPURLResponse else {
                     throw APIError.unknown
@@ -299,7 +373,7 @@ class APIClient: @unchecked Sendable {
 
                 let apiError = parseAPIError(data: data, response: httpResponse)
                 if shouldRetry(statusCode: httpResponse.statusCode), attempt < maxRetryAttempts {
-                    try? await Task.sleep(nanoseconds: retryDelay(for: attempt, retryAfter: retryAfterInterval(from: httpResponse)))
+                    try await Task.sleep(nanoseconds: retryDelay(for: attempt, retryAfter: retryAfterInterval(from: httpResponse)))
                     continue
                 }
 
@@ -311,8 +385,7 @@ class APIClient: @unchecked Sendable {
                     throw CancellationError()
                 }
                 if attempt < maxRetryAttempts {
-                    try? await Task.sleep(nanoseconds: retryDelay(for: attempt, retryAfter: nil))
-                    if Task.isCancelled { throw CancellationError() }
+                    try await Task.sleep(nanoseconds: retryDelay(for: attempt, retryAfter: nil))
                     continue
                 }
                 throw APIError.networkError(error.localizedDescription)
@@ -1130,7 +1203,13 @@ class APIClient: @unchecked Sendable {
             throw APIError.invalidURL
         }
         let request = createRequest(path: path, method: "GET")
-        return try await performRequestAsync(request: request)
+        let eventPoints: [EventSeriesPoint] = try await performRequestAsync(request: request)
+        let grouped = Dictionary(grouping: eventPoints, by: \.date)
+        return grouped
+            .map { date, points in
+                TimeSeriesData(date: date, value: points.reduce(0) { $0 + $1.value })
+            }
+            .sorted { $0.date < $1.date }
     }
 
     func getWebsiteEventStatsAsync(
@@ -1254,7 +1333,8 @@ class APIClient: @unchecked Sendable {
             throw APIError.invalidURL
         }
         let request = createRequest(path: path, method: "GET")
-        return try await performRequestAsync(request: request)
+        let properties: [EventDataPropertyValue] = try await performRequestAsync(request: request)
+        return properties.map(\.filterValue)
     }
 
     func getEventDataStatsAsync(
@@ -1266,8 +1346,8 @@ class APIClient: @unchecked Sendable {
             throw APIError.invalidURL
         }
         let request = createRequest(path: path, method: "GET")
-        let response: MetricMapResponse = try await performRequestAsync(request: request)
-        return response.metrics
+        let response: EventDataStatsResponse = try await performRequestAsync(request: request)
+        return response.values
     }
 
     func getEventDataValuesAsync(id: String, dateRange: DateRange, eventName: String?, propertyName: String?) async throws -> [FilterValue] {
@@ -1415,7 +1495,7 @@ class APIClient: @unchecked Sendable {
     func getWebsiteSessionPropertiesAsync(id: String, sessionId: String) async throws -> [String: JSONValue] {
         let request = createRequest(path: "/api/websites/\(id)/sessions/\(sessionId)/properties", method: "GET")
         let response: SessionPropertiesResponse = try await performRequestAsync(request: request)
-        return response.properties
+        return response.values
     }
 
     // MARK: - Async Reports, Segments, Assets
@@ -1485,6 +1565,21 @@ private final class AsyncPublisherBridge<Output: Sendable>: @unchecked Sendable 
 
     func fail(_ error: Error) {
         subject.send(completion: .failure(error))
+    }
+}
+
+private actor CloudRateLimiter {
+    private let minimumInterval: UInt64 = 110_000_000
+    private var nextAvailableTime: ContinuousClock.Instant = .now
+    private let clock = ContinuousClock()
+
+    func waitForSlot() async throws {
+        let now = clock.now
+        if nextAvailableTime > now {
+            try await clock.sleep(until: nextAvailableTime, tolerance: .milliseconds(10))
+        }
+        try Task.checkCancellation()
+        nextAvailableTime = clock.now.advanced(by: .nanoseconds(Int64(minimumInterval)))
     }
 }
 

@@ -89,12 +89,7 @@ protocol WebsiteServicing {
 final class WebsiteService: WebsiteServicing {
     static let shared = WebsiteService()
 
-    private struct RealtimeTask {
-        let id: UUID
-        let task: Task<Void, Never>
-    }
-
-    private var realtimeTasks: [String: RealtimeTask] = [:]
+    private var realtimeTasks: [String: Task<Void, Never>] = [:]
     private let apiClientProvider: @MainActor () -> APIClient?
     private let nowProvider: () -> Date
     private let analyticsCacheTTL: TimeInterval
@@ -109,13 +104,98 @@ final class WebsiteService: WebsiteServicing {
         var lastAccessDate: Date
     }
 
-    private var analyticsCache: [String: CacheEntry] = [:]
-    private var realtimeSnapshots: [String: CacheEntry] = [:]
-    private struct SendableBox: @unchecked Sendable {
+    private struct InFlightValue: @unchecked Sendable {
         let value: Any
     }
 
-    private var inFlightCallbacks: [String: [(Result<SendableBox, Error>) -> Void]] = [:]
+    private struct InFlightEntry {
+        let task: Task<InFlightValue, Error>
+        var waiterIDs: Set<UUID>
+    }
+
+    private final class InFlightWaiter: @unchecked Sendable {
+        private let lock = NSLock()
+        private var continuation: CheckedContinuation<InFlightValue, Error>?
+        private var observerTask: Task<Void, Never>?
+        private var terminalResult: Result<InFlightValue, Error>?
+        private var isObserverCancelled = false
+
+        func setContinuation(_ continuation: CheckedContinuation<InFlightValue, Error>) {
+            lock.lock()
+            let terminalResult = terminalResult
+            if terminalResult == nil {
+                self.continuation = continuation
+            }
+            lock.unlock()
+
+            if let terminalResult {
+                switch terminalResult {
+                case .success(let value):
+                    continuation.resume(returning: value)
+                case .failure(let error):
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+
+        func setObserverTask(_ task: Task<Void, Never>) {
+            lock.lock()
+            let shouldCancel = isObserverCancelled || terminalResult != nil
+            if !shouldCancel {
+                observerTask = task
+            }
+            lock.unlock()
+
+            if shouldCancel {
+                task.cancel()
+            }
+        }
+
+        func resume(returning value: InFlightValue) {
+            resume(with: .success(value))
+        }
+
+        func resume(throwing error: Error) {
+            resume(with: .failure(error))
+        }
+
+        func cancelObserver() {
+            lock.lock()
+            isObserverCancelled = true
+            let task = observerTask
+            observerTask = nil
+            lock.unlock()
+            task?.cancel()
+        }
+
+        private func resume(with result: Result<InFlightValue, Error>) {
+            lock.lock()
+            guard terminalResult == nil else {
+                lock.unlock()
+                return
+            }
+            terminalResult = result
+            isObserverCancelled = true
+            let continuation = continuation
+            self.continuation = nil
+            let task = observerTask
+            observerTask = nil
+            lock.unlock()
+
+            task?.cancel()
+
+            switch result {
+            case .success(let value):
+                continuation?.resume(returning: value)
+            case .failure(let error):
+                continuation?.resume(throwing: error)
+            }
+        }
+    }
+
+    private var analyticsCache: [String: CacheEntry] = [:]
+    private var realtimeSnapshots: [String: CacheEntry] = [:]
+    private var inFlightTasks: [String: InFlightEntry] = [:]
 
     init(
         apiClientProvider: @escaping @MainActor () -> APIClient? = { AuthManager.shared.apiClient },
@@ -142,7 +222,6 @@ final class WebsiteService: WebsiteServicing {
         let payload = CreateWebsiteRequest(name: name, domain: domain, shareId: shareId, teamId: teamId, id: id)
 
         return apiClient.createWebsite(body: payload)
-            .receive(on: DispatchQueue.main)
             .handleEvents(receiveOutput: { [weak self] website in
                 self?.saveWebsitesToCoreData([website])
             })
@@ -157,7 +236,6 @@ final class WebsiteService: WebsiteServicing {
         let payload = UpdateWebsiteRequest(name: name, domain: domain, shareId: shareId)
 
         return apiClient.updateWebsite(id: id, body: payload)
-            .receive(on: DispatchQueue.main)
             .handleEvents(receiveOutput: { [weak self] website in
                 self?.saveWebsitesToCoreData([website])
             })
@@ -170,7 +248,6 @@ final class WebsiteService: WebsiteServicing {
         }
 
         return apiClient.deleteWebsite(id: id)
-            .receive(on: DispatchQueue.main)
             .handleEvents(receiveCompletion: { [weak self] completion in
                 if case .finished = completion {
                     self?.deleteWebsiteFromCoreData(id)
@@ -196,7 +273,6 @@ final class WebsiteService: WebsiteServicing {
         }
 
         return apiClient.getAllAccessibleWebsites()
-            .receive(on: DispatchQueue.main)
             .handleEvents(receiveOutput: { [weak self] websites in
                 self?.saveWebsitesToCoreData(websites)
             })
@@ -224,7 +300,6 @@ final class WebsiteService: WebsiteServicing {
         let dateRange = createDateRange(for: period)
 
         return apiClient.getWebsiteStats(id: id, dateRange: dateRange, query: query)
-            .receive(on: DispatchQueue.main)
             .handleEvents(receiveOutput: { [weak self] response in
                 self?.saveStatsToCache(websiteId: id, stats: response, period: period)
             })
@@ -248,7 +323,6 @@ final class WebsiteService: WebsiteServicing {
         let dateRange = createDateRange(for: period)
 
         return apiClient.getWebsiteMetrics(id: id, dateRange: dateRange, type: type, query: query)
-            .receive(on: DispatchQueue.main)
             .handleEvents(receiveOutput: { [weak self] response in
                 self?.saveMetricsToCache(websiteId: id, metrics: response, period: period)
                 self?.setCachedValue(response, for: cacheKey)
@@ -286,7 +360,6 @@ final class WebsiteService: WebsiteServicing {
         }
 
         return apiClient.getRealtime(websiteId: websiteId, timezone: TimeZone.current.identifier)
-            .receive(on: DispatchQueue.main)
             .handleEvents(receiveOutput: { [weak self] snapshot in
                 self?.setRealtimeSnapshot(snapshot, for: websiteId)
             })
@@ -326,7 +399,6 @@ final class WebsiteService: WebsiteServicing {
 
         let dateRange = createDateRange(for: period)
         return apiClient.getWebsiteEvents(id: id, dateRange: dateRange, page: page, pageSize: pageSize, search: search, query: query)
-            .receive(on: DispatchQueue.main)
             .handleEvents(receiveOutput: { [weak self] response in
                 self?.setCachedValue(response, for: cacheKey)
             })
@@ -350,7 +422,6 @@ final class WebsiteService: WebsiteServicing {
 
         let dateRange = createDateRange(for: period)
         return apiClient.getWebsiteEventSeries(id: id, dateRange: dateRange, eventName: eventName, query: query)
-            .receive(on: DispatchQueue.main)
             .handleEvents(receiveOutput: { [weak self] response in
                 self?.setCachedValue(response, for: cacheKey)
             })
@@ -375,7 +446,6 @@ final class WebsiteService: WebsiteServicing {
 
         let dateRange = createDateRange(for: period)
         return apiClient.getWebsiteValues(id: id, type: type, dateRange: dateRange, search: search, query: query)
-            .receive(on: DispatchQueue.main)
             .handleEvents(receiveOutput: { [weak self] values in
                 self?.setCachedValue(values, for: cacheKey)
             })
@@ -398,7 +468,6 @@ final class WebsiteService: WebsiteServicing {
 
         let dateRange = createDateRange(for: period)
         return apiClient.getEventDataEvents(id: id, dateRange: dateRange, event: event)
-            .receive(on: DispatchQueue.main)
             .handleEvents(receiveOutput: { [weak self] values in
                 self?.setCachedValue(values, for: cacheKey)
             })
@@ -417,7 +486,6 @@ final class WebsiteService: WebsiteServicing {
 
         let dateRange = createDateRange(for: period)
         return apiClient.getEventDataFields(id: id, dateRange: dateRange)
-            .receive(on: DispatchQueue.main)
             .handleEvents(receiveOutput: { [weak self] values in
                 self?.setCachedValue(values, for: cacheKey)
             })
@@ -440,7 +508,6 @@ final class WebsiteService: WebsiteServicing {
 
         let dateRange = createDateRange(for: period)
         return apiClient.getEventDataProperties(id: id, dateRange: dateRange, propertyName: propertyName)
-            .receive(on: DispatchQueue.main)
             .handleEvents(receiveOutput: { [weak self] values in
                 self?.setCachedValue(values, for: cacheKey)
             })
@@ -463,7 +530,6 @@ final class WebsiteService: WebsiteServicing {
 
         let dateRange = createDateRange(for: period)
         return apiClient.getEventDataStats(id: id, dateRange: dateRange, query: query)
-            .receive(on: DispatchQueue.main)
             .handleEvents(receiveOutput: { [weak self] stats in
                 self?.setCachedValue(stats, for: cacheKey)
             })
@@ -492,7 +558,6 @@ final class WebsiteService: WebsiteServicing {
 
         let dateRange = createDateRange(for: period)
         return apiClient.getEventDataValues(id: id, dateRange: dateRange, eventName: eventName, propertyName: propertyName)
-            .receive(on: DispatchQueue.main)
             .handleEvents(receiveOutput: { [weak self] values in
                 self?.setCachedValue(values, for: cacheKey)
             })
@@ -515,7 +580,6 @@ final class WebsiteService: WebsiteServicing {
 
         let dateRange = createDateRange(for: period)
         return apiClient.getSessionDataProperties(id: id, dateRange: dateRange, propertyName: propertyName)
-            .receive(on: DispatchQueue.main)
             .handleEvents(receiveOutput: { [weak self] values in
                 self?.setCachedValue(values, for: cacheKey)
             })
@@ -538,7 +602,6 @@ final class WebsiteService: WebsiteServicing {
 
         let dateRange = createDateRange(for: period)
         return apiClient.getSessionDataValues(id: id, dateRange: dateRange, propertyName: propertyName)
-            .receive(on: DispatchQueue.main)
             .handleEvents(receiveOutput: { [weak self] values in
                 self?.setCachedValue(values, for: cacheKey)
             })
@@ -569,7 +632,6 @@ final class WebsiteService: WebsiteServicing {
 
         let dateRange = createDateRange(for: period)
         return apiClient.getWebsiteSessions(id: id, dateRange: dateRange, page: page, pageSize: pageSize, search: search, query: query)
-            .receive(on: DispatchQueue.main)
             .handleEvents(receiveOutput: { [weak self] sessions in
                 self?.setCachedValue(sessions, for: cacheKey)
             })
@@ -592,7 +654,6 @@ final class WebsiteService: WebsiteServicing {
 
         let dateRange = createDateRange(for: period)
         return apiClient.getWebsiteSessionStats(id: id, dateRange: dateRange, query: query)
-            .receive(on: DispatchQueue.main)
             .handleEvents(receiveOutput: { [weak self] stats in
                 self?.setCachedValue(stats, for: cacheKey)
             })
@@ -615,7 +676,6 @@ final class WebsiteService: WebsiteServicing {
 
         let dateRange = createDateRange(for: period)
         return apiClient.getWebsiteSessionsWeekly(id: id, dateRange: dateRange, query: query)
-            .receive(on: DispatchQueue.main)
             .handleEvents(receiveOutput: { [weak self] data in
                 self?.setCachedValue(data, for: cacheKey)
             })
@@ -730,9 +790,9 @@ final class WebsiteService: WebsiteServicing {
     ) {
         stopRealtimeUpdates(for: websiteId)
         let sleepInterval = realtimeSleepInterval(for: interval)
-        let taskID = UUID()
+        let taskKey = realtimeLegacyTaskKey(for: websiteId)
 
-        let task = Task { @MainActor [weak self] in
+        realtimeTasks[taskKey] = Task { @MainActor [weak self] in
             guard let self else { return }
 
             while !Task.isCancelled {
@@ -747,13 +807,12 @@ final class WebsiteService: WebsiteServicing {
                 try? await Task.sleep(nanoseconds: sleepInterval)
             }
         }
-
-        realtimeTasks[websiteId] = RealtimeTask(id: taskID, task: task)
     }
 
     func stopRealtimeUpdates(for websiteId: String) {
-        realtimeTasks[websiteId]?.task.cancel()
-        realtimeTasks.removeValue(forKey: websiteId)
+        let taskKey = realtimeLegacyTaskKey(for: websiteId)
+        realtimeTasks[taskKey]?.cancel()
+        realtimeTasks.removeValue(forKey: taskKey)
     }
 
     // MARK: - CoreData Operations
@@ -962,47 +1021,73 @@ final class WebsiteService: WebsiteServicing {
         logCacheDebug("CACHE EVICT: \(toEvict) LRU entries removed, \(analyticsCache.count) remaining")
     }
 
-    private func deduplicatedFetch<T: Sendable>(key: String, fetch: @MainActor () async throws -> T) async throws -> T {
+    private func deduplicatedFetch<T>(key: String, fetch: @escaping @MainActor () async throws -> T) async throws -> T {
         if let cached: T = cachedValue(for: key) { return cached }
 
-        if inFlightCallbacks[key] != nil {
+        let waiterID = UUID()
+        let task: Task<InFlightValue, Error>
+
+        if var inFlightEntry = inFlightTasks[key] {
             logCacheDebug("DEDUP JOIN: \(key)")
-            return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<T, Error>) in
-                inFlightCallbacks[key]?.append { result in
-                    switch result {
-                    case .success(let value):
-                        if let typed = value.value as? T {
-                            continuation.resume(returning: typed)
-                        } else {
-                            continuation.resume(throwing: APIError.decodingError)
-                        }
-                    case .failure(let error):
-                        continuation.resume(throwing: error)
-                    }
+            inFlightEntry.waiterIDs.insert(waiterID)
+            inFlightTasks[key] = inFlightEntry
+            task = inFlightEntry.task
+        } else {
+            logCacheDebug("FETCH START: \(key)")
+            task = Task { @MainActor [weak self] () throws -> InFlightValue in
+                defer {
+                    self?.inFlightTasks.removeValue(forKey: key)
                 }
+                let result = try await fetch()
+                self?.setCachedValue(result, for: key)
+                return InFlightValue(value: result)
             }
+            inFlightTasks[key] = InFlightEntry(task: task, waiterIDs: [waiterID])
         }
 
-        logCacheDebug("FETCH START: \(key)")
-        inFlightCallbacks[key] = []
+        let waiter = InFlightWaiter()
+        let value = try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                waiter.setContinuation(continuation)
+                waiter.setObserverTask(Task { [weak self, waiter] in
+                    do {
+                        let value = try await task.value
+                        await MainActor.run {
+                            self?.releaseInFlightWaiter(waiterID, for: key)
+                        }
+                        waiter.resume(returning: value)
+                    } catch {
+                        await MainActor.run {
+                            self?.releaseInFlightWaiter(waiterID, for: key)
+                        }
+                        waiter.resume(throwing: error)
+                    }
+                })
+            }
+        } onCancel: { [weak self] in
+            waiter.cancelObserver()
+            waiter.resume(throwing: CancellationError())
+            Task { @MainActor in
+                self?.releaseInFlightWaiter(waiterID, for: key)
+            }
+        }
+        guard let typed = value.value as? T else {
+            throw APIError.decodingError
+        }
+        return typed
+    }
 
-        do {
-            let result = try await fetch()
-            setCachedValue(result, for: key)
-            let callbacks = inFlightCallbacks.removeValue(forKey: key) ?? []
-            if !callbacks.isEmpty {
-                logCacheDebug("DEDUP RESOLVE: \(key) → \(callbacks.count) piggybacked callers")
-            }
-            for callback in callbacks {
-                callback(.success(SendableBox(value: result)))
-            }
-            return result
-        } catch {
-            let callbacks = inFlightCallbacks.removeValue(forKey: key) ?? []
-            for callback in callbacks {
-                callback(.failure(error))
-            }
-            throw error
+    private func releaseInFlightWaiter(_ waiterID: UUID, for key: String) {
+        guard var entry = inFlightTasks[key],
+              entry.waiterIDs.remove(waiterID) != nil else {
+            return
+        }
+
+        if entry.waiterIDs.isEmpty {
+            entry.task.cancel()
+            inFlightTasks.removeValue(forKey: key)
+        } else {
+            inFlightTasks[key] = entry
         }
     }
 
@@ -1363,11 +1448,10 @@ extension WebsiteService {
     }
 
     func startRealtimeUpdatesAsync(for websiteId: String, interval: TimeInterval = AnalyticsRuntimeConfig.default.realtimePollInterval) -> AsyncStream<Int> {
-        stopRealtimeUpdatesAsync(for: websiteId)
         let sleepInterval = realtimeSleepInterval(for: interval)
+        let taskKey = realtimeAsyncTaskKey(for: websiteId)
 
         return AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
-            let taskID = UUID()
             let task = Task { @MainActor [weak self] in
                 defer { continuation.finish() }
 
@@ -1386,25 +1470,32 @@ extension WebsiteService {
                 }
             }
 
-            realtimeTasks[websiteId] = RealtimeTask(id: taskID, task: task)
+            realtimeTasks[taskKey] = task
 
             continuation.onTermination = { _ in
                 Task { @MainActor [weak self] in
                     task.cancel()
-                    self?.removeRealtimeTask(for: websiteId, id: taskID)
+                    self?.realtimeTasks.removeValue(forKey: taskKey)
                 }
             }
         }
     }
 
     func stopRealtimeUpdatesAsync(for websiteId: String) {
-        realtimeTasks[websiteId]?.task.cancel()
-        realtimeTasks.removeValue(forKey: websiteId)
+        let prefix = "async:\(websiteId):"
+        let taskKeys = realtimeTasks.keys.filter { $0.hasPrefix(prefix) }
+        for taskKey in taskKeys {
+            realtimeTasks[taskKey]?.cancel()
+            realtimeTasks.removeValue(forKey: taskKey)
+        }
     }
 
-    private func removeRealtimeTask(for websiteId: String, id: UUID) {
-        guard realtimeTasks[websiteId]?.id == id else { return }
-        realtimeTasks.removeValue(forKey: websiteId)
+    private func realtimeLegacyTaskKey(for websiteId: String) -> String {
+        "legacy:\(websiteId)"
+    }
+
+    private func realtimeAsyncTaskKey(for websiteId: String) -> String {
+        "async:\(websiteId):\(UUID().uuidString)"
     }
 }
 

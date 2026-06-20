@@ -76,7 +76,7 @@ struct WebsiteDetailView: View {
                 viewModel.loadWorkspaceResources()
             }
         }
-        .onChange(of: viewModel.selectedPeriod) { _, _ in
+        .onChange(of: viewModel.selectedPeriod) { _ in
             viewModel.loadFilterValues()
         }
         .onDisappear {
@@ -146,7 +146,7 @@ struct WebsiteDetailView: View {
                     Text("This Year").tag(StatsPeriod.year)
                 }
                 .pickerStyle(.segmented)
-                .onChange(of: viewModel.selectedPeriod) { _, newValue in
+                .onChange(of: viewModel.selectedPeriod) { newValue in
                     viewModel.changePeriod(newValue)
                 }
             }
@@ -309,6 +309,7 @@ struct WebsiteDetailView: View {
             }
             .padding(.horizontal)
         }
+        .accessibilityIdentifier("detail-tab-picker")
     }
 }
 

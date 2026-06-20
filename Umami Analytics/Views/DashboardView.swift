@@ -9,8 +9,14 @@ import SwiftUI
 
 @MainActor
 struct DashboardView: View {
-    @ObservedObject var viewModel: WebsiteViewModel
+    @ObservedObject private var viewModel: WebsiteViewModel
     @ObservedObject private var authManager = AuthManager.shared
+    @Binding private var selectedTab: Int
+
+    init(viewModel: WebsiteViewModel, selectedTab: Binding<Int>) {
+        self.viewModel = viewModel
+        self._selectedTab = selectedTab
+    }
 
     var body: some View {
         NavigationStack {
@@ -170,7 +176,7 @@ struct DashboardView: View {
                 Text("This Year").tag(StatsPeriod.year)
             }
             .pickerStyle(.segmented)
-            .onChange(of: viewModel.selectedPeriod) { _, newValue in
+            .onChange(of: viewModel.selectedPeriod) { newValue in
                 viewModel.changePeriod(newValue)
             }
         }
@@ -239,7 +245,9 @@ struct DashboardView: View {
                 }
             }
 
-            NavigationLink(destination: WebsitesView(viewModel: viewModel)) {
+            Button {
+                selectedTab = 1
+            } label: {
                 Text("View All Websites")
                     .font(.headline)
                     .foregroundStyle(.blue)
@@ -274,7 +282,9 @@ struct DashboardView: View {
                 .padding(.horizontal, 40)
 
             if !authManager.isReadOnlySession {
-                NavigationLink(destination: WebsitesView(viewModel: viewModel)) {
+                Button {
+                    selectedTab = 1
+                } label: {
                     Text("Go to Websites")
                         .fontWeight(.semibold)
                         .padding(.horizontal, 20)

@@ -1,3 +1,5 @@
+IMPORTANT: keep the 2 in sync with each other
+
 # CLAUDE.md
 
 This file provides guidance for AI assistants working on the Umami Analytics iOS codebase.
@@ -25,7 +27,7 @@ xcodebuild clean build -project "Umami Analytics.xcodeproj" -scheme "Umami Analy
 ### Tests
 
 ```bash
-xcodebuild test -project "Umami Analytics.xcodeproj" -scheme "Umami Analytics" -destination 'platform=iOS Simulator,name=iPhone 15'
+xcodebuild test -project "Umami Analytics.xcodeproj" -scheme "Umami Analytics" -destination 'platform=iOS Simulator,name=iPhone 16,OS=18.5'
 ```
 
 The project now includes model decoding tests (Swift Testing) and smoke UI tests (XCTest), but API integration coverage remains lightweight.
