@@ -9,6 +9,7 @@ import Foundation
 import Combine
 import Security
 import OSLog
+import CryptoKit
 
 @MainActor
 final class AuthManager: ObservableObject {
@@ -36,6 +37,7 @@ final class AuthManager: ObservableObject {
 
     private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "UmamiAnalytics", category: "Auth")
 
+    private var authOperationID = UUID()
     private var storedSelfHostedServerURL: String?
     private var storedPublicShareServerURL: String?
 
@@ -154,8 +156,13 @@ final class AuthManager: ObservableObject {
         shareID: String? = nil,
         cloudRegion: CloudRegion = .global
     ) async throws {
+        let operationID = beginAuthOperation()
         isLoading = true
-        defer { isLoading = false }
+        defer {
+            if isCurrentAuthOperation(operationID) {
+                isLoading = false
+            }
+        }
 
         switch serverType {
         case .selfHosted:
@@ -183,6 +190,7 @@ final class AuthManager: ObservableObject {
                 client.setAuthToken(response.token)
 
                 let bootstrap = try await loadSelfHostedBootstrap(client: client, session: session, fallbackUser: response.user)
+                try ensureCurrentAuthOperation(operationID)
                 saveServerURL(finalURL, for: .selfHosted)
                 persistAuthenticatedSession(
                     session: session,
@@ -194,7 +202,9 @@ final class AuthManager: ObservableObject {
                     teams: bootstrap.teams
                 )
             } catch {
-                resetRuntimeState(clearSelection: false)
+                if isCurrentAuthOperation(operationID) {
+                    resetRuntimeState(clearSelection: false)
+                }
                 throw error
             }
 
@@ -218,6 +228,7 @@ final class AuthManager: ObservableObject {
 
             do {
                 _ = try await client.getWebsitesAsync(page: 1, pageSize: 1)
+                try ensureCurrentAuthOperation(operationID)
 
                 persistAuthenticatedSession(
                     session: session,
@@ -230,7 +241,9 @@ final class AuthManager: ObservableObject {
                 )
                 cloudAPIKey = key
             } catch {
-                resetRuntimeState(clearSelection: false)
+                if isCurrentAuthOperation(operationID) {
+                    resetRuntimeState(clearSelection: false)
+                }
                 throw error
             }
 
@@ -257,6 +270,7 @@ final class AuthManager: ObservableObject {
                     sharedWebsiteId: share.websiteId
                 )
 
+                try ensureCurrentAuthOperation(operationID)
                 saveServerURL(finalURL, for: .publicShare)
                 persistAuthenticatedSession(
                     session: session,
@@ -268,15 +282,22 @@ final class AuthManager: ObservableObject {
                     teams: []
                 )
             } catch {
-                resetRuntimeState(clearSelection: false)
+                if isCurrentAuthOperation(operationID) {
+                    resetRuntimeState(clearSelection: false)
+                }
                 throw error
             }
         }
     }
 
     func logout() async throws {
+        let operationID = beginAuthOperation()
         isLoading = true
-        defer { isLoading = false }
+        defer {
+            if isCurrentAuthOperation(operationID) {
+                isLoading = false
+            }
+        }
 
         let session = currentSession
         var logoutError: Error?
@@ -290,6 +311,7 @@ final class AuthManager: ObservableObject {
             }
         }
 
+        try ensureCurrentAuthOperation(operationID)
         clearCurrentSession()
 
         if let logoutError {
@@ -302,12 +324,20 @@ final class AuthManager: ObservableObject {
             throw AuthError.invalidCredentials
         }
 
+        let operationID = beginAuthOperation()
         isLoading = true
-        defer { isLoading = false }
+        defer {
+            if isCurrentAuthOperation(operationID) {
+                isLoading = false
+            }
+        }
 
         switch session.serverType {
         case .selfHosted:
-            let bootstrap = try await loadSelfHostedBootstrap(client: apiClient, session: session, fallbackUser: currentUser)
+            let verifiedUser = try await apiClient.verifyTokenAsync()
+            try ensureCurrentAuthOperation(operationID)
+            let bootstrap = try await loadSelfHostedBootstrap(client: apiClient, session: session, fallbackUser: verifiedUser, allowFallbackUser: false)
+            try ensureCurrentAuthOperation(operationID)
             currentUser = bootstrap.user
             availableTeams = bootstrap.teams
             serverConfig = bootstrap.config
@@ -319,6 +349,7 @@ final class AuthManager: ObservableObject {
 
         case .cloud:
             _ = try await apiClient.getWebsitesAsync(page: 1, pageSize: 1)
+            try ensureCurrentAuthOperation(operationID)
             serverConfig = serverConfig ?? ServerConfig(cloudMode: true, trackerScriptName: "script.js")
 
         case .publicShare:
@@ -326,6 +357,7 @@ final class AuthManager: ObservableObject {
                 throw AuthError.invalidCredentials
             }
             _ = try await apiClient.getWebsiteAsync(id: websiteId)
+            try ensureCurrentAuthOperation(operationID)
         }
     }
 
@@ -352,7 +384,8 @@ final class AuthManager: ObservableObject {
     private func loadSelfHostedBootstrap(
         client: APIClient,
         session: UmamiSession,
-        fallbackUser: User?
+        fallbackUser: User?,
+        allowFallbackUser: Bool = true
     ) async throws -> (user: User, config: ServerConfig?, teams: [WorkspaceTeam]) {
         async let configTask = client.getServerConfigAsync()
         async let userTask = client.getCurrentUserAsync()
@@ -362,7 +395,7 @@ final class AuthManager: ObservableObject {
         do {
             resolvedUser = try await userTask
         } catch {
-            if let fallbackUser {
+            if allowFallbackUser, let fallbackUser {
                 resolvedUser = fallbackUser
             } else {
                 throw error
@@ -453,6 +486,15 @@ final class AuthManager: ObservableObject {
                 return
             }
 
+            if session.serverType == .selfHosted {
+                guard let secret else {
+                    clearCurrentSession()
+                    return
+                }
+                restoreSelfHostedSession(session, client: client, secret: secret)
+                return
+            }
+
             currentSession = session
             apiClient = client
             serverType = session.serverType
@@ -465,6 +507,51 @@ final class AuthManager: ObservableObject {
         } catch {
             logger.error("Failed to restore session: \(error.localizedDescription, privacy: .public)")
             clearCurrentSession()
+        }
+    }
+
+    private func restoreSelfHostedSession(_ session: UmamiSession, client: APIClient, secret: String) {
+        let operationID = beginAuthOperation()
+        serverType = session.serverType
+        serverURL = session.baseURL
+        isLoading = true
+
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer {
+                if self.isCurrentAuthOperation(operationID) {
+                    self.isLoading = false
+                }
+            }
+
+            do {
+                let verifiedUser = try await client.verifyTokenAsync()
+                try self.ensureCurrentAuthOperation(operationID)
+                let bootstrap = try await self.loadSelfHostedBootstrap(
+                    client: client,
+                    session: session,
+                    fallbackUser: verifiedUser,
+                    allowFallbackUser: false
+                )
+                try self.ensureCurrentAuthOperation(operationID)
+                self.persistAuthenticatedSession(
+                    session: session,
+                    client: client,
+                    secret: secret,
+                    secretKind: .bearerToken,
+                    currentUser: bootstrap.user,
+                    serverConfig: bootstrap.config,
+                    teams: bootstrap.teams
+                )
+            } catch is CancellationError {
+                return
+            } catch {
+                guard self.isCurrentAuthOperation(operationID) else { return }
+                guard self.currentSession == nil || self.currentSession?.identifier == session.identifier else { return }
+                self.deleteSecret(kind: .bearerToken, for: session)
+                self.removePersistedArtifacts(for: session)
+                self.clearCurrentSession()
+            }
         }
     }
 
@@ -606,6 +693,10 @@ final class AuthManager: ObservableObject {
     // MARK: - Namespaced Storage
 
     private func namespacedKey(_ base: String, session: UmamiSession) -> String {
+        "\(base).\(hashedNamespace(for: session))"
+    }
+
+    private func legacyNamespacedKey(_ base: String, session: UmamiSession) -> String {
         let namespace = session.identifier.replacingOccurrences(
             of: "[^A-Za-z0-9]+",
             with: "_",
@@ -614,17 +705,25 @@ final class AuthManager: ObservableObject {
         return "\(base).\(namespace)"
     }
 
+    private func hashedNamespace(for session: UmamiSession) -> String {
+        let digest = SHA256.hash(data: Data(session.identifier.utf8))
+        return digest.map { String(format: "%02x", $0) }.joined()
+    }
+
     private func saveSecret(_ value: String, kind: SecretKind, for session: UmamiSession) {
         saveToKeychain(value: value, key: namespacedKey("secret.\(kind.rawValue)", session: session))
+        deleteFromKeychain(key: legacyNamespacedKey("secret.\(kind.rawValue)", session: session))
     }
 
     private func loadSecret(kind: SecretKind, for session: UmamiSession?) -> String? {
         guard let session else { return nil }
         return loadFromKeychain(key: namespacedKey("secret.\(kind.rawValue)", session: session))
+            ?? loadFromKeychain(key: legacyNamespacedKey("secret.\(kind.rawValue)", session: session))
     }
 
     private func deleteSecret(kind: SecretKind, for session: UmamiSession) {
         deleteFromKeychain(key: namespacedKey("secret.\(kind.rawValue)", session: session))
+        deleteFromKeychain(key: legacyNamespacedKey("secret.\(kind.rawValue)", session: session))
     }
 
     private func persistUser(_ user: User, for session: UmamiSession) {
@@ -634,7 +733,9 @@ final class AuthManager: ObservableObject {
     }
 
     private func loadPersistedUser(for session: UmamiSession) -> User? {
-        guard let data = UserDefaults.standard.data(forKey: namespacedKey("user", session: session)) else {
+        let data = UserDefaults.standard.data(forKey: namespacedKey("user", session: session))
+            ?? UserDefaults.standard.data(forKey: legacyNamespacedKey("user", session: session))
+        guard let data else {
             return nil
         }
         return try? JSONDecoder().decode(User.self, from: data)
@@ -642,6 +743,7 @@ final class AuthManager: ObservableObject {
 
     private func clearPersistedUser(for session: UmamiSession) {
         UserDefaults.standard.removeObject(forKey: namespacedKey("user", session: session))
+        UserDefaults.standard.removeObject(forKey: legacyNamespacedKey("user", session: session))
     }
 
     private func persistServerConfig(_ config: ServerConfig?, for session: UmamiSession) {
@@ -656,7 +758,9 @@ final class AuthManager: ObservableObject {
     }
 
     private func loadPersistedServerConfig(for session: UmamiSession) -> ServerConfig? {
-        guard let data = UserDefaults.standard.data(forKey: namespacedKey("config", session: session)) else {
+        let data = UserDefaults.standard.data(forKey: namespacedKey("config", session: session))
+            ?? UserDefaults.standard.data(forKey: legacyNamespacedKey("config", session: session))
+        guard let data else {
             return nil
         }
         return try? JSONDecoder().decode(ServerConfig.self, from: data)
@@ -669,7 +773,9 @@ final class AuthManager: ObservableObject {
     }
 
     private func loadPersistedTeams(for session: UmamiSession) -> [WorkspaceTeam] {
-        guard let data = UserDefaults.standard.data(forKey: namespacedKey("teams", session: session)),
+        let data = UserDefaults.standard.data(forKey: namespacedKey("teams", session: session))
+            ?? UserDefaults.standard.data(forKey: legacyNamespacedKey("teams", session: session))
+        guard let data,
               let teams = try? JSONDecoder().decode([WorkspaceTeam].self, from: data) else {
             return []
         }
@@ -683,7 +789,9 @@ final class AuthManager: ObservableObject {
     }
 
     private func loadedWorkspaceSelection(for session: UmamiSession) -> WorkspaceSelection {
-        guard let data = UserDefaults.standard.data(forKey: namespacedKey("workspace", session: session)),
+        let data = UserDefaults.standard.data(forKey: namespacedKey("workspace", session: session))
+            ?? UserDefaults.standard.data(forKey: legacyNamespacedKey("workspace", session: session))
+        guard let data,
               let selection = try? JSONDecoder().decode(WorkspaceSelection.self, from: data) else {
             return .personal
         }
@@ -720,10 +828,7 @@ final class AuthManager: ObservableObject {
             deleteSecret(kind: .shareToken, for: session)
         }
 
-        clearPersistedUser(for: session)
-        UserDefaults.standard.removeObject(forKey: namespacedKey("config", session: session))
-        UserDefaults.standard.removeObject(forKey: namespacedKey("teams", session: session))
-        UserDefaults.standard.removeObject(forKey: namespacedKey("workspace", session: session))
+        removePersistedArtifacts(for: session)
         clearCurrentSessionStorage()
 
         resetRuntimeState(clearSelection: true)
@@ -740,6 +845,32 @@ final class AuthManager: ObservableObject {
         cloudAPIKey = nil
         if clearSelection {
             selectedWorkspace = .personal
+        }
+    }
+
+    private func removePersistedArtifacts(for session: UmamiSession) {
+        clearPersistedUser(for: session)
+        UserDefaults.standard.removeObject(forKey: namespacedKey("config", session: session))
+        UserDefaults.standard.removeObject(forKey: legacyNamespacedKey("config", session: session))
+        UserDefaults.standard.removeObject(forKey: namespacedKey("teams", session: session))
+        UserDefaults.standard.removeObject(forKey: legacyNamespacedKey("teams", session: session))
+        UserDefaults.standard.removeObject(forKey: namespacedKey("workspace", session: session))
+        UserDefaults.standard.removeObject(forKey: legacyNamespacedKey("workspace", session: session))
+    }
+
+    private func beginAuthOperation() -> UUID {
+        let id = UUID()
+        authOperationID = id
+        return id
+    }
+
+    private func isCurrentAuthOperation(_ id: UUID) -> Bool {
+        authOperationID == id
+    }
+
+    private func ensureCurrentAuthOperation(_ id: UUID) throws {
+        guard isCurrentAuthOperation(id) else {
+            throw CancellationError()
         }
     }
 

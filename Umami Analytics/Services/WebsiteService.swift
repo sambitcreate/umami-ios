@@ -25,11 +25,11 @@ protocol WebsiteServicing {
     func fetchWebsiteEventSeries(id: String, period: StatsPeriod, eventName: String?, query: AnalyticsQueryOptions) -> AnyPublisher<[TimeSeriesData], Error>
     func fetchWebsiteEvents(id: String, period: StatsPeriod, page: Int, pageSize: Int, search: String?, query: AnalyticsQueryOptions) -> AnyPublisher<PaginatedResponse<AnalyticsRecord>, Error>
     func fetchWebsiteValues(id: String, type: String, period: StatsPeriod, search: String?, query: AnalyticsQueryOptions) -> AnyPublisher<[FilterValue], Error>
-    func fetchEventDataFields(id: String, period: StatsPeriod) -> AnyPublisher<[FilterValue], Error>
-    func fetchEventDataProperties(id: String, period: StatsPeriod, propertyName: String?) -> AnyPublisher<[FilterValue], Error>
-    func fetchEventDataEvents(id: String, period: StatsPeriod, event: String?) -> AnyPublisher<[FilterValue], Error>
+    func fetchEventDataFields(id: String, period: StatsPeriod, query: AnalyticsQueryOptions) -> AnyPublisher<[FilterValue], Error>
+    func fetchEventDataProperties(id: String, period: StatsPeriod, propertyName: String?, query: AnalyticsQueryOptions) -> AnyPublisher<[FilterValue], Error>
+    func fetchEventDataEvents(id: String, period: StatsPeriod, event: String?, query: AnalyticsQueryOptions) -> AnyPublisher<[FilterValue], Error>
     func fetchEventDataStats(id: String, period: StatsPeriod, query: AnalyticsQueryOptions) -> AnyPublisher<[String: MetricValue], Error>
-    func fetchEventDataValues(id: String, period: StatsPeriod, eventName: String?, propertyName: String?) -> AnyPublisher<[FilterValue], Error>
+    func fetchEventDataValues(id: String, period: StatsPeriod, eventName: String?, propertyName: String?, query: AnalyticsQueryOptions) -> AnyPublisher<[FilterValue], Error>
     func fetchWebsiteSessionStats(id: String, period: StatsPeriod, query: AnalyticsQueryOptions) -> AnyPublisher<[String: MetricValue], Error>
     func fetchWebsiteSessionsWeekly(id: String, period: StatsPeriod, query: AnalyticsQueryOptions) -> AnyPublisher<[WeeklySessionPoint], Error>
     func fetchWebsiteSessions(id: String, period: StatsPeriod, page: Int, pageSize: Int, search: String?, query: AnalyticsQueryOptions) -> AnyPublisher<PaginatedResponse<AnalyticsRecord>, Error>
@@ -46,6 +46,7 @@ protocol WebsiteServicing {
     func invalidateAnalyticsCache(for websiteId: String?)
     func startRealtimeUpdates(for websiteId: String, interval: TimeInterval, completion: @escaping (Int) -> Void)
     func stopRealtimeUpdates(for websiteId: String)
+    func stopRealtimeUpdatesAsync(for websiteId: String)
 
     func fetchCachedWebsites() -> [UmamiWebsite]
     func fetchCachedStats(for websiteId: String, period: StatsPeriod) -> UmamiWebsiteStats?
@@ -62,11 +63,11 @@ protocol WebsiteServicing {
     func fetchWebsiteEventSeriesAsync(id: String, period: StatsPeriod, eventName: String?, query: AnalyticsQueryOptions) async throws -> [TimeSeriesData]
     func fetchWebsiteEventsAsync(id: String, period: StatsPeriod, page: Int, pageSize: Int, search: String?, query: AnalyticsQueryOptions) async throws -> PaginatedResponse<AnalyticsRecord>
     func fetchWebsiteValuesAsync(id: String, type: String, period: StatsPeriod, search: String?, query: AnalyticsQueryOptions) async throws -> [FilterValue]
-    func fetchEventDataFieldsAsync(id: String, period: StatsPeriod) async throws -> [FilterValue]
-    func fetchEventDataPropertiesAsync(id: String, period: StatsPeriod, propertyName: String?) async throws -> [FilterValue]
-    func fetchEventDataEventsAsync(id: String, period: StatsPeriod, event: String?) async throws -> [FilterValue]
+    func fetchEventDataFieldsAsync(id: String, period: StatsPeriod, query: AnalyticsQueryOptions) async throws -> [FilterValue]
+    func fetchEventDataPropertiesAsync(id: String, period: StatsPeriod, propertyName: String?, query: AnalyticsQueryOptions) async throws -> [FilterValue]
+    func fetchEventDataEventsAsync(id: String, period: StatsPeriod, event: String?, query: AnalyticsQueryOptions) async throws -> [FilterValue]
     func fetchEventDataStatsAsync(id: String, period: StatsPeriod, query: AnalyticsQueryOptions) async throws -> [String: MetricValue]
-    func fetchEventDataValuesAsync(id: String, period: StatsPeriod, eventName: String?, propertyName: String?) async throws -> [FilterValue]
+    func fetchEventDataValuesAsync(id: String, period: StatsPeriod, eventName: String?, propertyName: String?, query: AnalyticsQueryOptions) async throws -> [FilterValue]
     func fetchWebsiteSessionStatsAsync(id: String, period: StatsPeriod, query: AnalyticsQueryOptions) async throws -> [String: MetricValue]
     func fetchWebsiteSessionsWeeklyAsync(id: String, period: StatsPeriod, query: AnalyticsQueryOptions) async throws -> [WeeklySessionPoint]
     func fetchWebsiteSessionsAsync(id: String, period: StatsPeriod, page: Int, pageSize: Int, search: String?, query: AnalyticsQueryOptions) async throws -> PaginatedResponse<AnalyticsRecord>
@@ -104,8 +105,8 @@ final class WebsiteService: WebsiteServicing {
         var lastAccessDate: Date
     }
 
-    private struct InFlightValue: @unchecked Sendable {
-        let value: Any
+    private struct InFlightValue: Sendable {
+        let value: any Sendable
     }
 
     private struct InFlightEntry {
@@ -455,37 +456,42 @@ final class WebsiteService: WebsiteServicing {
     func fetchEventDataEvents(
         id: String,
         period: StatsPeriod = .day,
-        event: String? = nil
+        event: String? = nil,
+        query: AnalyticsQueryOptions = .default
     ) -> AnyPublisher<[FilterValue], Error> {
         guard let apiClient = apiClientProvider() else {
             return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
         }
 
-        let cacheKey = makeCacheKey(prefix: "eventDataEvents", websiteId: id, period: period, extras: [event ?? ""])
+        let cacheKey = makeCacheKey(prefix: "eventDataEvents", websiteId: id, period: period, extras: [event ?? "", query.cacheKey])
         if let cached: [FilterValue] = cachedValue(for: cacheKey) {
             return Just(cached).setFailureType(to: Error.self).eraseToAnyPublisher()
         }
 
         let dateRange = createDateRange(for: period)
-        return apiClient.getEventDataEvents(id: id, dateRange: dateRange, event: event)
+        return apiClient.getEventDataEvents(id: id, dateRange: dateRange, event: event, query: query)
             .handleEvents(receiveOutput: { [weak self] values in
                 self?.setCachedValue(values, for: cacheKey)
             })
             .eraseToAnyPublisher()
     }
 
-    func fetchEventDataFields(id: String, period: StatsPeriod = .day) -> AnyPublisher<[FilterValue], Error> {
+    func fetchEventDataFields(
+        id: String,
+        period: StatsPeriod = .day,
+        query: AnalyticsQueryOptions = .default
+    ) -> AnyPublisher<[FilterValue], Error> {
         guard let apiClient = apiClientProvider() else {
             return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
         }
 
-        let cacheKey = makeCacheKey(prefix: "eventDataFields", websiteId: id, period: period)
+        let cacheKey = makeCacheKey(prefix: "eventDataFields", websiteId: id, period: period, extras: [query.cacheKey])
         if let cached: [FilterValue] = cachedValue(for: cacheKey) {
             return Just(cached).setFailureType(to: Error.self).eraseToAnyPublisher()
         }
 
         let dateRange = createDateRange(for: period)
-        return apiClient.getEventDataFields(id: id, dateRange: dateRange)
+        return apiClient.getEventDataFields(id: id, dateRange: dateRange, query: query)
             .handleEvents(receiveOutput: { [weak self] values in
                 self?.setCachedValue(values, for: cacheKey)
             })
@@ -495,19 +501,20 @@ final class WebsiteService: WebsiteServicing {
     func fetchEventDataProperties(
         id: String,
         period: StatsPeriod = .day,
-        propertyName: String? = nil
+        propertyName: String? = nil,
+        query: AnalyticsQueryOptions = .default
     ) -> AnyPublisher<[FilterValue], Error> {
         guard let apiClient = apiClientProvider() else {
             return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
         }
 
-        let cacheKey = makeCacheKey(prefix: "eventDataProperties", websiteId: id, period: period, extras: [propertyName ?? ""])
+        let cacheKey = makeCacheKey(prefix: "eventDataProperties", websiteId: id, period: period, extras: [propertyName ?? "", query.cacheKey])
         if let cached: [FilterValue] = cachedValue(for: cacheKey) {
             return Just(cached).setFailureType(to: Error.self).eraseToAnyPublisher()
         }
 
         let dateRange = createDateRange(for: period)
-        return apiClient.getEventDataProperties(id: id, dateRange: dateRange, propertyName: propertyName)
+        return apiClient.getEventDataProperties(id: id, dateRange: dateRange, propertyName: propertyName, query: query)
             .handleEvents(receiveOutput: { [weak self] values in
                 self?.setCachedValue(values, for: cacheKey)
             })
@@ -540,7 +547,8 @@ final class WebsiteService: WebsiteServicing {
         id: String,
         period: StatsPeriod = .day,
         eventName: String? = nil,
-        propertyName: String? = nil
+        propertyName: String? = nil,
+        query: AnalyticsQueryOptions = .default
     ) -> AnyPublisher<[FilterValue], Error> {
         guard let apiClient = apiClientProvider() else {
             return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
@@ -550,14 +558,14 @@ final class WebsiteService: WebsiteServicing {
             prefix: "eventDataValues",
             websiteId: id,
             period: period,
-            extras: [eventName ?? "", propertyName ?? ""]
+            extras: [eventName ?? "", propertyName ?? "", query.cacheKey]
         )
         if let cached: [FilterValue] = cachedValue(for: cacheKey) {
             return Just(cached).setFailureType(to: Error.self).eraseToAnyPublisher()
         }
 
         let dateRange = createDateRange(for: period)
-        return apiClient.getEventDataValues(id: id, dateRange: dateRange, eventName: eventName, propertyName: propertyName)
+        return apiClient.getEventDataValues(id: id, dateRange: dateRange, eventName: eventName, propertyName: propertyName, query: query)
             .handleEvents(receiveOutput: { [weak self] values in
                 self?.setCachedValue(values, for: cacheKey)
             })
@@ -770,8 +778,9 @@ final class WebsiteService: WebsiteServicing {
 
     func invalidateAnalyticsCache(for websiteId: String? = nil) {
         if let websiteId {
+            let websiteSegment = Self.cacheComponent(websiteId)
             analyticsCache.keys
-                .filter { $0.contains("|\(websiteId)|") }
+                .filter { $0.contains("|\(websiteSegment)|") }
                 .forEach { analyticsCache.removeValue(forKey: $0) }
             realtimeSnapshots.removeValue(forKey: websiteId)
             return
@@ -962,8 +971,16 @@ final class WebsiteService: WebsiteServicing {
 
     private func makeCacheKey(prefix: String, websiteId: String, period: StatsPeriod, extras: [String] = []) -> String {
         let sessionIdentifier = AuthManager.shared.currentSession?.identifier ?? "sessionless"
-        let extraSegment = extras.joined(separator: "|")
-        return "\(sessionIdentifier)|\(prefix)|\(websiteId)|\(period.rawValue)|\(extraSegment)"
+        let components = [sessionIdentifier, prefix, websiteId, period.rawValue] + extras
+        return components.map(Self.cacheComponent).joined(separator: "|")
+    }
+
+    private static func cacheComponent(_ value: String) -> String {
+        Data(value.utf8)
+            .base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
     }
 
     private func logCacheDebug(_ message: @autoclosure () -> String) {
@@ -1021,7 +1038,7 @@ final class WebsiteService: WebsiteServicing {
         logCacheDebug("CACHE EVICT: \(toEvict) LRU entries removed, \(analyticsCache.count) remaining")
     }
 
-    private func deduplicatedFetch<T>(key: String, fetch: @escaping @MainActor () async throws -> T) async throws -> T {
+    private func deduplicatedFetch<T: Sendable>(key: String, fetch: @escaping @MainActor () async throws -> T) async throws -> T {
         if let cached: T = cachedValue(for: key) { return cached }
 
         let waiterID = UUID()
@@ -1301,30 +1318,44 @@ extension WebsiteService {
         }
     }
 
-    func fetchEventDataFieldsAsync(id: String, period: StatsPeriod) async throws -> [FilterValue] {
+    func fetchEventDataFieldsAsync(
+        id: String,
+        period: StatsPeriod,
+        query: AnalyticsQueryOptions = .default
+    ) async throws -> [FilterValue] {
         guard let apiClient = apiClientProvider() else { throw APIError.unauthorized }
-        let cacheKey = makeCacheKey(prefix: "eventDataFields", websiteId: id, period: period)
+        let cacheKey = makeCacheKey(prefix: "eventDataFields", websiteId: id, period: period, extras: [query.cacheKey])
         return try await deduplicatedFetch(key: cacheKey) {
             let dateRange = self.createDateRange(for: period)
-            return try await apiClient.getEventDataFieldsAsync(id: id, dateRange: dateRange)
+            return try await apiClient.getEventDataFieldsAsync(id: id, dateRange: dateRange, query: query)
         }
     }
 
-    func fetchEventDataPropertiesAsync(id: String, period: StatsPeriod, propertyName: String?) async throws -> [FilterValue] {
+    func fetchEventDataPropertiesAsync(
+        id: String,
+        period: StatsPeriod,
+        propertyName: String?,
+        query: AnalyticsQueryOptions = .default
+    ) async throws -> [FilterValue] {
         guard let apiClient = apiClientProvider() else { throw APIError.unauthorized }
-        let cacheKey = makeCacheKey(prefix: "eventDataProperties", websiteId: id, period: period, extras: [propertyName ?? ""])
+        let cacheKey = makeCacheKey(prefix: "eventDataProperties", websiteId: id, period: period, extras: [propertyName ?? "", query.cacheKey])
         return try await deduplicatedFetch(key: cacheKey) {
             let dateRange = self.createDateRange(for: period)
-            return try await apiClient.getEventDataPropertiesAsync(id: id, dateRange: dateRange, propertyName: propertyName)
+            return try await apiClient.getEventDataPropertiesAsync(id: id, dateRange: dateRange, propertyName: propertyName, query: query)
         }
     }
 
-    func fetchEventDataEventsAsync(id: String, period: StatsPeriod, event: String?) async throws -> [FilterValue] {
+    func fetchEventDataEventsAsync(
+        id: String,
+        period: StatsPeriod,
+        event: String?,
+        query: AnalyticsQueryOptions = .default
+    ) async throws -> [FilterValue] {
         guard let apiClient = apiClientProvider() else { throw APIError.unauthorized }
-        let cacheKey = makeCacheKey(prefix: "eventDataEvents", websiteId: id, period: period, extras: [event ?? ""])
+        let cacheKey = makeCacheKey(prefix: "eventDataEvents", websiteId: id, period: period, extras: [event ?? "", query.cacheKey])
         return try await deduplicatedFetch(key: cacheKey) {
             let dateRange = self.createDateRange(for: period)
-            return try await apiClient.getEventDataEventsAsync(id: id, dateRange: dateRange, event: event)
+            return try await apiClient.getEventDataEventsAsync(id: id, dateRange: dateRange, event: event, query: query)
         }
     }
 
@@ -1337,12 +1368,18 @@ extension WebsiteService {
         }
     }
 
-    func fetchEventDataValuesAsync(id: String, period: StatsPeriod, eventName: String?, propertyName: String?) async throws -> [FilterValue] {
+    func fetchEventDataValuesAsync(
+        id: String,
+        period: StatsPeriod,
+        eventName: String?,
+        propertyName: String?,
+        query: AnalyticsQueryOptions = .default
+    ) async throws -> [FilterValue] {
         guard let apiClient = apiClientProvider() else { throw APIError.unauthorized }
-        let cacheKey = makeCacheKey(prefix: "eventDataValues", websiteId: id, period: period, extras: [eventName ?? "", propertyName ?? ""])
+        let cacheKey = makeCacheKey(prefix: "eventDataValues", websiteId: id, period: period, extras: [eventName ?? "", propertyName ?? "", query.cacheKey])
         return try await deduplicatedFetch(key: cacheKey) {
             let dateRange = self.createDateRange(for: period)
-            return try await apiClient.getEventDataValuesAsync(id: id, dateRange: dateRange, eventName: eventName, propertyName: propertyName)
+            return try await apiClient.getEventDataValuesAsync(id: id, dateRange: dateRange, eventName: eventName, propertyName: propertyName, query: query)
         }
     }
 
@@ -1450,6 +1487,7 @@ extension WebsiteService {
     func startRealtimeUpdatesAsync(for websiteId: String, interval: TimeInterval = AnalyticsRuntimeConfig.default.realtimePollInterval) -> AsyncStream<Int> {
         let sleepInterval = realtimeSleepInterval(for: interval)
         let taskKey = realtimeAsyncTaskKey(for: websiteId)
+        stopRealtimeUpdatesAsync(for: websiteId)
 
         return AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
             let task = Task { @MainActor [weak self] in

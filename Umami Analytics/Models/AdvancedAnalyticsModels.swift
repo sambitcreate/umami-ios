@@ -132,19 +132,29 @@ struct AnalyticsQueryOptions: Codable, Equatable, Sendable {
     }
 
     var cacheKey: String {
-        let compareKey = compare.rawValue
+        let compareKey = Self.cacheComponent(compare.rawValue)
         let filterKey = activeFilters
-            .map { "\($0.key.rawValue)=\($0.value)" }
+            .map { "\(Self.cacheComponent($0.key.rawValue))=\(Self.cacheComponent($0.value))" }
             .joined(separator: "&")
         return "\(compareKey)|\(filterKey)"
     }
 
     var queryItems: [URLQueryItem] {
+        comparisonQueryItems + filterQueryItems
+    }
+
+    var comparisonQueryItems: [URLQueryItem] {
         var items: [URLQueryItem] = []
 
         if let compareValue = compare.queryValue {
             items.append(URLQueryItem(name: "compare", value: compareValue))
         }
+
+        return items
+    }
+
+    var filterQueryItems: [URLQueryItem] {
+        var items: [URLQueryItem] = []
 
         for filter in activeFilters {
             items.append(URLQueryItem(name: filter.key.rawValue, value: filter.value))
@@ -160,6 +170,14 @@ struct AnalyticsQueryOptions: Codable, Equatable, Sendable {
         } else {
             filters[key] = trimmed
         }
+    }
+
+    private static func cacheComponent(_ value: String) -> String {
+        Data(value.utf8)
+            .base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
     }
 }
 
@@ -229,8 +247,8 @@ struct MetricValue: Decodable, Equatable, Sendable {
             }
 
             if let stringValue = try? singleValue.decode(String.self),
-               let intValue = Int(stringValue) {
-                self.value = intValue
+               let numeric = Double(stringValue) {
+                self.value = Int(numeric.rounded())
                 self.prev = nil
                 return
             }
@@ -249,8 +267,8 @@ struct MetricValue: Decodable, Equatable, Sendable {
             return Int(doubleValue.rounded())
         }
         if let stringValue = try? container.decode(String.self, forKey: key),
-           let intValue = Int(stringValue) {
-            return intValue
+           let numeric = Double(stringValue) {
+            return Int(numeric.rounded())
         }
         return nil
     }
@@ -505,6 +523,8 @@ struct AnalyticsRecord: Decodable, Identifiable, Equatable, Sendable {
             fields["createdAt"]?.stringValue,
             fields["eventName"]?.stringValue,
             fields["url"]?.stringValue,
+            fields["urlPath"]?.stringValue,
+            fields["pageTitle"]?.stringValue,
             fields["sessionId"]?.stringValue
         ].compactMap { $0 }
 
@@ -535,11 +555,11 @@ struct AnalyticsRecord: Decodable, Identifiable, Equatable, Sendable {
 
     // Event list display precedence is fixed to keep rendering deterministic across payload variants.
     var eventPrimaryText: String {
-        stringValue(for: ["eventName", "event", "name", "title", "url", "path", "id"]) ?? "Unknown event"
+        stringValue(for: ["eventName", "event", "name", "pageTitle", "title", "urlPath", "url", "path", "id"]) ?? "Unknown event"
     }
 
     var eventSecondaryText: String? {
-        stringValue(for: ["url", "path", "pathname", "referrer", "browser", "country", "sessionId"])
+        stringValue(for: ["urlPath", "url", "path", "pathname", "pageTitle", "referrerPath", "referrerDomain", "referrer", "browser", "country", "sessionId"])
     }
 
     // Session list display precedence is fixed to avoid UI jumps between endpoints.
@@ -826,6 +846,56 @@ struct EventStatsResponse: Decodable, Sendable {
                 return nil
             }
         }
+    }
+}
+
+struct EventDataEventPropertyRow: Decodable, Sendable {
+    let eventName: String
+    let propertyName: String?
+    let total: Int
+
+    private enum CodingKeys: String, CodingKey {
+        case eventName
+        case propertyName
+        case total
+        case count
+        case y
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        eventName = Self.decodeString(container: container, forKey: .eventName) ?? ""
+        propertyName = Self.decodeString(container: container, forKey: .propertyName)
+        total = Self.decodeInt(container: container, keys: [.total, .count, .y]) ?? 0
+    }
+
+    private static func decodeString(container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) -> String? {
+        if let value = try? container.decode(String.self, forKey: key) {
+            return value
+        }
+        if let value = try? container.decode(Int.self, forKey: key) {
+            return String(value)
+        }
+        if let value = try? container.decode(Double.self, forKey: key) {
+            return String(value)
+        }
+        return nil
+    }
+
+    private static func decodeInt(container: KeyedDecodingContainer<CodingKeys>, keys: [CodingKeys]) -> Int? {
+        for key in keys {
+            if let value = try? container.decode(Int.self, forKey: key) {
+                return value
+            }
+            if let value = try? container.decode(Double.self, forKey: key) {
+                return Int(value.rounded())
+            }
+            if let value = try? container.decode(String.self, forKey: key),
+               let numeric = Double(value) {
+                return Int(numeric.rounded())
+            }
+        }
+        return nil
     }
 }
 

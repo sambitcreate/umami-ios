@@ -79,6 +79,7 @@ extension WebsiteViewModel {
 
         if let websiteId = selectedWebsite?.id {
             service.stopRealtimeUpdates(for: websiteId)
+            service.stopRealtimeUpdatesAsync(for: websiteId)
         }
     }
 

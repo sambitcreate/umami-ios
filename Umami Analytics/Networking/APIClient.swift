@@ -12,6 +12,7 @@ import OSLog
 class APIClient: @unchecked Sendable {
     private struct RequestState {
         var baseURL: URL
+        var cloudRegion: CloudRegion = .global
         var authToken: String? = nil
         var apiKey: String? = nil
         var shareToken: String? = nil
@@ -20,7 +21,6 @@ class APIClient: @unchecked Sendable {
     private let stateLock = NSLock()
     private var requestState: RequestState
     private let serverType: ServerType
-    private let cloudRegion: CloudRegion
     private let urlSession: URLSession
     private let cloudRateLimiter: CloudRateLimiter?
     private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "UmamiAnalytics", category: "APIClient")
@@ -35,9 +35,13 @@ class APIClient: @unchecked Sendable {
         guard let url = URL(string: serverURL) else {
             throw AuthError.invalidURL
         }
-        self.requestState = RequestState(baseURL: url)
+        let cloudConfiguration = Self.normalizedCloudConfiguration(
+            baseURL: url,
+            requestedRegion: cloudRegion,
+            serverType: serverType
+        )
+        self.requestState = RequestState(baseURL: cloudConfiguration.baseURL, cloudRegion: cloudConfiguration.region)
         self.serverType = serverType
-        self.cloudRegion = cloudRegion
         self.urlSession = urlSession
         self.cloudRateLimiter = serverType == .cloud ? CloudRateLimiter() : nil
     }
@@ -47,12 +51,19 @@ class APIClient: @unchecked Sendable {
             throw AuthError.invalidURL
         }
         updateRequestState { state in
-            if state.baseURL != url {
+            let normalizedConfiguration = Self.normalizedCloudConfiguration(
+                baseURL: url,
+                requestedRegion: state.cloudRegion,
+                serverType: serverType
+            )
+
+            if state.baseURL != normalizedConfiguration.baseURL || state.cloudRegion != normalizedConfiguration.region {
                 state.authToken = nil
                 state.apiKey = nil
                 state.shareToken = nil
             }
-            state.baseURL = url
+            state.baseURL = normalizedConfiguration.baseURL
+            state.cloudRegion = normalizedConfiguration.region
         }
     }
 
@@ -151,6 +162,34 @@ class APIClient: @unchecked Sendable {
         stateLock.unlock()
     }
 
+    private static func normalizedCloudConfiguration(
+        baseURL: URL,
+        requestedRegion: CloudRegion,
+        serverType: ServerType
+    ) -> (baseURL: URL, region: CloudRegion) {
+        guard serverType == .cloud,
+              var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false) else {
+            return (baseURL, requestedRegion)
+        }
+
+        let pathComponents = components.path
+            .split(separator: "/", omittingEmptySubsequences: true)
+            .map(String.init)
+        var resolvedRegion = requestedRegion
+
+        if pathComponents.first == "v1",
+           pathComponents.count > 1,
+           let inferredRegion = CloudRegion(rawValue: pathComponents[1]) {
+            resolvedRegion = inferredRegion
+        }
+
+        if pathComponents.first == "v1" {
+            components.path = ""
+        }
+
+        return (components.url ?? baseURL, resolvedRegion)
+    }
+
     private func hasAuthToken() -> Bool {
         snapshotRequestState().authToken != nil
     }
@@ -167,7 +206,7 @@ class APIClient: @unchecked Sendable {
 
     private func createRequest(path: String, method: String, body: Encodable? = nil) -> URLRequest {
         let state = snapshotRequestState()
-        let normalizedPath = normalize(path: path)
+        let normalizedPath = normalize(path: path, cloudRegion: state.cloudRegion)
         let apiURL = url(for: normalizedPath, baseURL: state.baseURL) ?? state.baseURL
 
         var request = URLRequest(url: apiURL)
@@ -229,7 +268,9 @@ class APIClient: @unchecked Sendable {
         let requestPath = rawPath.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         let combinedPath: String
 
-        if basePath.isEmpty {
+        if serverType == .cloud && requestPath.hasPrefix("v1") {
+            combinedPath = "/" + requestPath
+        } else if basePath.isEmpty {
             combinedPath = "/" + requestPath
         } else if requestPath.isEmpty {
             combinedPath = "/" + basePath
@@ -258,7 +299,7 @@ class APIClient: @unchecked Sendable {
         }
     }
 
-    private func normalize(path: String) -> String {
+    private func normalize(path: String, cloudRegion: CloudRegion) -> String {
         guard serverType == .cloud else { return path }
 
         let components = path.split(separator: "?", maxSplits: 1)
@@ -302,12 +343,24 @@ class APIClient: @unchecked Sendable {
     }
 
     private func retryAfterInterval(from response: HTTPURLResponse) -> TimeInterval? {
-        guard let value = response.value(forHTTPHeaderField: "Retry-After"),
-              let seconds = TimeInterval(value) else {
+        guard let value = response.value(forHTTPHeaderField: "Retry-After") else {
             return nil
         }
 
-        return seconds
+        if let seconds = TimeInterval(value) {
+            return seconds
+        }
+
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "EEE',' dd MMM yyyy HH':'mm':'ss zzz"
+
+        guard let retryDate = formatter.date(from: value) else {
+            return nil
+        }
+
+        return max(0, retryDate.timeIntervalSinceNow)
     }
 
     private func parseAPIError(data: Data, response: HTTPURLResponse) -> APIError {
@@ -421,11 +474,15 @@ class APIClient: @unchecked Sendable {
     private func filteredQueryItems(
         dateRange: DateRange,
         query: AnalyticsQueryOptions = .default,
+        includeComparison: Bool = false,
         includeUnit: Bool = false,
         extraItems: [URLQueryItem] = []
     ) -> [URLQueryItem] {
         var items = dateRangeQueryItems(dateRange, includeUnit: includeUnit)
-        items.append(contentsOf: query.queryItems)
+        if includeComparison {
+            items.append(contentsOf: query.comparisonQueryItems)
+        }
+        items.append(contentsOf: query.filterQueryItems)
         items.append(contentsOf: extraItems)
         return items
     }
@@ -751,19 +808,24 @@ class APIClient: @unchecked Sendable {
         }
     }
 
-    func getEventDataFields(id: String, dateRange: DateRange) -> AnyPublisher<[FilterValue], Error> {
+    func getEventDataFields(
+        id: String,
+        dateRange: DateRange,
+        query: AnalyticsQueryOptions = .default
+    ) -> AnyPublisher<[FilterValue], Error> {
         asyncPublisher {
-            try await self.getEventDataFieldsAsync(id: id, dateRange: dateRange)
+            try await self.getEventDataFieldsAsync(id: id, dateRange: dateRange, query: query)
         }
     }
 
     func getEventDataProperties(
         id: String,
         dateRange: DateRange,
-        propertyName: String?
+        propertyName: String?,
+        query: AnalyticsQueryOptions = .default
     ) -> AnyPublisher<[FilterValue], Error> {
         asyncPublisher {
-            try await self.getEventDataPropertiesAsync(id: id, dateRange: dateRange, propertyName: propertyName)
+            try await self.getEventDataPropertiesAsync(id: id, dateRange: dateRange, propertyName: propertyName, query: query)
         }
     }
 
@@ -781,30 +843,33 @@ class APIClient: @unchecked Sendable {
         id: String,
         dateRange: DateRange,
         eventName: String?,
-        propertyName: String?
+        propertyName: String?,
+        query: AnalyticsQueryOptions = .default
     ) -> AnyPublisher<[FilterValue], Error> {
         asyncPublisher {
-            try await self.getEventDataValuesAsync(id: id, dateRange: dateRange, eventName: eventName, propertyName: propertyName)
+            try await self.getEventDataValuesAsync(id: id, dateRange: dateRange, eventName: eventName, propertyName: propertyName, query: query)
         }
     }
 
     func getSessionDataProperties(
         id: String,
         dateRange: DateRange,
-        propertyName: String?
+        propertyName: String?,
+        query: AnalyticsQueryOptions = .default
     ) -> AnyPublisher<[FilterValue], Error> {
         asyncPublisher {
-            try await self.getSessionDataPropertiesAsync(id: id, dateRange: dateRange, propertyName: propertyName)
+            try await self.getSessionDataPropertiesAsync(id: id, dateRange: dateRange, propertyName: propertyName, query: query)
         }
     }
 
     func getSessionDataValues(
         id: String,
         dateRange: DateRange,
-        propertyName: String?
+        propertyName: String?,
+        query: AnalyticsQueryOptions = .default
     ) -> AnyPublisher<[FilterValue], Error> {
         asyncPublisher {
-            try await self.getSessionDataValuesAsync(id: id, dateRange: dateRange, propertyName: propertyName)
+            try await self.getSessionDataValuesAsync(id: id, dateRange: dateRange, propertyName: propertyName, query: query)
         }
     }
 
@@ -975,27 +1040,23 @@ class APIClient: @unchecked Sendable {
 
     // MARK: - Async Websites
 
-    func getWebsitesAsync(page: Int = 1, pageSize: Int = 10) async throws -> WebsiteListResponse {
+    func getWebsitesAsync(page: Int = 1, pageSize: Int = 10, includeTeams: Bool = false) async throws -> WebsiteListResponse {
         var components = URLComponents(string: "/api/websites")
-        components?.queryItems = [
+        var queryItems = [
             URLQueryItem(name: "page", value: "\(page)"),
             URLQueryItem(name: "pageSize", value: "\(pageSize)")
         ]
+        if includeTeams {
+            queryItems.append(URLQueryItem(name: "includeTeams", value: "true"))
+        }
+        components?.queryItems = queryItems
         let path = components?.string ?? "/api/websites?page=\(page)&pageSize=\(pageSize)"
         let request = createRequest(path: path, method: "GET")
         return try await performRequestAsync(request: request)
     }
 
     func getAccessibleWebsitesAsync(page: Int = 1, pageSize: Int = 50) async throws -> WebsiteListResponse {
-        var components = URLComponents(string: "/api/me/websites")
-        components?.queryItems = [
-            URLQueryItem(name: "page", value: "\(page)"),
-            URLQueryItem(name: "pageSize", value: "\(pageSize)"),
-            URLQueryItem(name: "includeTeams", value: "true")
-        ]
-        let path = components?.string ?? "/api/me/websites?page=\(page)&pageSize=\(pageSize)&includeTeams=true"
-        let request = createRequest(path: path, method: "GET")
-        return try await performRequestAsync(request: request)
+        try await getWebsitesAsync(page: page, pageSize: pageSize, includeTeams: true)
     }
 
     func getAllWebsitesAsync() async throws -> [WebsiteModel] {
@@ -1036,6 +1097,9 @@ class APIClient: @unchecked Sendable {
 
             return allWebsites
         } catch {
+            if Task.isCancelled || error is CancellationError {
+                throw CancellationError()
+            }
             return try await getAllWebsitesAsync()
         }
     }
@@ -1127,7 +1191,7 @@ class APIClient: @unchecked Sendable {
     ) async throws -> PageviewsResponse {
         guard let path = buildPath(
             path: "/api/websites/\(id)/pageviews",
-            queryItems: filteredQueryItems(dateRange: dateRange, query: query, includeUnit: true)
+            queryItems: filteredQueryItems(dateRange: dateRange, query: query, includeComparison: true, includeUnit: true)
         ) else {
             throw APIError.invalidURL
         }
@@ -1217,7 +1281,7 @@ class APIClient: @unchecked Sendable {
         dateRange: DateRange,
         query: AnalyticsQueryOptions = .default
     ) async throws -> EventStatsResponse {
-        guard let path = buildPath(path: "/api/websites/\(id)/events/stats", queryItems: filteredQueryItems(dateRange: dateRange, query: query)) else {
+        guard let path = buildPath(path: "/api/websites/\(id)/events/stats", queryItems: filteredQueryItems(dateRange: dateRange, query: query, includeComparison: true)) else {
             throw APIError.invalidURL
         }
         let request = createRequest(path: path, method: "GET")
@@ -1314,21 +1378,52 @@ class APIClient: @unchecked Sendable {
             throw APIError.invalidURL
         }
         let request = createRequest(path: path, method: "GET")
-        return try await performRequestAsync(request: request)
+        let rows: [EventDataEventPropertyRow] = try await performRequestAsync(request: request)
+        var totalsByEvent: [String: Int] = [:]
+        var orderedEvents: [String] = []
+
+        for row in rows {
+            let eventName = row.eventName.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !eventName.isEmpty else { continue }
+            if totalsByEvent[eventName] == nil {
+                orderedEvents.append(eventName)
+            }
+            totalsByEvent[eventName] = max(totalsByEvent[eventName] ?? 0, row.total)
+        }
+
+        return orderedEvents.map { eventName in
+            FilterValue(value: eventName, count: totalsByEvent[eventName], eventName: eventName)
+        }
     }
 
-    func getEventDataFieldsAsync(id: String, dateRange: DateRange) async throws -> [FilterValue] {
-        guard let path = buildPath(path: "/api/websites/\(id)/event-data/fields", queryItems: dateRangeQueryItems(dateRange)) else {
+    func getEventDataFieldsAsync(
+        id: String,
+        dateRange: DateRange,
+        query: AnalyticsQueryOptions = .default
+    ) async throws -> [FilterValue] {
+        guard let path = buildPath(
+            path: "/api/websites/\(id)/event-data/fields",
+            queryItems: filteredQueryItems(dateRange: dateRange, query: query)
+        ) else {
             throw APIError.invalidURL
         }
         let request = createRequest(path: path, method: "GET")
         return try await performRequestAsync(request: request)
     }
 
-    func getEventDataPropertiesAsync(id: String, dateRange: DateRange, propertyName: String?) async throws -> [FilterValue] {
+    func getEventDataPropertiesAsync(
+        id: String,
+        dateRange: DateRange,
+        propertyName: String?,
+        query: AnalyticsQueryOptions = .default
+    ) async throws -> [FilterValue] {
         guard let path = buildPath(
             path: "/api/websites/\(id)/event-data/properties",
-            queryItems: dateRangeQueryItems(dateRange) + [URLQueryItem(name: "propertyName", value: propertyName)]
+            queryItems: filteredQueryItems(
+                dateRange: dateRange,
+                query: query,
+                extraItems: [URLQueryItem(name: "propertyName", value: propertyName)]
+            )
         ) else {
             throw APIError.invalidURL
         }
@@ -1350,11 +1445,21 @@ class APIClient: @unchecked Sendable {
         return response.values
     }
 
-    func getEventDataValuesAsync(id: String, dateRange: DateRange, eventName: String?, propertyName: String?) async throws -> [FilterValue] {
-        let items = dateRangeQueryItems(dateRange) + [
-            URLQueryItem(name: "event", value: eventName),
-            URLQueryItem(name: "propertyName", value: propertyName)
-        ]
+    func getEventDataValuesAsync(
+        id: String,
+        dateRange: DateRange,
+        eventName: String?,
+        propertyName: String?,
+        query: AnalyticsQueryOptions = .default
+    ) async throws -> [FilterValue] {
+        let items = filteredQueryItems(
+            dateRange: dateRange,
+            query: query,
+            extraItems: [
+                URLQueryItem(name: "event", value: eventName),
+                URLQueryItem(name: "propertyName", value: propertyName)
+            ]
+        )
         guard let path = buildPath(path: "/api/websites/\(id)/event-data/values", queryItems: items) else {
             throw APIError.invalidURL
         }
@@ -1364,10 +1469,19 @@ class APIClient: @unchecked Sendable {
 
     // MARK: - Async Session Data
 
-    func getSessionDataPropertiesAsync(id: String, dateRange: DateRange, propertyName: String?) async throws -> [FilterValue] {
+    func getSessionDataPropertiesAsync(
+        id: String,
+        dateRange: DateRange,
+        propertyName: String?,
+        query: AnalyticsQueryOptions = .default
+    ) async throws -> [FilterValue] {
         guard let path = buildPath(
             path: "/api/websites/\(id)/session-data/properties",
-            queryItems: dateRangeQueryItems(dateRange) + [URLQueryItem(name: "propertyName", value: propertyName)]
+            queryItems: filteredQueryItems(
+                dateRange: dateRange,
+                query: query,
+                extraItems: [URLQueryItem(name: "propertyName", value: propertyName)]
+            )
         ) else {
             throw APIError.invalidURL
         }
@@ -1375,10 +1489,19 @@ class APIClient: @unchecked Sendable {
         return try await performRequestAsync(request: request)
     }
 
-    func getSessionDataValuesAsync(id: String, dateRange: DateRange, propertyName: String?) async throws -> [FilterValue] {
+    func getSessionDataValuesAsync(
+        id: String,
+        dateRange: DateRange,
+        propertyName: String?,
+        query: AnalyticsQueryOptions = .default
+    ) async throws -> [FilterValue] {
         guard let path = buildPath(
             path: "/api/websites/\(id)/session-data/values",
-            queryItems: dateRangeQueryItems(dateRange) + [URLQueryItem(name: "propertyName", value: propertyName)]
+            queryItems: filteredQueryItems(
+                dateRange: dateRange,
+                query: query,
+                extraItems: [URLQueryItem(name: "propertyName", value: propertyName)]
+            )
         ) else {
             throw APIError.invalidURL
         }
@@ -1569,7 +1692,7 @@ private final class AsyncPublisherBridge<Output: Sendable>: @unchecked Sendable 
 }
 
 private actor CloudRateLimiter {
-    private let minimumInterval: UInt64 = 110_000_000
+    private let minimumInterval: UInt64 = 310_000_000
     private var nextAvailableTime: ContinuousClock.Instant = .now
     private let clock = ContinuousClock()
 

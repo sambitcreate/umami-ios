@@ -105,6 +105,64 @@ struct WebsiteServiceTests {
         #expect(service.latestRealtimeSnapshot(for: "site-1") == nil)
         #expect(service.latestRealtimeSnapshot(for: "site-2") == nil)
     }
+
+    @Test func concurrentAsyncFetchesShareOneInFlightRequest() async throws {
+        let apiClient = try StubAPIClient()
+        apiClient.statsDelayNanoseconds = 50_000_000
+        let service = WebsiteService(
+            apiClientProvider: { apiClient },
+            nowProvider: { Date(timeIntervalSince1970: 1_700_300_000) },
+            analyticsCacheTTL: 120
+        )
+
+        async let first = service.fetchWebsiteStatsAsync(id: "site-1", period: .day)
+        async let second = service.fetchWebsiteStatsAsync(id: "site-1", period: .day)
+        let (firstStats, secondStats) = try await (first, second)
+
+        #expect(firstStats.pageviews == 101)
+        #expect(secondStats.pageviews == 101)
+        #expect(apiClient.statsCallsByWebsite["site-1"] == 1)
+    }
+
+    @Test func asyncCacheSeparatesDifferentQueryOptions() async throws {
+        let apiClient = try StubAPIClient()
+        let service = WebsiteService(
+            apiClientProvider: { apiClient },
+            nowProvider: { Date(timeIntervalSince1970: 1_700_400_000) },
+            analyticsCacheTTL: 120
+        )
+
+        var usQuery = AnalyticsQueryOptions()
+        usQuery.setFilter(.country, value: "US")
+
+        var indiaQuery = AnalyticsQueryOptions()
+        indiaQuery.setFilter(.country, value: "IN")
+
+        _ = try await service.fetchWebsiteStatsAsync(id: "site-1", period: .day, query: usQuery)
+        _ = try await service.fetchWebsiteStatsAsync(id: "site-1", period: .day, query: usQuery)
+        _ = try await service.fetchWebsiteStatsAsync(id: "site-1", period: .day, query: indiaQuery)
+
+        #expect(apiClient.statsCallsByWebsite["site-1"] == 2)
+        #expect(apiClient.statsQueries.map(\.filters[.country]) == ["US", "IN"])
+    }
+
+    @Test func unauthorizedServiceWithoutAPIClientFailsPublisherAndAsyncPaths() async throws {
+        let service = WebsiteService(apiClientProvider: { nil })
+
+        do {
+            _ = try await awaitPublisher(service.fetchWebsiteMetrics(id: "site-1", period: .day, type: "path"))
+            Issue.record("publisher path should fail without an API client")
+        } catch let error as APIError {
+            #expect(error.message == APIError.unauthorized.message)
+        }
+
+        do {
+            _ = try await service.fetchWebsiteStatsAsync(id: "site-1", period: .day)
+            Issue.record("async path should fail without an API client")
+        } catch let error as APIError {
+            #expect(error.message == APIError.unauthorized.message)
+        }
+    }
 }
 
 private final class MutableClock {
@@ -119,11 +177,34 @@ private final class MutableClock {
     }
 }
 
-private final class StubAPIClient: APIClient {
+private final class StubAPIClient: APIClient, @unchecked Sendable {
     private(set) var eventsCallsByWebsite: [String: Int] = [:]
+    private(set) var statsCallsByWebsite: [String: Int] = [:]
+    private(set) var statsQueries: [AnalyticsQueryOptions] = []
+    var statsDelayNanoseconds: UInt64 = 0
 
     init() throws {
         try super.init(serverURL: "https://example.com")
+    }
+
+    override func getWebsiteStatsAsync(
+        id: String,
+        dateRange: DateRange,
+        query: AnalyticsQueryOptions = .default
+    ) async throws -> WebsiteStatsResponse {
+        statsCallsByWebsite[id, default: 0] += 1
+        statsQueries.append(query)
+        if statsDelayNanoseconds > 0 {
+            try await Task.sleep(nanoseconds: statsDelayNanoseconds)
+        }
+        let callCount = statsCallsByWebsite[id] ?? 0
+        return WebsiteStatsResponse(
+            pageviews: 100 + callCount,
+            visitors: 40,
+            visits: 50,
+            bounces: 5,
+            totaltime: 900
+        )
     }
 
     override func getWebsiteEvents(

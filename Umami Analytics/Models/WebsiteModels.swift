@@ -485,8 +485,8 @@ struct EventSeriesPoint: Decodable, Sendable {
         } else if let doubleValue = try? container.decode(Double.self, forKey: .y) {
             value = Int(doubleValue.rounded())
         } else if let stringValue = try? container.decode(String.self, forKey: .y),
-                  let intValue = Int(stringValue) {
-            value = intValue
+                  let numeric = Double(stringValue) {
+            value = Int(numeric.rounded())
         } else {
             value = 0
         }

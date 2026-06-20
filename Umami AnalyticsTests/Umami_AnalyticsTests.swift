@@ -531,4 +531,93 @@ struct Umami_AnalyticsTests {
         #expect(direct.user.id == "user-2")
         #expect(direct.user.isAdmin == true)
     }
+
+    @Test func analyticsQueryOptionsTrimSortAndBuildStableCacheKeys() {
+        var options = AnalyticsQueryOptions(compare: .yearOverYear, filters: [:])
+        options.setFilter(.browser, value: "  Safari  ")
+        options.setFilter(.path, value: " /pricing ")
+        options.setFilter(.country, value: "   ")
+
+        #expect(options.hasActiveSelections == true)
+        #expect(options.activeFilters.map(\.key) == [.browser, .path])
+        #expect(options.activeFilters.map(\.value) == ["Safari", "/pricing"])
+        #expect(options.cacheKey == "eW95|YnJvd3Nlcg=U2FmYXJp&cGF0aA=L3ByaWNpbmc")
+
+        let queryItems = options.queryItems.reduce(into: [String: String]()) { result, item in
+            result[item.name] = item.value
+        }
+        #expect(queryItems["compare"] == "yoy")
+        #expect(queryItems["browser"] == "Safari")
+        #expect(queryItems["path"] == "/pricing")
+        #expect(queryItems["country"] == nil)
+
+        options.setFilter(.browser, value: nil)
+        #expect(options.filters[.browser] == nil)
+    }
+
+    @Test func analyticsQueryCacheKeysDoNotCollideOnDelimiters() {
+        var combined = AnalyticsQueryOptions(filters: [:])
+        combined.setFilter(.browser, value: "Safari&path=/pricing")
+
+        var split = AnalyticsQueryOptions(filters: [:])
+        split.setFilter(.browser, value: "Safari")
+        split.setFilter(.path, value: "/pricing")
+
+        var equalsValue = AnalyticsQueryOptions(filters: [:])
+        equalsValue.setFilter(.path, value: "a=b|c")
+
+        var plainValue = AnalyticsQueryOptions(filters: [:])
+        plainValue.setFilter(.path, value: "a")
+        plainValue.setFilter(.query, value: "b|c")
+
+        #expect(combined.cacheKey != split.cacheKey)
+        #expect(equalsValue.cacheKey != plainValue.cacheKey)
+    }
+
+    @Test func jsonValueDecodesNestedStructuresAndNumericStrings() throws {
+        let json = """
+        {
+          "enabled": true,
+          "score": "42.6",
+          "profile": { "plan": "pro" },
+          "flags": [true, null, 3]
+        }
+        """.data(using: .utf8)!
+
+        let decoded = try JSONDecoder().decode([String: JSONValue].self, from: json)
+
+        #expect(decoded["enabled"]?.stringValue == "true")
+        #expect(decoded["score"]?.intValue == 43)
+        #expect(decoded["profile"] == .object(["plan": .string("pro")]))
+        #expect(decoded["flags"] == .array([.bool(true), .null, .number(3)]))
+    }
+
+    @Test func sessionAndErrorConveniencePropertiesStayStable() {
+        let cloudSession = UmamiSession(
+            serverType: .cloud,
+            baseURL: "https://api.umami.is",
+            normalizedBaseURL: "https://api.umami.is",
+            cloudRegion: .us,
+            trackerBaseURL: "https://cloud.umami.is",
+            shareId: nil,
+            sharedWebsiteId: nil
+        )
+        let shareSession = UmamiSession(
+            serverType: .publicShare,
+            baseURL: "https://example.com",
+            normalizedBaseURL: "https://example.com",
+            cloudRegion: nil,
+            trackerBaseURL: "https://example.com",
+            shareId: "share-1",
+            sharedWebsiteId: "site-1"
+        )
+
+        #expect(cloudSession.identifier == "cloud|https://api.umami.is|us|none")
+        #expect(cloudSession.isCloud == true)
+        #expect(cloudSession.isReadOnly == false)
+        #expect(shareSession.identifier == "share|https://example.com|none|share-1")
+        #expect(shareSession.isReadOnly == true)
+        #expect(APIError.rateLimited(retryAfter: nil).message == "Rate limited by Umami Cloud. Please try again shortly.")
+        #expect(AuthError.missingShareID.message == "Please enter the shared dashboard ID.")
+    }
 }

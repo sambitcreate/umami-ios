@@ -183,13 +183,13 @@ extension WebsiteViewModel {
         }
 
         async let fieldsResult = captureResult {
-            try await service.fetchEventDataFieldsAsync(id: websiteId, period: period)
+            try await service.fetchEventDataFieldsAsync(id: websiteId, period: period, query: queryOptions)
         }
         async let propertiesResult = captureResult {
-            try await service.fetchEventDataPropertiesAsync(id: websiteId, period: period, propertyName: nil)
+            try await service.fetchEventDataPropertiesAsync(id: websiteId, period: period, propertyName: nil, query: queryOptions)
         }
         async let eventsResult = captureResult {
-            try await service.fetchEventDataEventsAsync(id: websiteId, period: period, event: nil)
+            try await service.fetchEventDataEventsAsync(id: websiteId, period: period, event: nil, query: queryOptions)
         }
         async let statsResult = captureResult {
             try await service.fetchEventDataStatsAsync(id: websiteId, period: period, query: queryOptions)
@@ -265,7 +265,8 @@ extension WebsiteViewModel {
                 id: websiteId,
                 period: period,
                 eventName: eventName,
-                propertyName: propertyName
+                propertyName: propertyName,
+                query: queryOptions
             )
         }
 

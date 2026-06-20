@@ -184,6 +184,110 @@ struct WebsiteViewModelTests {
         #expect(service.realtimeSnapshotCalls == callsAfterDisappear)
         #expect(service.stopRealtimeUpdatesCalls.contains("site-1"))
     }
+
+    @Test func formattingAndErrorHelpersCoverEdgeCases() {
+        let viewModel = WebsiteViewModel(
+            service: MockWebsiteService(),
+            shouldStartBackgroundRefresh: false,
+            config: testConfig(realtimePollInterval: 60)
+        )
+        viewModel.websiteStats = WebsiteStatsResponse(
+            pageviews: 2,
+            visitors: 1_500_000,
+            visits: 4,
+            bounces: 1,
+            totaltime: 125
+        )
+
+        #expect(viewModel.formatNumber(999) == "999")
+        #expect(viewModel.formatNumber(1_260) == "1.3K")
+        #expect(viewModel.formatNumber(1_500_000) == "1.5M")
+        #expect(viewModel.formattedVisitors == "1.5M")
+        #expect(viewModel.formattedBounceRate == "25.0%")
+        #expect(viewModel.formattedDuration == "1m 2s")
+
+        viewModel.setRootError(CancellationError())
+        #expect(viewModel.errorMessage == nil)
+        viewModel.setRootError(APIError.rateLimited(retryAfter: 2))
+        #expect(viewModel.errorMessage == "Rate limited by Umami Cloud. Try again in 2 seconds.")
+
+        viewModel.setTabError(.events, error: URLError(.cancelled))
+        #expect(viewModel.tabErrors[.events] == nil)
+        viewModel.setTabError(.events, error: APIError.unauthorized)
+        #expect(viewModel.tabErrors[.events] == "Unauthorized. Please log in again.")
+    }
+
+    @Test func queryFilterUpdatesTrimAndAvoidNoopReloads() async {
+        let service = MockWebsiteService()
+        let viewModel = WebsiteViewModel(
+            service: service,
+            shouldStartBackgroundRefresh: false,
+            config: testConfig(realtimePollInterval: 60)
+        )
+
+        viewModel.selectWebsite(makeWebsite(id: "site-1"))
+        await pause()
+        let baselineInvalidations = service.invalidateAnalyticsCacheCalls.count
+
+        viewModel.updateFilter(.path, value: " /docs ")
+        await pause()
+
+        #expect(viewModel.queryOptions.filters[.path] == "/docs")
+        #expect(service.invalidateAnalyticsCacheCalls.count == baselineInvalidations + 1)
+
+        viewModel.updateFilter(.path, value: "/docs")
+        await pause()
+
+        #expect(service.invalidateAnalyticsCacheCalls.count == baselineInvalidations + 1)
+
+        viewModel.updateFilter(.path, value: "   ")
+        await pause()
+
+        #expect(viewModel.queryOptions.filters[.path] == nil)
+        #expect(service.invalidateAnalyticsCacheCalls.count == baselineInvalidations + 2)
+    }
+
+    @Test func selectingEventDataPropertyCarriesEventNameIntoValueLookup() async {
+        let service = MockWebsiteService()
+        let viewModel = WebsiteViewModel(
+            service: service,
+            shouldStartBackgroundRefresh: false,
+            config: testConfig(realtimePollInterval: 60)
+        )
+        viewModel.selectedWebsite = makeWebsite(id: "site-1")
+
+        viewModel.selectEventDataProperty(
+            FilterValue(value: "plan", label: "signup - plan", count: 4, eventName: "signup")
+        )
+        await pause()
+
+        let request = service.eventDataValueRequests.last
+        #expect(viewModel.eventDataState.selectedEvent == "signup")
+        #expect(viewModel.eventDataState.selectedProperty == "plan")
+        #expect(request?.eventName == "signup")
+        #expect(request?.propertyName == "plan")
+        #expect(viewModel.eventDataState.availableValues.first?.value == "signup")
+    }
+
+    @Test func loadFilterValuesLimitsDimensionValuesAndAddsSegmentsAndCohorts() async {
+        let service = MockWebsiteService()
+        let viewModel = WebsiteViewModel(
+            service: service,
+            shouldStartBackgroundRefresh: false,
+            config: testConfig(realtimePollInterval: 60)
+        )
+        viewModel.selectedWebsite = makeWebsite(id: "site-1")
+
+        viewModel.loadFilterValues()
+        await pause(0.2)
+
+        #expect(service.valueRequests.map(\.type) == ["path", "referrer", "browser", "os", "device", "country", "event"])
+        #expect(viewModel.availableFilterValues[.path]?.count == 20)
+        #expect(viewModel.availableFilterValues[.path]?.first?.value == "path-0")
+        #expect(viewModel.availableFilterValues[.segment]?.first?.displayText == "Returning Users")
+        #expect(viewModel.availableFilterValues[.cohort]?.first?.displayText == "Trial Accounts")
+        #expect(viewModel.isLoadingFilterValues == false)
+    }
 }
 
 @MainActor
@@ -195,8 +299,23 @@ private final class MockWebsiteService: WebsiteServicing {
         let search: String?
     }
 
+    struct EventDataValueRequest: Equatable {
+        let id: String
+        let eventName: String?
+        let propertyName: String?
+    }
+
+    struct ValueRequest: Equatable {
+        let id: String
+        let type: String
+        let search: String?
+    }
+
     var eventRequests: [PageRequest] = []
     var sessionRequests: [PageRequest] = []
+    var eventDataValueRequests: [EventDataValueRequest] = []
+    var valueRequests: [ValueRequest] = []
+    var invalidateAnalyticsCacheCalls: [String?] = []
 
     var sessionStatsCalls = 0
     var sessionsWeeklyCalls = 0
@@ -300,24 +419,28 @@ private final class MockWebsiteService: WebsiteServicing {
     }
 
     func fetchWebsiteValues(id: String, type: String, period: StatsPeriod, search: String?, query: AnalyticsQueryOptions) -> AnyPublisher<[FilterValue], Error> {
-        Just([FilterValue(value: search ?? type, count: 1)])
+        valueRequests.append(ValueRequest(id: id, type: type, search: search))
+        let baseValue = search ?? type
+        let indices: [Int] = Array(0..<25)
+        let values = indices.map { index in FilterValue(value: "\(baseValue)-\(String(index))", count: index) }
+        return Just(values)
             .setFailureType(to: Error.self)
             .eraseToAnyPublisher()
     }
 
-    func fetchEventDataFields(id: String, period: StatsPeriod) -> AnyPublisher<[FilterValue], Error> {
+    func fetchEventDataFields(id: String, period: StatsPeriod, query: AnalyticsQueryOptions) -> AnyPublisher<[FilterValue], Error> {
         Just([FilterValue(value: "event")])
             .setFailureType(to: Error.self)
             .eraseToAnyPublisher()
     }
 
-    func fetchEventDataProperties(id: String, period: StatsPeriod, propertyName: String?) -> AnyPublisher<[FilterValue], Error> {
+    func fetchEventDataProperties(id: String, period: StatsPeriod, propertyName: String?, query: AnalyticsQueryOptions) -> AnyPublisher<[FilterValue], Error> {
         Just([FilterValue(value: propertyName ?? "prop")])
             .setFailureType(to: Error.self)
             .eraseToAnyPublisher()
     }
 
-    func fetchEventDataEvents(id: String, period: StatsPeriod, event: String?) -> AnyPublisher<[FilterValue], Error> {
+    func fetchEventDataEvents(id: String, period: StatsPeriod, event: String?, query: AnalyticsQueryOptions) -> AnyPublisher<[FilterValue], Error> {
         Just([FilterValue(value: event ?? "signup")])
             .setFailureType(to: Error.self)
             .eraseToAnyPublisher()
@@ -329,8 +452,9 @@ private final class MockWebsiteService: WebsiteServicing {
             .eraseToAnyPublisher()
     }
 
-    func fetchEventDataValues(id: String, period: StatsPeriod, eventName: String?, propertyName: String?) -> AnyPublisher<[FilterValue], Error> {
-        Just([FilterValue(value: eventName ?? propertyName ?? "value", count: 1)])
+    func fetchEventDataValues(id: String, period: StatsPeriod, eventName: String?, propertyName: String?, query: AnalyticsQueryOptions) -> AnyPublisher<[FilterValue], Error> {
+        eventDataValueRequests.append(EventDataValueRequest(id: id, eventName: eventName, propertyName: propertyName))
+        return Just([FilterValue(value: eventName ?? propertyName ?? "value", count: 1)])
             .setFailureType(to: Error.self)
             .eraseToAnyPublisher()
     }
@@ -381,7 +505,7 @@ private final class MockWebsiteService: WebsiteServicing {
     }
 
     func fetchWebsiteSegments(websiteId: String, type: SegmentType?) -> AnyPublisher<[SegmentDefinition], Error> {
-        Just([])
+        Just(makeSegments(type: type))
             .setFailureType(to: Error.self)
             .eraseToAnyPublisher()
     }
@@ -411,6 +535,7 @@ private final class MockWebsiteService: WebsiteServicing {
     }
 
     func invalidateAnalyticsCache(for websiteId: String?) {
+        invalidateAnalyticsCacheCalls.append(websiteId)
     }
 
     func startRealtimeUpdates(for websiteId: String, interval: TimeInterval, completion: @escaping (Int) -> Void) {
@@ -419,6 +544,10 @@ private final class MockWebsiteService: WebsiteServicing {
 
     func stopRealtimeUpdates(for websiteId: String) {
         stopRealtimeUpdatesCalls.append(websiteId)
+    }
+
+    func stopRealtimeUpdatesAsync(for websiteId: String) {
+        stopRealtimeUpdatesCalls.append("async:\(websiteId)")
     }
 
     func fetchCachedWebsites() -> [UmamiWebsite] {
@@ -455,14 +584,18 @@ private final class MockWebsiteService: WebsiteServicing {
         return eventsPageProvider(page, pageSize, search)
     }
     func fetchWebsiteValuesAsync(id: String, type: String, period: StatsPeriod, search: String?, query: AnalyticsQueryOptions) async throws -> [FilterValue] {
-        [FilterValue(value: search ?? type, count: 1)]
+        valueRequests.append(ValueRequest(id: id, type: type, search: search))
+        let baseValue = search ?? type
+        let indices: [Int] = Array(0..<25)
+        return indices.map { index in FilterValue(value: "\(baseValue)-\(String(index))", count: index) }
     }
-    func fetchEventDataFieldsAsync(id: String, period: StatsPeriod) async throws -> [FilterValue] { [FilterValue(value: "event")] }
-    func fetchEventDataPropertiesAsync(id: String, period: StatsPeriod, propertyName: String?) async throws -> [FilterValue] { [FilterValue(value: propertyName ?? "prop")] }
-    func fetchEventDataEventsAsync(id: String, period: StatsPeriod, event: String?) async throws -> [FilterValue] { [FilterValue(value: event ?? "signup")] }
+    func fetchEventDataFieldsAsync(id: String, period: StatsPeriod, query: AnalyticsQueryOptions) async throws -> [FilterValue] { [FilterValue(value: "event")] }
+    func fetchEventDataPropertiesAsync(id: String, period: StatsPeriod, propertyName: String?, query: AnalyticsQueryOptions) async throws -> [FilterValue] { [FilterValue(value: propertyName ?? "prop")] }
+    func fetchEventDataEventsAsync(id: String, period: StatsPeriod, event: String?, query: AnalyticsQueryOptions) async throws -> [FilterValue] { [FilterValue(value: event ?? "signup")] }
     func fetchEventDataStatsAsync(id: String, period: StatsPeriod, query: AnalyticsQueryOptions) async throws -> [String: MetricValue] { ["events": MetricValue(value: 3, prev: 2)] }
-    func fetchEventDataValuesAsync(id: String, period: StatsPeriod, eventName: String?, propertyName: String?) async throws -> [FilterValue] {
-        [FilterValue(value: eventName ?? propertyName ?? "value", count: 1)]
+    func fetchEventDataValuesAsync(id: String, period: StatsPeriod, eventName: String?, propertyName: String?, query: AnalyticsQueryOptions) async throws -> [FilterValue] {
+        eventDataValueRequests.append(EventDataValueRequest(id: id, eventName: eventName, propertyName: propertyName))
+        return [FilterValue(value: eventName ?? propertyName ?? "value", count: 1)]
     }
     func fetchWebsiteSessionStatsAsync(id: String, period: StatsPeriod, query: AnalyticsQueryOptions) async throws -> [String: MetricValue] {
         sessionStatsCalls += 1
@@ -482,7 +615,7 @@ private final class MockWebsiteService: WebsiteServicing {
     }
     func fetchWebsiteSessionPropertiesAsync(id: String, sessionId: String) async throws -> [String: JSONValue] { ["sessionId": .string(sessionId)] }
     func fetchWebsiteReportsAsync(websiteId: String) async throws -> [SavedReport] { [] }
-    func fetchWebsiteSegmentsAsync(websiteId: String, type: SegmentType?) async throws -> [SegmentDefinition] { [] }
+    func fetchWebsiteSegmentsAsync(websiteId: String, type: SegmentType?) async throws -> [SegmentDefinition] { makeSegments(type: type) }
     func fetchLinksAsync(teamId: String?) async throws -> [TrackedAsset] { [] }
     func fetchPixelsAsync(teamId: String?) async throws -> [TrackedAsset] { [] }
     func createWebsiteAsync(name: String, domain: String, shareId: String?, teamId: String?, id: String?) async throws -> WebsiteModel {
@@ -515,6 +648,35 @@ private func makeRecord(id: String, title: String, count: Int) -> AnalyticsRecor
     """.data(using: .utf8)!
 
     return try! JSONDecoder().decode(AnalyticsRecord.self, from: json)
+}
+
+private func makeSegments(type: SegmentType?) -> [SegmentDefinition] {
+    switch type {
+    case .segment:
+        return [makeSegment(id: "segment-1", name: "Returning Users", type: .segment)]
+    case .cohort:
+        return [makeSegment(id: "cohort-1", name: "Trial Accounts", type: .cohort)]
+    case nil:
+        return [
+            makeSegment(id: "segment-1", name: "Returning Users", type: .segment),
+            makeSegment(id: "cohort-1", name: "Trial Accounts", type: .cohort)
+        ]
+    }
+}
+
+private func makeSegment(id: String, name: String, type: SegmentType) -> SegmentDefinition {
+    let json = """
+    {
+      "id": "\(id)",
+      "websiteId": "site-1",
+      "name": "\(name)",
+      "type": "\(type.rawValue)",
+      "parameters": {},
+      "updatedAt": "2026-01-01T00:00:00Z"
+    }
+    """.data(using: .utf8)!
+
+    return try! JSONDecoder().decode(SegmentDefinition.self, from: json)
 }
 
 private func testConfig(realtimePollInterval: TimeInterval) -> AnalyticsRuntimeConfig {
