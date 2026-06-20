@@ -288,6 +288,120 @@ struct WebsiteViewModelTests {
         #expect(viewModel.availableFilterValues[.cohort]?.first?.displayText == "Trial Accounts")
         #expect(viewModel.isLoadingFilterValues == false)
     }
+
+    @Test func loadingWebsitesDoesNotStartDetailTabWork() async {
+        let service = MockWebsiteService()
+        service.websitesProvider = { [makeWebsite(id: "site-1")] }
+        let viewModel = WebsiteViewModel(
+            service: service,
+            shouldStartBackgroundRefresh: false,
+            config: testConfig(realtimePollInterval: 60)
+        )
+
+        await viewModel.loadWebsitesAsync()
+        await pause()
+
+        #expect(viewModel.selectedWebsite?.id == "site-1")
+        #expect(service.pageviewsAsyncCalls == 0)
+        #expect(service.metricsAsyncCalls == 0)
+        #expect(service.startRealtimeUpdatesAsyncCalls == [])
+    }
+
+    @Test func dashboardActiveUsersLoadEvenWhenStatsFail() async {
+        let service = MockWebsiteService()
+        service.statsFailureIDs = ["site-1"]
+        service.activeUsersProvider = { _ in ActiveUsersResponse(visitors: 7) }
+        let viewModel = WebsiteViewModel(
+            service: service,
+            shouldStartBackgroundRefresh: false,
+            config: testConfig(realtimePollInterval: 60)
+        )
+
+        viewModel.websites = [makeWebsite(id: "site-1")]
+        viewModel.loadDashboardStats()
+        await viewModel.dashboardStatsTask?.value
+
+        #expect(viewModel.dashboardStats["site-1"] == nil)
+        #expect(viewModel.dashboardActiveUsers["site-1"] == 7)
+        #expect(viewModel.dashboardStatsFailedWebsiteIds.contains("site-1"))
+        #expect(!viewModel.dashboardActiveUsersFailedWebsiteIds.contains("site-1"))
+        #expect(viewModel.dashboardFailedWebsiteIds.contains("site-1"))
+    }
+
+    @Test func dashboardActiveFailureClearsStaleLiveCountButKeepsStats() async {
+        let service = MockWebsiteService()
+        service.activeUsersProvider = { _ in ActiveUsersResponse(visitors: 7) }
+        let viewModel = WebsiteViewModel(
+            service: service,
+            shouldStartBackgroundRefresh: false,
+            config: testConfig(realtimePollInterval: 60)
+        )
+
+        viewModel.websites = [makeWebsite(id: "site-1")]
+        viewModel.loadDashboardStats()
+        await viewModel.dashboardStatsTask?.value
+
+        #expect(viewModel.dashboardActiveUsers["site-1"] == 7)
+        #expect(viewModel.dashboardStats["site-1"] != nil)
+
+        service.activeUsersFailureIDs = ["site-1"]
+        viewModel.loadDashboardStats()
+        await viewModel.dashboardStatsTask?.value
+
+        #expect(viewModel.dashboardActiveUsers["site-1"] == nil)
+        #expect(viewModel.dashboardStats["site-1"] != nil)
+        #expect(viewModel.dashboardActiveUsersFailedWebsiteIds.contains("site-1"))
+        #expect(!viewModel.dashboardStatsFailedWebsiteIds.contains("site-1"))
+        #expect(viewModel.dashboardFailedWebsiteIds.contains("site-1"))
+    }
+
+    @Test func dashboardStatsFailureClearsStaleStatsButKeepsLiveCount() async {
+        let service = MockWebsiteService()
+        service.activeUsersProvider = { _ in ActiveUsersResponse(visitors: 4) }
+        let viewModel = WebsiteViewModel(
+            service: service,
+            shouldStartBackgroundRefresh: false,
+            config: testConfig(realtimePollInterval: 60)
+        )
+
+        viewModel.websites = [makeWebsite(id: "site-1")]
+        viewModel.loadDashboardStats()
+        await viewModel.dashboardStatsTask?.value
+
+        #expect(viewModel.dashboardStats["site-1"] != nil)
+        #expect(viewModel.dashboardActiveUsers["site-1"] == 4)
+
+        service.statsFailureIDs = ["site-1"]
+        viewModel.loadDashboardStats()
+        await viewModel.dashboardStatsTask?.value
+
+        #expect(viewModel.dashboardStats["site-1"] == nil)
+        #expect(viewModel.dashboardActiveUsers["site-1"] == 4)
+        #expect(viewModel.dashboardStatsFailedWebsiteIds.contains("site-1"))
+        #expect(!viewModel.dashboardActiveUsersFailedWebsiteIds.contains("site-1"))
+        #expect(viewModel.dashboardFailedWebsiteIds.contains("site-1"))
+    }
+
+    @Test func backgroundRefreshDoesNotReloadDetailTabs() async {
+        let service = MockWebsiteService()
+        let viewModel = WebsiteViewModel(
+            service: service,
+            shouldStartBackgroundRefresh: true,
+            config: testConfig(dashboardRefreshInterval: 0.05, realtimePollInterval: 60)
+        )
+
+        viewModel.websites = [makeWebsite(id: "site-1")]
+        viewModel.selectedWebsite = makeWebsite(id: "site-1")
+
+        viewModel.startBackgroundRefresh()
+        let didRefresh = await waitUntil { service.statsAsyncCalls.count >= 1 }
+        viewModel.stopBackgroundRefresh()
+
+        #expect(didRefresh)
+        #expect(service.pageviewsAsyncCalls == 0)
+        #expect(service.metricsAsyncCalls == 0)
+        #expect(service.startRealtimeUpdatesAsyncCalls == [])
+    }
 }
 
 @MainActor
@@ -320,7 +434,22 @@ private final class MockWebsiteService: WebsiteServicing {
     var sessionStatsCalls = 0
     var sessionsWeeklyCalls = 0
     var realtimeSnapshotCalls = 0
+    var statsAsyncCalls: [String] = []
+    var metricsAsyncCalls = 0
+    var pageviewsAsyncCalls = 0
+    var activeUsersAsyncCalls: [String] = []
+    var startRealtimeUpdatesAsyncCalls: [String] = []
     var stopRealtimeUpdatesCalls: [String] = []
+    var statsFailureIDs: Set<String> = []
+    var activeUsersFailureIDs: Set<String> = []
+
+    var websitesProvider: () -> [WebsiteModel] = {
+        [makeWebsite(id: "site-1")]
+    }
+
+    var activeUsersProvider: (String) -> ActiveUsersResponse = { _ in
+        ActiveUsersResponse(visitors: 2)
+    }
 
     var eventsPageProvider: (Int, Int, String?) -> PaginatedResponse<AnalyticsRecord> = { page, pageSize, _ in
         PaginatedResponse(
@@ -562,16 +691,30 @@ private final class MockWebsiteService: WebsiteServicing {
 
     // MARK: - Async Mock Implementations
 
-    func fetchWebsitesAsync() async throws -> [WebsiteModel] { [makeWebsite(id: "site-1")] }
+    func fetchWebsitesAsync() async throws -> [WebsiteModel] { websitesProvider() }
     func fetchWebsiteStatsAsync(id: String, period: StatsPeriod, query: AnalyticsQueryOptions) async throws -> WebsiteStatsResponse {
-        WebsiteStatsResponse(pageviews: 10, visitors: 5, visits: 6, bounces: 2, totaltime: 120)
+        statsAsyncCalls.append(id)
+        if statsFailureIDs.contains(id) {
+            throw APIError.serverError("Stats failed")
+        }
+        return WebsiteStatsResponse(pageviews: 10, visitors: 5, visits: 6, bounces: 2, totaltime: 120)
     }
-    func fetchWebsiteMetricsAsync(id: String, period: StatsPeriod, type: String, query: AnalyticsQueryOptions) async throws -> WebsiteMetricsResponse { [MetricItem(x: type, y: 4)] }
+    func fetchWebsiteMetricsAsync(id: String, period: StatsPeriod, type: String, query: AnalyticsQueryOptions) async throws -> WebsiteMetricsResponse {
+        metricsAsyncCalls += 1
+        return [MetricItem(x: type, y: 4)]
+    }
     func fetchWebsitePageviewsAsync(id: String, period: StatsPeriod, query: AnalyticsQueryOptions) async throws -> PageviewsResponse {
+        pageviewsAsyncCalls += 1
         let point = TimeSeriesData(date: Date(timeIntervalSince1970: 1_700_000_000), value: 2)
         return PageviewsResponse(pageviews: [point], sessions: [point])
     }
-    func fetchActiveUsersAsync(id: String) async throws -> ActiveUsersResponse { ActiveUsersResponse(visitors: 2) }
+    func fetchActiveUsersAsync(id: String) async throws -> ActiveUsersResponse {
+        activeUsersAsyncCalls.append(id)
+        if activeUsersFailureIDs.contains(id) {
+            throw APIError.serverError("Active users failed")
+        }
+        return activeUsersProvider(id)
+    }
     func fetchRealtimeSnapshotAsync(websiteId: String) async throws -> RealtimeData {
         realtimeSnapshotCalls += 1
         return RealtimeData(websiteId: websiteId, timestamp: 1_700_000_000_000, pageviews: [], sessions: 2, events: [], countries: ["US": 2])
@@ -628,7 +771,8 @@ private final class MockWebsiteService: WebsiteServicing {
     func resetWebsiteAsync(id: String) async throws {}
     func transferWebsiteAsync(id: String, userId: String?, teamId: String?) async throws {}
     func startRealtimeUpdatesAsync(for websiteId: String, interval: TimeInterval) -> AsyncStream<Int> {
-        AsyncStream { $0.yield(2); $0.finish() }
+        startRealtimeUpdatesAsyncCalls.append(websiteId)
+        return AsyncStream { $0.yield(2); $0.finish() }
     }
 }
 
@@ -679,9 +823,12 @@ private func makeSegment(id: String, name: String, type: SegmentType) -> Segment
     return try! JSONDecoder().decode(SegmentDefinition.self, from: json)
 }
 
-private func testConfig(realtimePollInterval: TimeInterval) -> AnalyticsRuntimeConfig {
+private func testConfig(
+    dashboardRefreshInterval: TimeInterval = 3600,
+    realtimePollInterval: TimeInterval
+) -> AnalyticsRuntimeConfig {
     AnalyticsRuntimeConfig(
-        dashboardRefreshInterval: 3600,
+        dashboardRefreshInterval: dashboardRefreshInterval,
         eventsSessionsPageSize: 2,
         analyticsCacheTTL: 60,
         realtimePollInterval: realtimePollInterval,
@@ -693,4 +840,19 @@ private func testConfig(realtimePollInterval: TimeInterval) -> AnalyticsRuntimeC
 
 private func pause(_ seconds: TimeInterval = 0.08) async {
     try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+}
+
+@MainActor
+private func waitUntil(timeout: TimeInterval = 1, predicate: @escaping @MainActor () -> Bool) async -> Bool {
+    let deadline = Date().addingTimeInterval(timeout)
+
+    while Date() < deadline {
+        if predicate() {
+            return true
+        }
+
+        await pause(0.01)
+    }
+
+    return predicate()
 }

@@ -66,6 +66,11 @@ final class WebsiteViewModel: ObservableObject {
         }
     }
     @Published var dashboardStats: [String: WebsiteStatsResponse] = [:]
+    @Published var dashboardActiveUsers: [String: Int] = [:]
+    @Published var dashboardStatsFailedWebsiteIds: Set<String> = []
+    @Published var dashboardActiveUsersFailedWebsiteIds: Set<String> = []
+    @Published var dashboardFailedWebsiteIds: Set<String> = []
+    @Published var dashboardLastUpdated: Date?
     @Published private(set) var filteredWebsites: [WebsiteModel] = []
     @Published private(set) var dashboardWebsites: [WebsiteModel] = []
     @Published private(set) var hasStarredWebsites = false
@@ -130,10 +135,6 @@ final class WebsiteViewModel: ObservableObject {
             loadCachedWebsites()
         }
 
-        if shouldStartBackgroundRefresh {
-            startBackgroundRefresh()
-        }
-
     }
 
     // MARK: - Data Loading
@@ -143,6 +144,12 @@ final class WebsiteViewModel: ObservableObject {
         websitesTask = Task { @MainActor [weak self] in
             await self?.loadWebsitesAsync()
         }
+    }
+
+    func refreshDashboardAsync() async {
+        websitesTask?.cancel()
+        await loadWebsitesAsync()
+        await dashboardStatsTask?.value
     }
 
     func loadWebsitesAsync() async {
@@ -160,7 +167,7 @@ final class WebsiteViewModel: ObservableObject {
 
             self.websites = websites
             loadDashboardStats()
-            syncSelectedWebsiteWithVisibleContext(reloadCurrentTab: true)
+            syncSelectedWebsiteWithVisibleContext(reloadCurrentTab: false)
         } catch {
             guard !Task.isCancelled else { return }
             setRootError(error)
@@ -210,7 +217,7 @@ final class WebsiteViewModel: ObservableObject {
         websiteStats = stats
     }
 
-    func selectWebsite(_ website: WebsiteModel) {
+    func selectWebsite(_ website: WebsiteModel, loadInitialTab: Bool = true) {
         stopRealtimeSnapshotPolling()
         stopRealtimeUpdates()
         cancelTabLoads()
@@ -223,7 +230,9 @@ final class WebsiteViewModel: ObservableObject {
         resetWebsiteSelectionState()
 
         service.invalidateAnalyticsCache(for: website.id)
-        loadTabIfNeeded(.overview, force: true)
+        if loadInitialTab {
+            loadTabIfNeeded(.overview, force: true)
+        }
     }
 
     func selectDetailTab(_ tab: WebsiteDetailTab) {
@@ -419,6 +428,11 @@ final class WebsiteViewModel: ObservableObject {
         loadTabIfNeeded(selectedDetailTab, force: true)
     }
 
+    func changeDashboardPeriod(_ period: StatsPeriod) {
+        selectedPeriod = period
+        loadDashboardStats()
+    }
+
     // MARK: - Tab Routing
 
     func loadTabIfNeeded(_ tab: WebsiteDetailTab, force: Bool = false) {
@@ -487,6 +501,7 @@ final class WebsiteViewModel: ObservableObject {
     // MARK: - Background Refresh
 
     func startBackgroundRefresh() {
+        guard shouldStartBackgroundRefresh else { return }
         stopBackgroundRefresh()
 
         refreshTask = Task { @MainActor [weak self] in
@@ -507,13 +522,6 @@ final class WebsiteViewModel: ObservableObject {
 
     private func refreshDataInBackground() async {
         loadDashboardStats()
-
-        guard selectedWebsite != nil else {
-            return
-        }
-
-        loadedTabs.remove(selectedDetailTab)
-        loadTabIfNeeded(selectedDetailTab, force: true)
     }
 
     // MARK: - Helpers
@@ -523,6 +531,7 @@ final class WebsiteViewModel: ObservableObject {
 
         let websites = dashboardWebsites
         let period = selectedPeriod
+        let dashboardQueryOptions = queryOptions
 
         dashboardStatsTask = Task { @MainActor [weak self] in
             guard let self else { return }
@@ -530,26 +539,57 @@ final class WebsiteViewModel: ObservableObject {
 
             guard !websites.isEmpty else {
                 dashboardStats = [:]
+                dashboardActiveUsers = [:]
+                dashboardStatsFailedWebsiteIds = []
+                dashboardActiveUsersFailedWebsiteIds = []
+                dashboardFailedWebsiteIds = []
+                dashboardLastUpdated = nil
                 return
             }
 
             var statsByWebsite: [String: WebsiteStatsResponse] = [:]
+            var activeUsersByWebsite: [String: Int] = [:]
+            var statsFailedWebsiteIds = Set<String>()
+            var activeUsersFailedWebsiteIds = Set<String>()
 
             for website in websites {
                 guard !Task.isCancelled else { return }
-                do {
-                    statsByWebsite[website.id] = try await service.fetchWebsiteStatsAsync(
+
+                async let statsResult = captureResult {
+                    try await self.service.fetchWebsiteStatsAsync(
                         id: website.id,
                         period: period,
-                        query: queryOptions
+                        query: dashboardQueryOptions
                     )
-                } catch {
-                    continue
+                }
+
+                async let activeUsersResult = captureResult {
+                    try await self.service.fetchActiveUsersAsync(id: website.id)
+                }
+
+                switch await statsResult {
+                case .success(let stats):
+                    statsByWebsite[website.id] = stats
+                case .failure:
+                    statsFailedWebsiteIds.insert(website.id)
+                }
+
+                switch await activeUsersResult {
+                case .success(let activeUsers):
+                    activeUsersByWebsite[website.id] = activeUsers.visitors
+                case .failure:
+                    activeUsersFailedWebsiteIds.insert(website.id)
                 }
             }
 
-            guard !Task.isCancelled, selectedPeriod == period else { return }
-            dashboardStats = statsByWebsite
+            guard !Task.isCancelled, selectedPeriod == period, self.queryOptions == dashboardQueryOptions else { return }
+            let websiteIDs = Set(websites.map(\.id))
+            dashboardStats = statsByWebsite.filter { websiteIDs.contains($0.key) }
+            dashboardActiveUsers = activeUsersByWebsite.filter { websiteIDs.contains($0.key) }
+            dashboardStatsFailedWebsiteIds = statsFailedWebsiteIds
+            dashboardActiveUsersFailedWebsiteIds = activeUsersFailedWebsiteIds
+            dashboardFailedWebsiteIds = statsFailedWebsiteIds.union(activeUsersFailedWebsiteIds)
+            dashboardLastUpdated = Date()
         }
     }
 

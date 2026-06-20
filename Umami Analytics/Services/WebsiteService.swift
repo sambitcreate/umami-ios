@@ -97,6 +97,7 @@ final class WebsiteService: WebsiteServicing {
     private let analyticsCacheMaxEntries: Int
     private let coreDataStatsTTL: TimeInterval
     private let realtimeSnapshotTTL: TimeInterval
+    private let activeUsersCacheTTL: TimeInterval = 5
     private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "UmamiAnalytics", category: "WebsiteService")
 
     private struct CacheEntry {
@@ -983,6 +984,11 @@ final class WebsiteService: WebsiteServicing {
             .replacingOccurrences(of: "=", with: "")
     }
 
+    private func makeLiveCacheKey(prefix: String, websiteId: String) -> String {
+        let sessionIdentifier = AuthManager.shared.currentSession?.identifier ?? "sessionless"
+        return [sessionIdentifier, prefix, websiteId].map(Self.cacheComponent).joined(separator: "|")
+    }
+
     private func logCacheDebug(_ message: @autoclosure () -> String) {
     #if DEBUG
         let resolvedMessage = message()
@@ -1038,7 +1044,11 @@ final class WebsiteService: WebsiteServicing {
         logCacheDebug("CACHE EVICT: \(toEvict) LRU entries removed, \(analyticsCache.count) remaining")
     }
 
-    private func deduplicatedFetch<T: Sendable>(key: String, fetch: @escaping @MainActor () async throws -> T) async throws -> T {
+    private func deduplicatedFetch<T: Sendable>(
+        key: String,
+        ttl: TimeInterval? = nil,
+        fetch: @escaping @MainActor () async throws -> T
+    ) async throws -> T {
         if let cached: T = cachedValue(for: key) { return cached }
 
         let waiterID = UUID()
@@ -1056,7 +1066,7 @@ final class WebsiteService: WebsiteServicing {
                     self?.inFlightTasks.removeValue(forKey: key)
                 }
                 let result = try await fetch()
-                self?.setCachedValue(result, for: key)
+                self?.setCachedValue(result, for: key, ttl: ttl)
                 return InFlightValue(value: result)
             }
             inFlightTasks[key] = InFlightEntry(task: task, waiterIDs: [waiterID])
@@ -1281,7 +1291,10 @@ extension WebsiteService {
 
     func fetchActiveUsersAsync(id: String) async throws -> ActiveUsersResponse {
         guard let apiClient = apiClientProvider() else { throw APIError.unauthorized }
-        return try await apiClient.getActiveUsersAsync(websiteId: id)
+        let cacheKey = makeLiveCacheKey(prefix: "active", websiteId: id)
+        return try await deduplicatedFetch(key: cacheKey, ttl: activeUsersCacheTTL) {
+            try await apiClient.getActiveUsersAsync(websiteId: id)
+        }
     }
 
     func fetchRealtimeSnapshotAsync(websiteId: String) async throws -> RealtimeData {
@@ -1547,10 +1560,10 @@ enum StatsPeriod: String, Sendable {
 
     var displayName: String {
         switch self {
-        case .day: return "Today"
-        case .week: return "This Week"
-        case .month: return "This Month"
-        case .year: return "This Year"
+        case .day: return "Last 24h"
+        case .week: return "Last 7d"
+        case .month: return "Last 30d"
+        case .year: return "Last 12mo"
         }
     }
 }
