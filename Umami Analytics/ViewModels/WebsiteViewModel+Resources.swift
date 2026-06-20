@@ -21,7 +21,7 @@ extension WebsiteViewModel {
             AuthManager.shared.selectWorkspace(selection)
         }
         rebuildWebsiteDerivedState()
-        syncSelectedWebsiteWithVisibleContext(reloadCurrentTab: true)
+        syncSelectedWebsiteWithVisibleContext(reloadCurrentTab: false)
         loadDashboardStats()
 
         if reloadResources {
@@ -262,6 +262,6 @@ extension WebsiteViewModel {
             return
         }
 
-        selectWebsite(nextVisibleWebsite)
+        selectWebsite(nextVisibleWebsite, loadInitialTab: reloadCurrentTab)
     }
 }

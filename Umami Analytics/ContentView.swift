@@ -9,6 +9,7 @@ import SwiftUI
 
 @MainActor
 struct ContentView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @State private var selectedTab = 0
     @StateObject private var websiteViewModel = WebsiteViewModel()
     @ObservedObject private var authManager = AuthManager.shared
@@ -35,6 +36,23 @@ struct ContentView: View {
         }
         .onChange(of: authManager.selectedWorkspace) { newSelection in
             websiteViewModel.applyWorkspaceSelection(newSelection)
+        }
+        .onChange(of: selectedTab) { _ in
+            updateDashboardRefreshState()
+        }
+        .onChange(of: scenePhase) { _ in
+            updateDashboardRefreshState()
+        }
+        .onAppear {
+            updateDashboardRefreshState()
+        }
+    }
+
+    private func updateDashboardRefreshState() {
+        if selectedTab == 0 && scenePhase == .active {
+            websiteViewModel.startBackgroundRefresh()
+        } else {
+            websiteViewModel.stopBackgroundRefresh()
         }
     }
 }
