@@ -28,33 +28,15 @@ struct AnalyticsChartView: View {
                 .foregroundStyle(.primary)
                 .accessibilityAddTraits(.isHeader)
             
-            // Chart type selector tabs
-            HStack(spacing: 4) {
+            Picker("Chart Type", selection: $selectedChartType) {
                 ForEach(ChartType.allCases, id: \.self) { chartType in
-                    Button(action: {
-                        selectedChartType = chartType
-                        updateSelectedDataPoint()
-                    }) {
-                        Text(chartType.rawValue)
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                            .foregroundStyle(selectedChartType == chartType ? .white : .secondary)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                            .background(
-                                RoundedRectangle(cornerRadius: 8)
-                                    .fill(selectedChartType == chartType ? Color.blue : Color.clear)
-                            )
-                    }
-                    .buttonStyle(.plain)
+                    Text(chartType.rawValue)
+                        .tag(chartType)
                 }
             }
-            .padding(.horizontal, 4)
-            .padding(.vertical, 4)
-            .background(
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(Color(UIColor.secondarySystemBackground))
-            )
+            .pickerStyle(.segmented)
+            .controlSize(.regular)
+            .frame(minHeight: 44)
 
             if currentDataSet.isEmpty {
                 ChartPlaceholderView()

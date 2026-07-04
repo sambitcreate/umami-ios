@@ -34,6 +34,7 @@ struct ContentView: View {
                 }
                 .tag(2)
         }
+        .liquidGlassReadyTabChrome()
         .onChange(of: authManager.selectedWorkspace) { newSelection in
             websiteViewModel.applyWorkspaceSelection(newSelection)
         }
@@ -61,4 +62,17 @@ struct ContentView: View {
     ContentView()
         .environment(\.managedObjectContext, PersistenceController.preview.container.viewContext)
         .environmentObject(AppState())
+}
+
+private extension View {
+    @ViewBuilder
+    func liquidGlassReadyTabChrome() -> some View {
+        if #available(iOS 26.0, *) {
+            self
+                .tabViewStyle(.sidebarAdaptable)
+                .tabBarMinimizeBehavior(.onScrollDown)
+        } else {
+            self
+        }
+    }
 }

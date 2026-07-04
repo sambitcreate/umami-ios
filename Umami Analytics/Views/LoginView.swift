@@ -152,24 +152,21 @@ struct LoginView: View {
             }
 
             Button(action: login) {
-                ZStack {
-                    Text(serverType == .cloud ? "Connect" : "Sign In")
-                        .fontWeight(.bold)
-                        .opacity(isLoading ? 0 : 1)
-
+                HStack(spacing: 8) {
                     if isLoading {
                         ProgressView()
-                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                            .controlSize(.small)
                     }
+
+                    Text(isLoading ? "Signing In" : (serverType == .cloud ? "Connect" : "Sign In"))
                 }
-                .foregroundStyle(.white)
-                .frame(maxWidth: .infinity, minHeight: 44)
-                .padding(.vertical, 12)
-                .background(.tint)
-                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .fontWeight(.semibold)
+                .frame(maxWidth: .infinity)
             }
+            .buttonStyle(.borderedProminent)
+            .tint(.accentColor)
+            .controlSize(.large)
             .disabled(isLoading || !isFormValid)
-            .opacity(isFormValid ? 1.0 : 0.6)
             .accessibilityLabel(isLoading ? "Signing in" : (serverType == .cloud ? "Connect" : "Sign In"))
             .accessibilityHint(isFormValid ? "Double tap to sign in" : "Fill in all required fields first")
         }

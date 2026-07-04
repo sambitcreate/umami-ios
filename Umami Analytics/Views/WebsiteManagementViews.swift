@@ -144,6 +144,8 @@ struct WebsiteFormView: View {
                             Text(isReadOnlySession ? "Read Only" : mode.actionTitle)
                         }
                     }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.accentColor)
                     .disabled(!canSubmit || isSubmitting || isReadOnlySession)
                 }
             }

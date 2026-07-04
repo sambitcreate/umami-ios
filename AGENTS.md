@@ -10,7 +10,7 @@ Umami Analytics is a native iOS client for the [Umami](https://umami.is) web ana
 
 ## Build & Run
 
-- **IDE**: Xcode 16.3+ required
+- **IDE**: Xcode 26+ required (explicit Liquid Glass APIs require the iOS 26 SDK)
 - **Language**: Swift 5.9+
 - **iOS target**: iOS 16+ (required by Swift Charts framework)
 - **Project file**: `Umami Analytics.xcodeproj` (no workspace)

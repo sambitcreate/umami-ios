@@ -139,6 +139,9 @@ struct WebsiteSessionsTabView: View {
             .textInputAutocapitalization(.never)
             .autocorrectionDisabled()
             .textFieldStyle(.roundedBorder)
+            .controlSize(.regular)
+            .frame(minHeight: 44)
+            .submitLabel(.search)
             .onSubmit {
                 viewModel.applySessionsSearch(draftSearch)
             }
@@ -150,7 +153,8 @@ struct WebsiteSessionsTabView: View {
             viewModel.applySessionsSearch(draftSearch)
         }
         .buttonStyle(.bordered)
-        .controlSize(dynamicTypeSize.isAccessibilitySize ? .regular : .small)
+        .controlSize(.regular)
+        .frame(minHeight: 44)
         .accessibilityLabel("Search")
     }
 

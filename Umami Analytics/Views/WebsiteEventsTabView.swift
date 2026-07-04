@@ -310,6 +310,9 @@ struct WebsiteEventsTabView: View {
             .textInputAutocapitalization(.never)
             .autocorrectionDisabled()
             .textFieldStyle(.roundedBorder)
+            .controlSize(.regular)
+            .frame(minHeight: 44)
+            .submitLabel(.search)
             .onSubmit {
                 viewModel.applyEventsSearch(draftSearch)
             }
@@ -321,7 +324,8 @@ struct WebsiteEventsTabView: View {
             viewModel.applyEventsSearch(draftSearch)
         }
         .buttonStyle(.bordered)
-        .controlSize(dynamicTypeSize.isAccessibilitySize ? .regular : .small)
+        .controlSize(.regular)
+        .frame(minHeight: 44)
         .accessibilityLabel("Search")
     }
 

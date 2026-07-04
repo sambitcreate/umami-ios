@@ -132,6 +132,7 @@ struct WebsitesView: View {
                                 showingAddWebsite = true
                             }
                             .buttonStyle(.borderedProminent)
+                            .tint(.accentColor)
                         }
 
                         Button("Refresh") {
@@ -150,8 +151,10 @@ struct WebsitesView: View {
                         Button {
                             showingAddWebsite = true
                         } label: {
-                            Image(systemName: "plus")
+                            Label("Add Website", systemImage: "plus")
                         }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.accentColor)
                         .accessibilityLabel("Add website")
                     }
 
@@ -160,6 +163,7 @@ struct WebsitesView: View {
                     }) {
                         Image(systemName: "arrow.clockwise")
                     }
+                    .buttonStyle(.bordered)
                     .accessibilityLabel("Refresh")
                 }
             }

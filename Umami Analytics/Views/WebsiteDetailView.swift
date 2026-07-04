@@ -28,6 +28,7 @@ struct WebsiteDetailContainerView: View {
 @MainActor
 struct WebsiteDetailView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @ObservedObject var viewModel: WebsiteViewModel
 
     var body: some View {
@@ -213,8 +214,8 @@ struct WebsiteDetailView: View {
                             .fixedSize(horizontal: false, vertical: true)
                             .padding(.horizontal, 12)
                             .padding(.vertical, 8)
-                            .background(Color(UIColor.secondarySystemBackground))
-                            .clipShape(Capsule())
+                            .frame(minHeight: 44)
+                            .liquidGlassCapsule()
                         }
                     }
                     .padding(.vertical, 2)
@@ -281,30 +282,59 @@ struct WebsiteDetailView: View {
         .fixedSize(horizontal: false, vertical: true)
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(Color(UIColor.secondarySystemBackground))
-        .clipShape(Capsule())
+        .frame(minHeight: 44)
+        .liquidGlassCapsule(interactive: true)
     }
 
+    @ViewBuilder
     private var tabPicker: some View {
+        if horizontalSizeClass == .compact || dynamicTypeSize.isAccessibilitySize {
+            scrollableTabPicker
+        } else {
+            segmentedTabPicker
+        }
+    }
+
+    private var segmentedTabPicker: some View {
+        Picker(
+            "Analytics Tab",
+            selection: Binding(
+                get: { viewModel.selectedDetailTab },
+                set: { viewModel.selectDetailTab($0) }
+            )
+        ) {
+            ForEach(WebsiteDetailTab.allCases) { tab in
+                Text(tab.title)
+                    .tag(tab)
+            }
+        }
+        .pickerStyle(.segmented)
+        .controlSize(.regular)
+        .frame(minHeight: 44)
+        .padding(.horizontal)
+        .accessibilityIdentifier("detail-tab-picker")
+    }
+
+    private var scrollableTabPicker: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 ForEach(WebsiteDetailTab.allCases) { tab in
+                    let isSelected = viewModel.selectedDetailTab == tab
+
                     Button {
                         viewModel.selectDetailTab(tab)
                     } label: {
                         Text(tab.title)
                             .font(.subheadline)
                             .fontWeight(.medium)
-                            .foregroundStyle(viewModel.selectedDetailTab == tab ? .white : .primary)
+                            .foregroundStyle(isSelected ? .white : .primary)
                             .padding(.horizontal, 14)
                             .padding(.vertical, 8)
-                            .background(
-                                Capsule()
-                                    .fill(viewModel.selectedDetailTab == tab ? Color.accentColor : Color(UIColor.secondarySystemBackground))
-                            )
+                            .frame(minHeight: 44)
+                            .liquidGlassCapsule(interactive: true, selected: isSelected)
                     }
                     .accessibilityLabel(tab.title)
-                    .accessibilityAddTraits(viewModel.selectedDetailTab == tab ? .isSelected : [])
+                    .accessibilityAddTraits(isSelected ? .isSelected : [])
                 }
             }
             .padding(.horizontal)
@@ -318,6 +348,27 @@ private struct QueryMenu: Identifiable {
     let values: [FilterValue]
 
     var id: String { key.rawValue }
+}
+
+private extension View {
+    @ViewBuilder
+    func liquidGlassCapsule(interactive: Bool = false, selected: Bool = false) -> some View {
+        if #available(iOS 26.0, *) {
+            if interactive && selected {
+                self.glassEffect(.regular.tint(.accentColor).interactive(), in: Capsule())
+            } else if interactive {
+                self.glassEffect(.regular.interactive(), in: Capsule())
+            } else if selected {
+                self.glassEffect(.regular.tint(.accentColor), in: Capsule())
+            } else {
+                self.glassEffect(.regular, in: Capsule())
+            }
+        } else {
+            self
+                .background(selected ? Color.accentColor : Color(UIColor.secondarySystemBackground))
+                .clipShape(Capsule())
+        }
+    }
 }
 
 #Preview {
