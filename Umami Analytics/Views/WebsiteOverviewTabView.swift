@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct WebsiteOverviewTabView: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ObservedObject var viewModel: WebsiteViewModel
 
     private var topPages: [MetricItem] {
@@ -36,36 +37,40 @@ struct WebsiteOverviewTabView: View {
     }
 
     private var statsCards: some View {
-        VStack(spacing: 16) {
-            HStack(spacing: 16) {
-                StatCard(
-                    title: "Visitors",
-                    value: viewModel.formattedVisitors,
-                    icon: "person.fill"
-                )
+        LazyVGrid(columns: statColumns, spacing: 12) {
+            StatCard(
+                title: "Visitors",
+                value: viewModel.formattedVisitors,
+                icon: "person.fill"
+            )
 
-                StatCard(
-                    title: "Pageviews",
-                    value: viewModel.formattedPageviews,
-                    icon: "doc.text.fill"
-                )
-            }
+            StatCard(
+                title: "Pageviews",
+                value: viewModel.formattedPageviews,
+                icon: "doc.text.fill"
+            )
 
-            HStack(spacing: 16) {
-                StatCard(
-                    title: "Bounce Rate",
-                    value: viewModel.formattedBounceRate,
-                    icon: "arrow.up.arrow.down"
-                )
+            StatCard(
+                title: "Bounce Rate",
+                value: viewModel.formattedBounceRate,
+                icon: "arrow.up.arrow.down"
+            )
 
-                StatCard(
-                    title: "Avg. Duration",
-                    value: viewModel.formattedDuration,
-                    icon: "clock.fill"
-                )
-            }
+            StatCard(
+                title: "Avg. Duration",
+                value: viewModel.formattedDuration,
+                icon: "clock.fill"
+            )
         }
         .padding(.horizontal)
+    }
+
+    private var statColumns: [GridItem] {
+        if dynamicTypeSize >= .xxLarge {
+            return [GridItem(.flexible())]
+        }
+
+        return [GridItem(.adaptive(minimum: 150), spacing: 12)]
     }
 
     private var activeUsersSection: some View {

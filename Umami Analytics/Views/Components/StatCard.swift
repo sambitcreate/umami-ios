@@ -8,6 +8,8 @@
 import SwiftUI
 
 struct StatCard: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var title: String
     var value: String
     var icon: String
@@ -26,8 +28,12 @@ struct StatCard: View {
                 Text(value)
                     .font(.title)
                     .fontWeight(.bold)
-                    .contentTransition(.numericText())
-                    .animation(.spring(response: 0.5, dampingFraction: 0.8), value: value)
+                    .monospacedDigit()
+                    .contentTransition(reduceMotion ? .identity : .numericText())
+                    .animation(
+                        reduceMotion ? nil : .spring(response: 0.34, dampingFraction: 1),
+                        value: value
+                    )
                 Spacer()
             }
 
@@ -39,8 +45,8 @@ struct StatCard: View {
             }
         }
         .padding()
-        .background(Color(.secondarySystemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .frame(maxWidth: .infinity, minHeight: 132, alignment: .leading)
+        .umamiCardSurface()
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(title): \(value)")
     }

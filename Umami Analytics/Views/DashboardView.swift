@@ -53,11 +53,7 @@ struct DashboardView: View {
             }
             .overlay {
                 if viewModel.isLoading && !viewModel.hasWebsites {
-                    ProgressView()
-                        .scaleEffect(1.4)
-                        .padding(28)
-                        .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        .shadow(color: .primary.opacity(0.12), radius: 18, x: 0, y: 8)
+                    UmamiLoadingStatus(message: "Loading dashboard")
                 }
             }
             .alert("Error", isPresented: Binding<Bool>(
@@ -358,7 +354,7 @@ struct DashboardView: View {
                         formatNumber: viewModel.formatNumber
                     )
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(UmamiPressableCardStyle())
             }
         }
         .padding(.horizontal)
@@ -575,7 +571,7 @@ private struct DashboardMetricTile: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .umamiCardSurface(cornerRadius: UmamiDesignMetrics.compactCornerRadius)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(title): \(value), \(context)")
     }
@@ -712,7 +708,7 @@ struct DashboardWebsiteCard: View {
             }
         }
         .padding(16)
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .umamiCardSurface(cornerRadius: UmamiDesignMetrics.compactCornerRadius)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilitySummary)
     }
