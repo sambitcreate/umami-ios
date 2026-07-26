@@ -16,6 +16,23 @@ struct Umami_AnalyticsTests {
         return decoder
     }
 
+    @Test func launchPhaseWaitsForInitialSessionRestoration() {
+        var resolver = AppLaunchPhaseResolver()
+
+        #expect(resolver.resolve(isAuthenticated: false, isLoading: true) == .restoringSession)
+        #expect(resolver.hasResolvedInitialSession == false)
+        #expect(resolver.resolve(isAuthenticated: true, isLoading: false) == .signedIn)
+        #expect(resolver.hasResolvedInitialSession == true)
+    }
+
+    @Test func launchPhaseKeepsLoginVisibleDuringInteractiveSignIn() {
+        var resolver = AppLaunchPhaseResolver()
+
+        #expect(resolver.resolve(isAuthenticated: false, isLoading: false) == .signedOut)
+        #expect(resolver.resolve(isAuthenticated: false, isLoading: true) == .signedOut)
+        #expect(resolver.resolve(isAuthenticated: true, isLoading: false) == .signedIn)
+    }
+
     @Test func websiteStatsDecodesFlatPayload() throws {
         let json = """
         {

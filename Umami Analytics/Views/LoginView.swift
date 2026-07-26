@@ -25,8 +25,6 @@ struct LoginView: View {
     @State private var errorMessage: String?
     @State private var showError = false
 
-    @Binding var isAuthenticated: Bool
-
     var body: some View {
         ScrollView {
             VStack(spacing: dynamicTypeSize.isAccessibilitySize ? 24 : 30) {
@@ -253,7 +251,6 @@ struct LoginView: View {
                     shareID: serverType == .publicShare ? shareID : nil,
                     cloudRegion: cloudRegion
                 )
-                isAuthenticated = true
             } catch {
                 if let authError = error as? AuthError {
                     errorMessage = authError.message
@@ -283,7 +280,7 @@ struct LoginView: View {
 }
 
 #Preview {
-    LoginView(isAuthenticated: .constant(false))
+    LoginView()
 }
 
 private enum LoginField: Hashable {

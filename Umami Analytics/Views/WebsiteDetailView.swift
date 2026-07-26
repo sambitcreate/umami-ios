@@ -27,6 +27,7 @@ struct WebsiteDetailContainerView: View {
 
 @MainActor
 struct WebsiteDetailView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @ObservedObject var viewModel: WebsiteViewModel
@@ -40,6 +41,8 @@ struct WebsiteDetailView: View {
                 tabPicker
 
                 currentTabView
+                    .id(viewModel.selectedDetailTab)
+                    .transition(tabTransition)
 
                 Spacer(minLength: 40)
             }
@@ -300,7 +303,7 @@ struct WebsiteDetailView: View {
             "Analytics Tab",
             selection: Binding(
                 get: { viewModel.selectedDetailTab },
-                set: { viewModel.selectDetailTab($0) }
+                set: { selectDetailTab($0) }
             )
         ) {
             ForEach(WebsiteDetailTab.allCases) { tab in
@@ -316,30 +319,55 @@ struct WebsiteDetailView: View {
     }
 
     private var scrollableTabPicker: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(WebsiteDetailTab.allCases) { tab in
-                    let isSelected = viewModel.selectedDetailTab == tab
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(WebsiteDetailTab.allCases) { tab in
+                        let isSelected = viewModel.selectedDetailTab == tab
 
-                    Button {
-                        viewModel.selectDetailTab(tab)
-                    } label: {
-                        Text(tab.title)
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                            .foregroundStyle(isSelected ? .white : .primary)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 8)
-                            .frame(minHeight: 44)
-                            .liquidGlassCapsule(interactive: true, selected: isSelected)
+                        Button {
+                            selectDetailTab(tab)
+                        } label: {
+                            Text(tab.title)
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                                .foregroundStyle(.primary)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 8)
+                                .frame(minHeight: 44)
+                                .liquidGlassCapsule(interactive: true, selected: isSelected)
+                        }
+                        .buttonStyle(.plain)
+                        .id(tab)
+                        .accessibilityLabel(tab.title)
+                        .accessibilityAddTraits(isSelected ? .isSelected : [])
                     }
-                    .accessibilityLabel(tab.title)
-                    .accessibilityAddTraits(isSelected ? .isSelected : [])
+                }
+                .padding(.horizontal)
+            }
+            .onChange(of: viewModel.selectedDetailTab) { selectedTab in
+                withAnimation(reduceMotion ? nil : .spring(response: 0.34, dampingFraction: 1)) {
+                    proxy.scrollTo(selectedTab, anchor: .center)
                 }
             }
-            .padding(.horizontal)
         }
         .accessibilityIdentifier("detail-tab-picker")
+    }
+
+    private var tabTransition: AnyTransition {
+        if reduceMotion {
+            return .opacity
+        }
+
+        return .opacity.combined(with: .scale(scale: 0.985, anchor: .top))
+    }
+
+    private func selectDetailTab(_ tab: WebsiteDetailTab) {
+        withAnimation(
+            reduceMotion ? .easeOut(duration: 0.15) : .spring(response: 0.34, dampingFraction: 1)
+        ) {
+            viewModel.selectDetailTab(tab)
+        }
     }
 }
 
@@ -365,7 +393,9 @@ private extension View {
             }
         } else {
             self
-                .background(selected ? Color.accentColor : Color(UIColor.secondarySystemBackground))
+                .background(
+                    selected ? Color.accentColor.opacity(0.16) : Color(UIColor.secondarySystemBackground)
+                )
                 .clipShape(Capsule())
         }
     }

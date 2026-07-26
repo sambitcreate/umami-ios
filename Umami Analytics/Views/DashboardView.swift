@@ -9,6 +9,7 @@ import SwiftUI
 
 @MainActor
 struct DashboardView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ObservedObject private var viewModel: WebsiteViewModel
     @ObservedObject private var authManager = AuthManager.shared
@@ -29,7 +30,8 @@ struct DashboardView: View {
 
                     if viewModel.hasWebsites {
                         liveOverview
-                        metricGrid
+                        metricSection
+                        trafficSummary
                         activitySection
                     } else {
                         emptyState
@@ -38,7 +40,8 @@ struct DashboardView: View {
                 .padding(.vertical)
             }
             .background(Color(.systemGroupedBackground))
-            .navigationTitle("Overview")
+            .navigationTitle("Dashboard")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button(action: triggerDashboardRefresh) {
@@ -53,11 +56,7 @@ struct DashboardView: View {
             }
             .overlay {
                 if viewModel.isLoading && !viewModel.hasWebsites {
-                    ProgressView()
-                        .scaleEffect(1.4)
-                        .padding(28)
-                        .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        .shadow(color: .primary.opacity(0.12), radius: 18, x: 0, y: 8)
+                    UmamiLoadingStatus(message: "Loading dashboard")
                 }
             }
             .alert("Error", isPresented: Binding<Bool>(
@@ -75,39 +74,14 @@ struct DashboardView: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ViewThatFits(in: .horizontal) {
-                headerRow
-
-                VStack(alignment: .leading, spacing: 10) {
-                    headerText
-                    statusPill
-                }
-            }
-
-            if let serverURL = authManager.serverURL {
-                Label(serverURL, systemImage: "server.rack")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            }
-        }
+        headerText
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal)
     }
 
-    private var headerRow: some View {
-        HStack(alignment: .firstTextBaseline) {
-            headerText
-            Spacer(minLength: 12)
-            statusPill
-        }
-    }
-
     private var headerText: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("Live watchlist")
+            Text("Traffic at a glance")
                 .font(.largeTitle.bold())
                 .accessibilityAddTraits(.isHeader)
 
@@ -119,31 +93,10 @@ struct DashboardView: View {
 
     private var headerSubtitle: String {
         if authManager.isReadOnlySession {
-            return "Read-only shared analytics"
+            return "A quick read of this shared website"
         }
 
-        if let user = authManager.currentUser {
-            return "\(user.username) in \(authManager.selectedWorkspace.name)"
-        }
-
-        return authManager.selectedWorkspace.name
-    }
-
-    private var statusPill: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "circle.fill")
-                .font(.system(size: 8))
-                .foregroundStyle(totalActiveUsers > 0 ? .green : .secondary)
-
-            Text(totalActiveUsers > 0 ? "Live" : "Quiet")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.primary)
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
-        .background(Color(.secondarySystemGroupedBackground), in: Capsule())
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(totalActiveUsers > 0 ? "Live traffic is active" : "No live traffic detected")
+        return "Your key numbers across \(authManager.selectedWorkspace.name)"
     }
 
     @ViewBuilder
@@ -183,152 +136,148 @@ struct DashboardView: View {
 
     private var periodSelector: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Window")
+            Text("Time range")
                 .font(.headline)
 
-            Picker("Window", selection: $viewModel.selectedPeriod) {
-                Text(StatsPeriod.day.displayName).tag(StatsPeriod.day)
-                Text(StatsPeriod.week.displayName).tag(StatsPeriod.week)
-                Text(StatsPeriod.month.displayName).tag(StatsPeriod.month)
-                Text(StatsPeriod.year.displayName).tag(StatsPeriod.year)
-            }
-            .pickerStyle(.segmented)
-            .onChange(of: viewModel.selectedPeriod) { newValue in
-                viewModel.changeDashboardPeriod(newValue)
+            if dynamicTypeSize >= .xxLarge {
+                Picker("Time range", selection: $viewModel.selectedPeriod) {
+                    periodOptions
+                }
+                .pickerStyle(.menu)
+            } else {
+                Picker("Time range", selection: $viewModel.selectedPeriod) {
+                    periodOptions
+                }
+                .pickerStyle(.segmented)
             }
         }
         .padding(.horizontal)
+        .onChange(of: viewModel.selectedPeriod) { newValue in
+            viewModel.changeDashboardPeriod(newValue)
+        }
+    }
+
+    @ViewBuilder
+    private var periodOptions: some View {
+        Text(StatsPeriod.day.displayName).tag(StatsPeriod.day)
+        Text(StatsPeriod.week.displayName).tag(StatsPeriod.week)
+        Text(StatsPeriod.month.displayName).tag(StatsPeriod.month)
+        Text(StatsPeriod.year.displayName).tag(StatsPeriod.year)
     }
 
     private var liveOverview: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            ViewThatFits(in: .horizontal) {
-                liveOverviewRow
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .firstTextBaseline) {
+                Label("Right now", systemImage: "dot.radiowaves.left.and.right")
+                    .font(.headline)
+                    .symbolRenderingMode(.hierarchical)
 
-                VStack(alignment: .leading, spacing: 14) {
-                    activeNowBlock
-                    liveOverviewBadges
+                Spacer()
+
+                if let dashboardLastUpdated = viewModel.dashboardLastUpdated {
+                    Text("Updated \(Self.relativeFormatter.localizedString(for: dashboardLastUpdated, relativeTo: Date()))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
+
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Text(viewModel.formatNumber(totalActiveUsers))
+                    .font(.system(.largeTitle, design: .rounded).weight(.bold))
+                    .monospacedDigit()
+                    .contentTransition(reduceMotion ? .identity : .numericText())
+
+                Text(totalActiveUsers == 1 ? "person is on your sites" : "people are on your sites")
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+            }
+
+            Text(liveStatusText)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
 
             if !partialLoadText.isEmpty {
                 Label(partialLoadText, systemImage: "exclamationmark.triangle.fill")
                     .font(.footnote)
                     .foregroundStyle(.orange)
             }
-
-            if !rankedDashboardWebsites.isEmpty {
-                VStack(spacing: 10) {
-                    ForEach(rankedDashboardWebsites) { website in
-                        LiveSiteRow(
-                            website: website,
-                            activeUsers: viewModel.dashboardActiveUsers[website.id],
-                            stats: viewModel.dashboardStats[website.id],
-                            statsDidFail: viewModel.dashboardStatsFailedWebsiteIds.contains(website.id),
-                            activeUsersDidFail: viewModel.dashboardActiveUsersFailedWebsiteIds.contains(website.id),
-                            maxPageviews: maxDashboardPageviews,
-                            formatNumber: viewModel.formatNumber
-                        )
-                    }
-                }
-            }
         }
         .dashboardPanel()
     }
 
-    private var liveOverviewRow: some View {
-        HStack(alignment: .top, spacing: 14) {
-            activeNowBlock
-            Spacer()
-            liveOverviewBadges
-        }
-    }
+    private var metricSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(viewModel.selectedPeriod.displayName)
+                    .font(.headline)
 
-    private var activeNowBlock: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label("Active now", systemImage: "dot.radiowaves.left.and.right")
-                .font(.headline)
-                .symbolRenderingMode(.hierarchical)
-                .foregroundStyle(.secondary)
-
-            Text(viewModel.formatNumber(totalActiveUsers))
-                .font(.system(.largeTitle, design: .rounded).weight(.bold))
-                .contentTransition(.numericText())
-
-            Text(liveStatusText)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    private var liveOverviewBadges: some View {
-        VStack(alignment: .trailing, spacing: 8) {
-            DashboardBadge(
-                icon: "eye",
-                value: "\(rankedDashboardWebsites.count)",
-                label: rankedDashboardWebsites.count == 1 ? "watched site" : "watched sites"
-            )
-
-            DashboardBadge(
-                icon: "globe",
-                value: "\(viewModel.filteredWebsites.count)",
-                label: viewModel.filteredWebsites.count == 1 ? "total site" : "total sites"
-            )
-
-            if let dashboardLastUpdated = viewModel.dashboardLastUpdated {
-                Text("Updated \(Self.relativeFormatter.localizedString(for: dashboardLastUpdated, relativeTo: Date()))")
-                    .font(.caption)
+                Text("Combined results from \(watchlistScopeText)")
+                    .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
-        }
-    }
 
-    private var metricGrid: some View {
-        LazyVGrid(columns: dashboardMetricColumns, spacing: 12) {
-            DashboardMetricTile(
-                title: "Visitors",
-                value: viewModel.formatNumber(aggregateVisitors),
-                context: "\(viewModel.selectedPeriod.displayName) across \(watchlistScopeText)",
-                icon: "person.2.fill",
-                color: .blue
-            )
+            LazyVGrid(columns: dashboardMetricColumns, spacing: 12) {
+                DashboardMetricTile(
+                    title: "Visitors",
+                    value: viewModel.formatNumber(aggregateVisitors),
+                    explanation: "People who visited your sites",
+                    icon: "person.2.fill",
+                    color: .blue
+                )
 
-            DashboardMetricTile(
-                title: "Pageviews",
-                value: viewModel.formatNumber(aggregatePageviews),
-                context: aggregateVisits > 0 ? "\(viewModel.formatNumber(aggregateVisits)) visits" : "waiting for traffic",
-                icon: "chart.line.uptrend.xyaxis",
-                color: .indigo
-            )
+                DashboardMetricTile(
+                    title: "Pageviews",
+                    value: viewModel.formatNumber(aggregatePageviews),
+                    explanation: "Total pages viewed",
+                    icon: "doc.text.fill",
+                    color: .indigo
+                )
 
-            DashboardMetricTile(
-                title: "Bounce",
-                value: formatBounceRate(visits: aggregateVisits, bounces: aggregateBounces),
-                context: aggregateVisits > 0 ? "of \(viewModel.formatNumber(aggregateVisits)) visits" : "no visits yet",
-                icon: "arrow.down.right.and.arrow.up.left",
-                color: .orange
-            )
+                DashboardMetricTile(
+                    title: "Bounce rate",
+                    value: formatBounceRate(visits: aggregateVisits, bounces: aggregateBounces),
+                    explanation: "Visits that ended after one page",
+                    icon: "arrow.uturn.backward",
+                    color: .orange
+                )
 
-            DashboardMetricTile(
-                title: "Avg. time",
-                value: formatDuration(aggregateAverageDuration),
-                context: "per pageview",
-                icon: "timer",
-                color: .teal
-            )
+                DashboardMetricTile(
+                    title: "Average time",
+                    value: formatDuration(aggregateAverageDuration),
+                    explanation: "Average time per pageview",
+                    icon: "timer",
+                    color: .teal
+                )
+            }
         }
         .padding(.horizontal)
+    }
+
+    private var trafficSummary: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label("Quick read", systemImage: "lightbulb.max.fill")
+                .font(.headline)
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(.indigo)
+
+            Text(trafficSummaryText)
+                .font(.body)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .dashboardPanel()
+        .accessibilityElement(children: .combine)
     }
 
     private var activitySection: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(viewModel.hasStarredWebsites ? "Pinned watchlist" : "Most recent sites")
+                    Text("By website")
                         .font(.headline)
 
-                    Text(viewModel.hasStarredWebsites ? "Your starred websites stay on deck." : "Star websites to pin them here.")
-                        .font(.caption)
+                    Text("Tap a site to explore its pages, audience, events, and sessions.")
+                        .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
 
@@ -358,7 +307,7 @@ struct DashboardView: View {
                         formatNumber: viewModel.formatNumber
                     )
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(UmamiPressableCardStyle())
             }
         }
         .padding(.horizontal)
@@ -402,14 +351,14 @@ struct DashboardView: View {
 
     private var liveStatusText: String {
         if totalActiveUsers > 0 {
-            return "Across \(watchlistScopeText)"
+            return "Live activity updates automatically every few seconds."
         }
 
         if viewModel.dashboardLastUpdated == nil {
             return "Checking live traffic..."
         }
 
-        return "No active visitors in the last poll"
+        return "No one is active right now. Your period totals are shown below."
     }
 
     private var partialLoadText: String {
@@ -420,11 +369,13 @@ struct DashboardView: View {
     }
 
     private var watchlistScopeText: String {
-        "\(rankedDashboardWebsites.count) watched \(rankedDashboardWebsites.count == 1 ? "site" : "sites")"
+        let scope = viewModel.hasStarredWebsites ? "pinned" : "recent"
+        let noun = rankedDashboardWebsites.count == 1 ? "site" : "sites"
+        return "\(rankedDashboardWebsites.count) \(scope) \(noun)"
     }
 
     private var dashboardMetricColumns: [GridItem] {
-        if dynamicTypeSize.isAccessibilitySize {
+        if dynamicTypeSize >= .xxLarge {
             return [GridItem(.flexible())]
         }
 
@@ -464,8 +415,30 @@ struct DashboardView: View {
         viewModel.dashboardActiveUsers.values.reduce(0, +)
     }
 
-    private var maxDashboardPageviews: Int {
-        max(rankedDashboardWebsites.compactMap { viewModel.dashboardStats[$0.id]?.pageviews }.max() ?? 0, 1)
+    private var trafficSummaryText: String {
+        guard !statsList.isEmpty else {
+            return "We are still collecting the numbers for this time range."
+        }
+
+        guard aggregateVisitors > 0 || aggregatePageviews > 0 else {
+            return "No traffic was recorded in this time range. Try a longer range or check that tracking is installed."
+        }
+
+        var sentences = [
+            "These sites recorded \(viewModel.formatNumber(aggregateVisitors)) visitors and \(viewModel.formatNumber(aggregatePageviews)) pageviews."
+        ]
+
+        if aggregateVisitors > 0 {
+            let pagesPerVisitor = Double(aggregatePageviews) / Double(aggregateVisitors)
+            sentences.append("That is about \(String(format: "%.1f", pagesPerVisitor)) pages per visitor.")
+        }
+
+        if aggregateVisits > 0 {
+            let bounce = formatBounceRate(visits: aggregateVisits, bounces: aggregateBounces)
+            sentences.append("The bounce rate was \(bounce).")
+        }
+
+        return sentences.joined(separator: " ")
     }
 
     private var rankedDashboardWebsites: [WebsiteModel] {
@@ -515,138 +488,44 @@ struct DashboardView: View {
     }()
 }
 
-private struct DashboardBadge: View {
-    let icon: String
-    let value: String
-    let label: String
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: icon)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            Text(value)
-                .font(.headline.monospacedDigit())
-
-            Text(label)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(Color(.tertiarySystemGroupedBackground), in: Capsule())
-    }
-}
-
 private struct DashboardMetricTile: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     let title: String
     let value: String
-    let context: String
+    let explanation: String
     let icon: String
     let color: Color
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
                 Image(systemName: icon)
                     .font(.headline)
                     .symbolRenderingMode(.hierarchical)
                     .foregroundStyle(color)
 
-                Spacer()
-            }
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(value)
-                    .font(.system(.title2, design: .rounded).weight(.bold))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.75)
-                    .contentTransition(.numericText())
-
                 Text(title)
                     .font(.subheadline.weight(.semibold))
-
-                Text(context)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
             }
+
+            Text(value)
+                .font(.system(.title2, design: .rounded).weight(.bold))
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+                .contentTransition(reduceMotion ? .identity : .numericText())
+
+            Text(explanation)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .frame(maxWidth: .infinity, minHeight: 170, alignment: .topLeading)
+        .umamiCardSurface(cornerRadius: UmamiDesignMetrics.compactCornerRadius)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(title): \(value), \(context)")
-    }
-}
-
-private struct LiveSiteRow: View {
-    let website: WebsiteModel
-    let activeUsers: Int?
-    let stats: WebsiteStatsResponse?
-    let statsDidFail: Bool
-    let activeUsersDidFail: Bool
-    let maxPageviews: Int
-    let formatNumber: (Int) -> String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 10) {
-                WebsiteFaviconView(domain: website.domain, size: 28)
-                    .accessibilityHidden(true)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(website.name)
-                        .font(.subheadline.weight(.semibold))
-                        .lineLimit(1)
-
-                    Text(statusText)
-                        .font(.caption)
-                        .foregroundStyle(statusColor)
-                }
-
-                Spacer()
-
-                Text(stats.map { formatNumber($0.pageviews) } ?? "--")
-                    .font(.subheadline.monospacedDigit().weight(.semibold))
-                    .contentTransition(.numericText())
-            }
-
-            ProgressView(value: Double(stats?.pageviews ?? 0), total: Double(maxPageviews))
-                .tint((activeUsers ?? 0) > 0 ? .green : .blue)
-                .accessibilityHidden(true)
-        }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(website.name), \(statusText), \(stats?.pageviews ?? 0) pageviews")
-    }
-
-    private var statusText: String {
-        if activeUsersDidFail {
-            return "Active unknown"
-        }
-
-        guard let activeUsers else {
-            return "Checking live traffic"
-        }
-
-        if activeUsers > 0 {
-            return "\(formatNumber(activeUsers)) active now"
-        }
-
-        if statsDidFail && stats == nil {
-            return "Stats unavailable"
-        }
-
-        return "No active visitors"
-    }
-
-    private var statusColor: Color {
-        if activeUsersDidFail || statsDidFail {
-            return .orange
-        }
-
-        return (activeUsers ?? 0) > 0 ? .green : .secondary
+        .accessibilityLabel("\(title): \(value). \(explanation)")
     }
 }
 
@@ -712,7 +591,7 @@ struct DashboardWebsiteCard: View {
             }
         }
         .padding(16)
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .umamiCardSurface(cornerRadius: UmamiDesignMetrics.compactCornerRadius)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilitySummary)
     }
