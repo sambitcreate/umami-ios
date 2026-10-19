@@ -33,11 +33,18 @@ final class AuthManager: ObservableObject {
         case shareToken = "shareToken"
     }
 
+    private struct PendingTwoFactor {
+        let client: APIClient
+        let session: UmamiSession
+        let partialToken: String
+    }
+
     private(set) var apiClient: APIClient?
 
     private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "UmamiAnalytics", category: "Auth")
 
     private var authOperationID = UUID()
+    private var pendingTwoFactor: PendingTwoFactor?
     private var storedSelfHostedServerURL: String?
     private var storedPublicShareServerURL: String?
 
@@ -46,6 +53,7 @@ final class AuthManager: ObservableObject {
     @Published var serverURL: String?
     @Published var serverType: ServerType = .selfHosted
     @Published var isLoading = false
+    @Published private(set) var requiresTwoFactor = false
     @Published var cloudAPIKey: String?
     @Published var currentSession: UmamiSession?
     @Published var serverConfig: ServerConfig?
@@ -157,6 +165,8 @@ final class AuthManager: ObservableObject {
         cloudRegion: CloudRegion = .global
     ) async throws {
         let operationID = beginAuthOperation()
+        pendingTwoFactor = nil
+        requiresTwoFactor = false
         isLoading = true
         defer {
             if isCurrentAuthOperation(operationID) {
@@ -186,7 +196,15 @@ final class AuthManager: ObservableObject {
             let client = try APIClient(serverURL: finalURL, serverType: .selfHosted)
 
             do {
-                let response = try await client.loginAsync(username: username, password: password)
+                let loginResponse = try await client.loginAsync(username: username, password: password)
+                try ensureCurrentAuthOperation(operationID)
+                guard case .authenticated(let response) = loginResponse else {
+                    if case .requiresTwoFactor(let partialToken) = loginResponse {
+                        pendingTwoFactor = PendingTwoFactor(client: client, session: session, partialToken: partialToken)
+                        requiresTwoFactor = true
+                    }
+                    return
+                }
                 client.setAuthToken(response.token)
 
                 let bootstrap = try await loadSelfHostedBootstrap(client: client, session: session, fallbackUser: response.user)
@@ -288,6 +306,62 @@ final class AuthManager: ObservableObject {
                 throw error
             }
         }
+    }
+
+    func verifyTwoFactor(code: String, isBackupCode: Bool) async throws {
+        guard let pendingTwoFactor else { throw AuthError.invalidTwoFactorCode }
+        let value = code.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard isBackupCode ? !value.isEmpty : value.count == 6 && value.allSatisfy(\.isNumber) else {
+            throw AuthError.invalidTwoFactorCode
+        }
+
+        let operationID = beginAuthOperation()
+        isLoading = true
+        defer {
+            if isCurrentAuthOperation(operationID) { isLoading = false }
+        }
+
+        let response: AuthResponse
+        do {
+            response = try await pendingTwoFactor.client.verifyTwoFactorAsync(
+                partialToken: pendingTwoFactor.partialToken,
+                code: value,
+                isBackupCode: isBackupCode
+            )
+        } catch APIError.unauthorized {
+            if isCurrentAuthOperation(operationID) {
+                self.pendingTwoFactor = nil
+                requiresTwoFactor = false
+            }
+            throw AuthError.twoFactorExpired
+        }
+        try ensureCurrentAuthOperation(operationID)
+        pendingTwoFactor.client.setAuthToken(response.token)
+        let bootstrap = try await loadSelfHostedBootstrap(
+            client: pendingTwoFactor.client,
+            session: pendingTwoFactor.session,
+            fallbackUser: response.user
+        )
+        try ensureCurrentAuthOperation(operationID)
+        saveServerURL(pendingTwoFactor.session.baseURL, for: .selfHosted)
+        persistAuthenticatedSession(
+            session: pendingTwoFactor.session,
+            client: pendingTwoFactor.client,
+            secret: response.token,
+            secretKind: .bearerToken,
+            currentUser: bootstrap.user,
+            serverConfig: bootstrap.config,
+            teams: bootstrap.teams
+        )
+        self.pendingTwoFactor = nil
+        requiresTwoFactor = false
+    }
+
+    func cancelTwoFactorChallenge() {
+        authOperationID = UUID()
+        pendingTwoFactor = nil
+        requiresTwoFactor = false
+        isLoading = false
     }
 
     func logout() async throws {
@@ -836,6 +910,8 @@ final class AuthManager: ObservableObject {
     }
 
     private func resetRuntimeState(clearSelection: Bool) {
+        pendingTwoFactor = nil
+        requiresTwoFactor = false
         apiClient = nil
         isAuthenticated = false
         currentUser = nil
