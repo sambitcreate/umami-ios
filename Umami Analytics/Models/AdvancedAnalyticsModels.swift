@@ -985,6 +985,21 @@ private struct SessionPropertyRow: Decodable {
     }
 }
 
+struct WebsiteAnnotation: Decodable, Identifiable, Sendable {
+    let id: String
+    let date: String
+    let allDay: Bool
+    let note: String
+
+    var timestamp: Date? {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let parsed = formatter.date(from: date) { return parsed }
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.date(from: date)
+    }
+}
+
 struct PaginatedResponse<T: Decodable & Sendable>: Decodable, Sendable {
     let data: [T]
     let count: Int
