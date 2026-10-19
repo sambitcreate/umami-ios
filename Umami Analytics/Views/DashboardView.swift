@@ -38,6 +38,8 @@ struct DashboardView: View {
                     }
                 }
                 .padding(.vertical)
+                .frame(maxWidth: 900)
+                .frame(maxWidth: .infinity)
             }
             .background(Color(.systemGroupedBackground))
             .navigationTitle("Dashboard")
