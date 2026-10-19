@@ -76,7 +76,7 @@ struct AskView: View {
             }
             .navigationTitle("Ask")
             .navigationBarTitleDisplayMode(.inline)
-            .safeAreaInset(edge: .bottom, spacing: 0) {
+            .askComposerBar {
                 if ask.canAsk {
                     composer
                         .frame(maxWidth: 700)
@@ -84,7 +84,6 @@ struct AskView: View {
                         .padding(.horizontal, 16)
                         .padding(.top, 8)
                         .padding(.bottom, 8)
-                        .background(.bar)
                 }
             }
             .refreshable {
@@ -139,9 +138,11 @@ struct AskView: View {
             }
         }
         .font(.subheadline)
-        .padding(.horizontal, 16)
         .frame(minHeight: 48)
-        .background(.bar)
+        .padding(.horizontal, 16)
+        .askGlassSurface(cornerRadius: 24)
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
     }
 
     private var availabilityNotice: some View {
@@ -154,7 +155,7 @@ struct AskView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18))
+        .umamiCardSurface(cornerRadius: 18)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("askAvailability")
     }
@@ -177,7 +178,7 @@ struct AskView: View {
                 .font(.subheadline.weight(.medium))
         }
         .padding(14)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18))
+        .umamiCardSurface(cornerRadius: 18)
         .accessibilityIdentifier("askSnapshot")
     }
 
@@ -220,11 +221,9 @@ struct AskView: View {
                         Spacer(minLength: 8)
                         Image(systemName: "arrow.up.left").font(.caption)
                     }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 12)
-                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.bordered)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -302,15 +301,45 @@ struct AskView: View {
         .padding(.horizontal, 14)
         .padding(.top, 12)
         .padding(.bottom, 6)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .strokeBorder(.secondary.opacity(0.25), lineWidth: 0.5)
-        }
-        .shadow(color: .black.opacity(0.08), radius: 14, y: 5)
+        .askGlassSurface(cornerRadius: 24, interactive: true)
     }
 }
 
 private extension StatsPeriod {
     static var allCases: [StatsPeriod] { [.day, .week, .month, .year] }
+}
+
+private extension View {
+    @ViewBuilder
+    func askComposerBar<Bar: View>(@ViewBuilder content: () -> Bar) -> some View {
+        if #available(iOS 26.0, *) {
+            safeAreaBar(edge: .bottom, spacing: 0, content: content)
+        } else {
+            safeAreaInset(edge: .bottom, spacing: 0) {
+                content().background(.bar)
+            }
+        }
+    }
+
+    @ViewBuilder
+    func askGlassSurface(cornerRadius: CGFloat, interactive: Bool = false) -> some View {
+        if #available(iOS 26.0, *) {
+            if interactive {
+                glassEffect(
+                    .regular.interactive(),
+                    in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                )
+            } else {
+                glassEffect(
+                    .regular,
+                    in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                )
+            }
+        } else {
+            background(
+                .regularMaterial,
+                in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            )
+        }
+    }
 }
