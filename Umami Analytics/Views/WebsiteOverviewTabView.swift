@@ -23,9 +23,14 @@ struct WebsiteOverviewTabView: View {
                 AnalyticsChartView(
                     pageviews: pageviewsData.pageviews,
                     visitors: pageviewsData.sessions,
-                    period: viewModel.selectedPeriod
+                    period: viewModel.selectedPeriod,
+                    annotations: viewModel.annotations
                 )
                 .padding(.horizontal)
+            }
+
+            if !viewModel.annotations.isEmpty {
+                annotationsSection
             }
 
             if !topPages.isEmpty {
@@ -33,6 +38,34 @@ struct WebsiteOverviewTabView: View {
             }
 
             activeUsersSection
+        }
+    }
+
+    private var annotationsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("Annotations", systemImage: "note.text")
+                .font(.headline)
+                .padding(.horizontal)
+
+            VStack(spacing: 0) {
+                ForEach(Array(viewModel.annotations.enumerated()), id: \.element.id) { index, annotation in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(annotation.note)
+                            .font(.subheadline)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        if let date = annotation.timestamp {
+                            Text(date, style: .date)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .padding()
+                    if index < viewModel.annotations.count - 1 { Divider() }
+                }
+            }
+            .background(Color(UIColor.secondarySystemBackground))
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .padding(.horizontal)
         }
     }
 
