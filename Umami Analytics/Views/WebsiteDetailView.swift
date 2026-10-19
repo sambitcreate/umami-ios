@@ -29,7 +29,6 @@ struct WebsiteDetailContainerView: View {
 struct WebsiteDetailView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @ObservedObject var viewModel: WebsiteViewModel
 
     var body: some View {
@@ -47,6 +46,8 @@ struct WebsiteDetailView: View {
                 Spacer(minLength: 40)
             }
             .padding(.bottom)
+            .frame(maxWidth: 900)
+            .frame(maxWidth: .infinity)
         }
         .navigationTitle(viewModel.selectedWebsite?.name ?? "Website Details")
         .navigationBarTitleDisplayMode(.inline)
@@ -291,10 +292,13 @@ struct WebsiteDetailView: View {
 
     @ViewBuilder
     private var tabPicker: some View {
-        if horizontalSizeClass == .compact || dynamicTypeSize.isAccessibilitySize {
+        if dynamicTypeSize.isAccessibilitySize {
             scrollableTabPicker
         } else {
-            segmentedTabPicker
+            ViewThatFits(in: .horizontal) {
+                segmentedTabPicker
+                scrollableTabPicker
+            }
         }
     }
 
