@@ -123,7 +123,7 @@ class APIClient: @unchecked Sendable {
             return nil
         }
 
-        let sensitiveKeys = Set(["token", "apikey", "sharetoken", "authorization", "password"])
+        let sensitiveKeys = Set(["token", "partialtoken", "apikey", "sharetoken", "authorization", "password"])
         if let jsonObject = try? JSONSerialization.jsonObject(with: data),
            JSONSerialization.isValidJSONObject(jsonObject) {
             let redacted = Self.redactSensitiveValues(in: jsonObject, sensitiveKeys: sensitiveKeys)
@@ -542,7 +542,7 @@ class APIClient: @unchecked Sendable {
         .eraseToAnyPublisher()
     }
 
-    func login(username: String, password: String) -> AnyPublisher<AuthResponse, Error> {
+    func login(username: String, password: String) -> AnyPublisher<LoginResponse, Error> {
         asyncPublisher {
             try await self.loginAsync(username: username, password: password)
         }
@@ -992,9 +992,19 @@ class APIClient: @unchecked Sendable {
 
     // MARK: - Async Authentication & Bootstrap
 
-    func loginAsync(username: String, password: String) async throws -> AuthResponse {
+    func loginAsync(username: String, password: String) async throws -> LoginResponse {
         let credentials = AuthCredentials(username: username, password: password)
         let request = createRequest(path: "/api/auth/login", method: "POST", body: credentials)
+        return try await performRequestAsync(request: request)
+    }
+
+    func verifyTwoFactorAsync(partialToken: String, code: String, isBackupCode: Bool) async throws -> AuthResponse {
+        var request = createRequest(
+            path: "/api/2fa/verify",
+            method: "POST",
+            body: TwoFactorVerification(code: code, isBackupCode: isBackupCode)
+        )
+        request.setValue("Bearer \(partialToken)", forHTTPHeaderField: "Authorization")
         return try await performRequestAsync(request: request)
     }
 
@@ -1631,6 +1641,22 @@ class APIClient: @unchecked Sendable {
         ]
         let request = createRequest(path: components?.string ?? "/api/websites/\(websiteId)/reports", method: "GET")
         return try await performRequestAsync(request: request)
+    }
+
+    func getWebsiteAnnotationsAsync(websiteId: String, dateRange: DateRange) async throws -> [WebsiteAnnotation] {
+        let items = [
+            URLQueryItem(name: "startAt", value: "\(dateRange.startAt)"),
+            URLQueryItem(name: "endAt", value: "\(dateRange.endAt)"),
+            URLQueryItem(name: "page", value: "1"),
+            URLQueryItem(name: "pageSize", value: "100")
+        ]
+        guard let path = buildPath(path: "/api/websites/\(websiteId)/annotations", queryItems: items) else {
+            throw APIError.invalidURL
+        }
+        let response: PaginatedResponse<WebsiteAnnotation> = try await performRequestAsync(
+            request: createRequest(path: path, method: "GET")
+        )
+        return response.data
     }
 
     func getWebsiteSegmentsAsync(websiteId: String, type: SegmentType? = nil) async throws -> [SegmentDefinition] {
