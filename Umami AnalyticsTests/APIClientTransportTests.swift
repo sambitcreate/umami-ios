@@ -5,6 +5,77 @@ import Testing
 @Suite(.serialized)
 struct APIClientTransportTests {
 
+    @Test func passwordOnlyLoginStillDecodesFullSession() async throws {
+        URLProtocolStub.reset()
+        URLProtocolStub.enqueue(json: #"{"token":"full-token","user":{"id":"user-1","username":"sam","role":"admin","isAdmin":true}}"#)
+        let client = try APIClient(
+            serverURL: "https://self.example.com",
+            serverType: .selfHosted,
+            urlSession: URLProtocolStub.makeSession()
+        )
+
+        let response = try await client.loginAsync(username: "sam", password: "password")
+        guard case .authenticated(let session) = response else {
+            Issue.record("Expected a full session")
+            return
+        }
+        #expect(session.token == "full-token")
+    }
+
+    @Test func twoFactorLoginUsesPartialTokenOnlyForVerification() async throws {
+        URLProtocolStub.reset()
+        URLProtocolStub.enqueue(json: #"{"requiresTwoFactor":true,"partialToken":"short-lived"}"#)
+        URLProtocolStub.enqueue(json: #"{"token":"full-token","user":{"id":"user-1","username":"sam","role":"admin","isAdmin":true}}"#)
+        let client = try APIClient(
+            serverURL: "https://self.example.com/umami",
+            serverType: .selfHosted,
+            urlSession: URLProtocolStub.makeSession()
+        )
+
+        let challenge = try await client.loginAsync(username: "sam", password: "password")
+        guard case .requiresTwoFactor(let partialToken) = challenge else {
+            Issue.record("Expected a two-factor challenge")
+            return
+        }
+        let response = try await client.verifyTwoFactorAsync(
+            partialToken: partialToken,
+            code: "123456",
+            isBackupCode: false
+        )
+
+        #expect(response.token == "full-token")
+        let requests = URLProtocolStub.recordedRequests
+        #expect(requests.count == 2)
+        #expect(requests[0].value(forHTTPHeaderField: "Authorization") == nil)
+        #expect(requests[1].url?.path == "/umami/api/2fa/verify")
+        #expect(requests[1].value(forHTTPHeaderField: "Authorization") == "Bearer short-lived")
+        let body = try #require(requests[1].bodyData)
+        let payload = try #require(JSONSerialization.jsonObject(with: body) as? [String: String])
+        #expect(payload == ["token": "123456"])
+    }
+
+    @Test func annotationsUseWebsiteDateRangeAndDecodeNotes() async throws {
+        URLProtocolStub.reset()
+        URLProtocolStub.enqueue(json: #"{"data":[{"id":"note-1","date":"2026-09-17T12:00:00.000Z","allDay":true,"note":"Launch"}],"count":1,"page":1,"pageSize":100}"#)
+        let client = try APIClient(
+            serverURL: "https://self.example.com",
+            serverType: .selfHosted,
+            urlSession: URLProtocolStub.makeSession()
+        )
+
+        let notes = try await client.getWebsiteAnnotationsAsync(
+            websiteId: "site-1",
+            dateRange: DateRange(startAt: 100, endAt: 200, unit: "day", timezone: nil)
+        )
+
+        #expect(notes.map(\.note) == ["Launch"])
+        #expect(notes.first?.timestamp != nil)
+        let request = try #require(URLProtocolStub.recordedRequests.first)
+        #expect(request.url?.path == "/api/websites/site-1/annotations")
+        #expect(request.url?.queryItems["startAt"] == "100")
+        #expect(request.url?.queryItems["endAt"] == "200")
+    }
+
     @Test func selfHostedStatsRequestPreservesBasePathAndBearerAuth() async throws {
         URLProtocolStub.reset()
         URLProtocolStub.enqueue(json: """
