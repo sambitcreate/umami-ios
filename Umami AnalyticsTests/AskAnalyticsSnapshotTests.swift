@@ -24,6 +24,7 @@ struct AskAnalyticsSnapshotTests {
         #expect(snapshot.context.contains("Bounce rate: 20.0%"))
         #expect(snapshot.context.contains("Average time per pageview: 2 seconds"))
         #expect(snapshot.context.contains("Top referrers: unavailable"))
+        #expect(snapshot.context.contains("Top pages (ranked counts; unit unspecified): /page-1 (9)"))
         #expect(snapshot.context.contains("/page-5"))
         #expect(!snapshot.context.contains("/page-6"))
     }
