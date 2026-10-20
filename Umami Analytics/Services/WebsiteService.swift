@@ -75,6 +75,7 @@ protocol WebsiteServicing {
     func fetchWebsiteSessionActivityAsync(id: String, sessionId: String, period: StatsPeriod) async throws -> [AnalyticsRecord]
     func fetchWebsiteSessionPropertiesAsync(id: String, sessionId: String) async throws -> [String: JSONValue]
     func fetchWebsiteReportsAsync(websiteId: String) async throws -> [SavedReport]
+    func fetchWebsiteAnnotationsAsync(websiteId: String, period: StatsPeriod) async throws -> [WebsiteAnnotation]
     func fetchWebsiteSegmentsAsync(websiteId: String, type: SegmentType?) async throws -> [SegmentDefinition]
     func fetchLinksAsync(teamId: String?) async throws -> [TrackedAsset]
     func fetchPixelsAsync(teamId: String?) async throws -> [TrackedAsset]
@@ -1445,6 +1446,14 @@ extension WebsiteService {
         return response.data
     }
 
+    func fetchWebsiteAnnotationsAsync(websiteId: String, period: StatsPeriod) async throws -> [WebsiteAnnotation] {
+        guard let apiClient = apiClientProvider() else { throw APIError.unauthorized }
+        return try await apiClient.getWebsiteAnnotationsAsync(
+            websiteId: websiteId,
+            dateRange: createDateRange(for: period)
+        )
+    }
+
     func fetchWebsiteSegmentsAsync(websiteId: String, type: SegmentType?) async throws -> [SegmentDefinition] {
         guard let apiClient = apiClientProvider() else { throw APIError.unauthorized }
         return try await apiClient.getWebsiteSegmentsAsync(websiteId: websiteId, type: type)
@@ -1523,8 +1532,8 @@ extension WebsiteService {
 
             realtimeTasks[taskKey] = task
 
-            continuation.onTermination = { _ in
-                Task { @MainActor [weak self] in
+            continuation.onTermination = { [weak self] _ in
+                Task { @MainActor in
                     task.cancel()
                     self?.realtimeTasks.removeValue(forKey: taskKey)
                 }

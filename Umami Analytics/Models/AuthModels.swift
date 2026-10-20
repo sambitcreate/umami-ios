@@ -17,6 +17,34 @@ struct AuthResponse: Codable, Sendable {
     let user: User
 }
 
+enum LoginResponse: Decodable, Sendable {
+    case authenticated(AuthResponse)
+    case requiresTwoFactor(partialToken: String)
+
+    private enum CodingKeys: String, CodingKey {
+        case requiresTwoFactor, partialToken
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        if try container.decodeIfPresent(Bool.self, forKey: .requiresTwoFactor) == true {
+            self = .requiresTwoFactor(partialToken: try container.decode(String.self, forKey: .partialToken))
+        } else {
+            self = .authenticated(try AuthResponse(from: decoder))
+        }
+    }
+}
+
+struct TwoFactorVerification: Encodable, Sendable {
+    let token: String?
+    let backupCode: String?
+
+    init(code: String, isBackupCode: Bool) {
+        token = isBackupCode ? nil : code
+        backupCode = isBackupCode ? code : nil
+    }
+}
+
 struct User: Codable, Sendable {
     let id: String
     let username: String
@@ -197,6 +225,8 @@ struct ShareBootstrapResponse: Codable, Sendable {
 enum AuthError: Error, Sendable {
     case invalidURL
     case invalidCredentials
+    case invalidTwoFactorCode
+    case twoFactorExpired
     case missingAPIKey
     case missingShareID
     case networkError(String)
@@ -210,6 +240,10 @@ enum AuthError: Error, Sendable {
             return "Invalid server URL. Please check the URL and try again."
         case .invalidCredentials:
             return "Incorrect username or password."
+        case .invalidTwoFactorCode:
+            return "Enter a six-digit authentication code or a backup code."
+        case .twoFactorExpired:
+            return "The verification session expired. Sign in again to get a new code prompt."
         case .missingAPIKey:
             return "Please enter your Umami Cloud API key."
         case .missingShareID:

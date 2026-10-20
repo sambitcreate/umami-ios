@@ -55,6 +55,7 @@ final class WebsiteViewModel: ObservableObject {
     @Published var websiteStats: WebsiteStatsResponse?
     @Published var websiteMetrics: WebsiteMetricsResponse?
     @Published var pageviewsData: PageviewsResponse?
+    @Published var annotations: [WebsiteAnnotation] = []
     @Published var activeUsers: ActiveUsersResponse?
     @Published var activeUsersCount = 0
     @Published var hasActiveUsersData = false
@@ -416,6 +417,7 @@ final class WebsiteViewModel: ObservableObject {
 
     func changePeriod(_ period: StatsPeriod) {
         selectedPeriod = period
+        annotations = []
         loadDashboardStats()
 
         guard let website = selectedWebsite else {
@@ -633,6 +635,7 @@ final class WebsiteViewModel: ObservableObject {
         websiteStats = nil
         websiteMetrics = nil
         pageviewsData = nil
+        annotations = []
         activeUsers = nil
         activeUsersCount = 0
         hasActiveUsersData = false

@@ -169,7 +169,9 @@ struct WebsitesView: View {
             }
             .overlay {
                 if viewModel.isLoading || viewModel.isPerformingAction {
-                    ProgressView()
+                    UmamiLoadingStatus(
+                        message: viewModel.isPerformingAction ? "Updating website" : "Loading websites"
+                    )
                 }
             }
             .alert("Error", isPresented: Binding<Bool>(

@@ -28,11 +28,17 @@ struct ContentView: View {
                 }
                 .tag(1)
 
+            AskView(websites: websiteViewModel)
+                .tabItem {
+                    Label("Ask", systemImage: "sparkles")
+                }
+                .tag(2)
+
             SettingsView()
                 .tabItem {
                     Label("Settings", systemImage: "gear")
                 }
-                .tag(2)
+                .tag(3)
         }
         .liquidGlassReadyTabChrome()
         .onChange(of: authManager.selectedWorkspace) { newSelection in

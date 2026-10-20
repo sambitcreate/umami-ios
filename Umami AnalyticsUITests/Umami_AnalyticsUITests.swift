@@ -48,6 +48,17 @@ final class Umami_AnalyticsUITests: XCTestCase {
     }
 
     @MainActor
+    func testAskTabShowsModelAvailability() throws {
+        let app = launchAuthenticatedFixture()
+        let askTab = app.tabBars.buttons["Ask"]
+        XCTAssertTrue(askTab.waitForExistence(timeout: 5))
+        askTab.tap()
+
+        let availability = app.otherElements["askAvailability"]
+        XCTAssertTrue(availability.waitForExistence(timeout: 5))
+    }
+
+    @MainActor
     func testWebsiteDetailTabSmokeWhenDataAvailable() throws {
         let app = launchAuthenticatedFixture()
 

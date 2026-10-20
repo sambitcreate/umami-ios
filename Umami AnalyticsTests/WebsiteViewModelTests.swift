@@ -758,6 +758,7 @@ private final class MockWebsiteService: WebsiteServicing {
     }
     func fetchWebsiteSessionPropertiesAsync(id: String, sessionId: String) async throws -> [String: JSONValue] { ["sessionId": .string(sessionId)] }
     func fetchWebsiteReportsAsync(websiteId: String) async throws -> [SavedReport] { [] }
+    func fetchWebsiteAnnotationsAsync(websiteId: String, period: StatsPeriod) async throws -> [WebsiteAnnotation] { [] }
     func fetchWebsiteSegmentsAsync(websiteId: String, type: SegmentType?) async throws -> [SegmentDefinition] { makeSegments(type: type) }
     func fetchLinksAsync(teamId: String?) async throws -> [TrackedAsset] { [] }
     func fetchPixelsAsync(teamId: String?) async throws -> [TrackedAsset] { [] }

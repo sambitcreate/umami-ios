@@ -17,6 +17,7 @@ struct AnalyticsChartView: View {
     var pageviews: [TimeSeriesData]
     var visitors: [TimeSeriesData]
     var period: StatsPeriod
+    var annotations: [WebsiteAnnotation] = []
 
     @State private var selectedChartType: ChartType = .pageviews
     @State private var selectedDataPoint: SelectedDataPoint?
@@ -93,8 +94,27 @@ struct AnalyticsChartView: View {
 
     private var chartView: some View {
         let dataSet = currentDataSet
+        let firstDate = dataSet.map(\.date).min()
+        let lastDate = dataSet.map(\.date).max()
 
         return Chart {
+            ForEach(annotations) { annotation in
+                if let date = annotation.timestamp,
+                   let first = firstDate,
+                   let last = lastDate,
+                   date >= first, date <= last {
+                    RuleMark(x: .value("Annotation", date))
+                        .foregroundStyle(.purple.opacity(0.65))
+                        .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                        .annotation(position: .top) {
+                            Image(systemName: "note.text")
+                                .font(.caption2)
+                                .foregroundStyle(.purple)
+                                .accessibilityLabel("Annotation: \(annotation.note)")
+                        }
+                }
+            }
+
             ForEach(dataSet) { item in
                 AreaMark(
                     x: .value("Date", item.date),

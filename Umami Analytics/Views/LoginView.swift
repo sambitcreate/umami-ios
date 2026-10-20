@@ -10,6 +10,7 @@ import SwiftUI
 @MainActor
 struct LoginView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @ObservedObject private var authManager = AuthManager.shared
     @FocusState private var focusedField: LoginField?
     @ScaledMetric(relativeTo: .body) private var horizontalPadding: CGFloat = 30
     @ScaledMetric(relativeTo: .body) private var verticalSpacing: CGFloat = 20
@@ -24,8 +25,8 @@ struct LoginView: View {
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var showError = false
-
-    @Binding var isAuthenticated: Bool
+    @State private var twoFactorCode = ""
+    @State private var useBackupCode = false
 
     var body: some View {
         ScrollView {
@@ -51,6 +52,7 @@ struct LoginView: View {
         }
         .onAppear(perform: loadInitialState)
         .onChange(of: serverType) { newType in
+            authManager.cancelTwoFactorChallenge()
             AuthManager.shared.setServerType(newType)
             if newType == .selfHosted {
                 serverURL = AuthManager.shared.savedSelfHostedServerURL ?? serverURL
@@ -79,7 +81,16 @@ struct LoginView: View {
         .accessibilityElement(children: .combine)
     }
 
+    @ViewBuilder
     private var formContent: some View {
+        if authManager.requiresTwoFactor {
+            twoFactorForm
+        } else {
+            credentialsForm
+        }
+    }
+
+    private var credentialsForm: some View {
         VStack(alignment: .leading, spacing: verticalSpacing) {
             pickerSection("Server Type") {
                 Picker("Server Type", selection: $serverType) {
@@ -172,6 +183,71 @@ struct LoginView: View {
         }
     }
 
+    private var twoFactorForm: some View {
+        VStack(alignment: .leading, spacing: verticalSpacing) {
+            Text("Two-Factor Verification")
+                .font(.title2.bold())
+                .accessibilityAddTraits(.isHeader)
+
+            Text("Enter the code from your authenticator app to finish signing in.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+
+            inputSection(title: useBackupCode ? "Backup Code" : "Authentication Code") {
+                TextField(useBackupCode ? "Backup code" : "6-digit code", text: $twoFactorCode)
+                    .textContentType(.oneTimeCode)
+                    .keyboardType(useBackupCode ? .default : .numberPad)
+                    .submitLabel(.go)
+                    .onSubmit(verifyTwoFactor)
+                    .accessibilityLabel(useBackupCode ? "Backup code" : "Authentication code")
+            }
+
+            Button(useBackupCode ? "Use an authenticator code" : "Use a backup code") {
+                useBackupCode.toggle()
+                twoFactorCode = ""
+            }
+
+            Button(action: verifyTwoFactor) {
+                HStack(spacing: 8) {
+                    if isLoading { ProgressView().controlSize(.small) }
+                    Text(isLoading ? "Verifying" : "Verify and Sign In")
+                }
+                .fontWeight(.semibold)
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .disabled(isLoading || (useBackupCode
+                ? twoFactorCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                : twoFactorCode.count != 6 || !twoFactorCode.allSatisfy(\.isNumber)))
+
+            Button("Back to Sign In") {
+                authManager.cancelTwoFactorChallenge()
+                twoFactorCode = ""
+                useBackupCode = false
+            }
+            .frame(maxWidth: .infinity)
+        }
+    }
+
+    private func verifyTwoFactor() {
+        guard !isLoading else { return }
+        isLoading = true
+        errorMessage = nil
+        Task { @MainActor in
+            defer { isLoading = false }
+            do {
+                try await authManager.verifyTwoFactor(code: twoFactorCode, isBackupCode: useBackupCode)
+                twoFactorCode = ""
+            } catch {
+                errorMessage = (error as? AuthError)?.message
+                    ?? (error as? APIError)?.message
+                    ?? error.localizedDescription
+                showError = true
+            }
+        }
+    }
+
     private func pickerSection<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title)
@@ -253,7 +329,9 @@ struct LoginView: View {
                     shareID: serverType == .publicShare ? shareID : nil,
                     cloudRegion: cloudRegion
                 )
-                isAuthenticated = true
+                if authManager.requiresTwoFactor {
+                    password = ""
+                }
             } catch {
                 if let authError = error as? AuthError {
                     errorMessage = authError.message
@@ -283,7 +361,7 @@ struct LoginView: View {
 }
 
 #Preview {
-    LoginView(isAuthenticated: .constant(false))
+    LoginView()
 }
 
 private enum LoginField: Hashable {

@@ -32,11 +32,19 @@ extension WebsiteViewModel {
         async let metricsResult = fetchMetricDimensionResult(.url, websiteId: websiteId, period: period)
         async let pageviewsResult = fetchPageviewsResult(websiteId: websiteId, period: period)
         async let activeUsersResult = fetchActiveUsersResult(websiteId: websiteId)
+        async let annotationsResult = captureResult {
+            try await service.fetchWebsiteAnnotationsAsync(websiteId: websiteId, period: period)
+        }
 
         await applyWebsiteStatsResult(await statsResult, websiteId: websiteId, period: period, tab: .overview)
         await applyMetricDimensionResult(await metricsResult, dimension: .url, websiteId: websiteId, period: period, tab: .overview)
         await applyPageviewsResult(await pageviewsResult, websiteId: websiteId, period: period, tab: .overview)
         await applyActiveUsersResult(await activeUsersResult, websiteId: websiteId, period: period, tab: .overview)
+        let fetchedAnnotations = await annotationsResult
+        if contextMatches(websiteId: websiteId, period: period) {
+            // Older Umami installations have no annotations endpoint.
+            annotations = (try? fetchedAnnotations.get()) ?? []
+        }
 
         guard contextMatches(websiteId: websiteId, period: period) else { return }
         startRealtimeUpdates(websiteId: websiteId)

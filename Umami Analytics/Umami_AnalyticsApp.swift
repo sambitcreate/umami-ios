@@ -17,37 +17,96 @@ struct Umami_AnalyticsApp: App {
 
     var body: some Scene {
         WindowGroup {
-            if appState.isAuthenticated {
+            AppRootView()
+                .environment(\.managedObjectContext, persistenceController.container.viewContext)
+                .environmentObject(appState)
+        }
+    }
+}
+
+private struct AppRootView: View {
+    @EnvironmentObject private var appState: AppState
+
+    var body: some View {
+        Group {
+            switch appState.phase {
+            case .restoringSession:
+                SessionRestoringView()
+            case .signedIn:
                 ContentView()
-                    .environment(\.managedObjectContext, persistenceController.container.viewContext)
-                    .environmentObject(appState)
-            } else {
-                LoginView(isAuthenticated: $appState.isAuthenticated)
-                    .environment(\.managedObjectContext, persistenceController.container.viewContext)
-                    .environmentObject(appState)
+            case .signedOut:
+                LoginView()
             }
         }
     }
 }
 
+private struct SessionRestoringView: View {
+    var body: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "chart.bar.fill")
+                .font(.system(.largeTitle, design: .rounded).weight(.semibold))
+                .foregroundStyle(.tint)
+                .accessibilityHidden(true)
+
+            Text("Umami Analytics")
+                .font(.title2.bold())
+
+            ProgressView("Restoring your session")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(UIColor.systemGroupedBackground).ignoresSafeArea())
+        .accessibilityElement(children: .combine)
+    }
+}
+
+enum AppLaunchPhase: Equatable {
+    case restoringSession
+    case signedOut
+    case signedIn
+}
+
+struct AppLaunchPhaseResolver {
+    private(set) var hasResolvedInitialSession = false
+
+    mutating func resolve(isAuthenticated: Bool, isLoading: Bool) -> AppLaunchPhase {
+        if !hasResolvedInitialSession {
+            guard !isLoading else {
+                return .restoringSession
+            }
+            hasResolvedInitialSession = true
+        }
+
+        return isAuthenticated ? .signedIn : .signedOut
+    }
+}
+
 @MainActor
 final class AppState: ObservableObject {
-    @Published var isAuthenticated: Bool = false
+    @Published private(set) var phase: AppLaunchPhase = .restoringSession
+    private var phaseResolver = AppLaunchPhaseResolver()
     private var cancellables = Set<AnyCancellable>()
 
     init() {
-        AuthManager.shared.$isAuthenticated
+#if DEBUG
+        configureUITestFixturesIfNeeded()
+#endif
+
+        let authManager = AuthManager.shared
+        Publishers.CombineLatest(authManager.$isAuthenticated, authManager.$isLoading)
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] isAuthenticated in
-                self?.isAuthenticated = isAuthenticated
+            .sink { [weak self] isAuthenticated, isLoading in
+                self?.updateLaunchPhase(isAuthenticated: isAuthenticated, isLoading: isLoading)
             }
             .store(in: &cancellables)
 
         WebsiteService.shared.purgeExpiredCoreDataStats()
+    }
 
-#if DEBUG
-        configureUITestFixturesIfNeeded()
-#endif
+    private func updateLaunchPhase(isAuthenticated: Bool, isLoading: Bool) {
+        phase = phaseResolver.resolve(isAuthenticated: isAuthenticated, isLoading: isLoading)
     }
 
 #if DEBUG
@@ -58,7 +117,6 @@ final class AppState: ObservableObject {
 
         AuthManager.shared.configureUITestSession()
         seedUITestWebsite()
-        isAuthenticated = AuthManager.shared.isAuthenticated
     }
 
     private func seedUITestWebsite() {
